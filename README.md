@@ -5,6 +5,42 @@
 **Ignition compatibility**: **8.1.x** and **8.3.x** (different `.modl` artifacts).  
 **Configuration**: via the **Ignition Gateway UI**.
 
+## Source-agnostic by design (OPC UA, MQTT, and more)
+
+This connector is **agnostic to the underlying OT/IIoT source** because it subscribes to **Ignition tags**, not to a specific protocol.
+
+- **Ignition normalizes sources into tags**: Whether values originate from **OPC UA**, **MQTT**, PLC drivers, historians, or other tag providers, Ignition exposes them through the same Tag system and emits the same tag-change callbacks.
+- **Stable event schema**: The module converts a tag change into a single protobuf message (see `module/src/main/proto/ot_event.proto`). Since the event payload is **about the tag observation** (tag path, timestamp, value, quality, etc.), **you do not change protobuf/schema when you switch protocols**—you only change which tag paths you subscribe to.
+
+### What changes when you switch sources?
+
+Only the **tag provider** (the left-most portion of the tag path) and the tag paths you select.
+
+Examples (illustrative):
+- **OPC UA tags**:
+  - `[MyOpcUa]Devices/Turbine1/Speed`
+  - `[MyOpcUa]Devices/Turbine1/Temperature`
+- **MQTT tags (via MQTT Engine / Transmission providers)**:
+  - `[MQTT Engine]Sparkplug B/Group/Edge Node/Device/pressure`
+  - `[MQTT Engine]Sparkplug B/Group/Edge Node/Device/vibration_rms`
+- **Simulated/demo tags**:
+  - `[Sample_Tags]Sine/Sine0`
+  - `[Sample_Tags]Ramp/Ramp0`
+
+In all cases, the connector publishes **the same protobuf event type** to Databricks and writes into the same Delta table schema.
+
+## Reference architecture
+
+```mermaid
+flowchart LR
+  A[OT Sources<br/>SCADA • PLCs • Sensors] --> B[Ignition Platform<br/>Gateway / Edge Computing]
+  B --> C[Zerobus Streaming<br/>Real-time Data Connector]
+  C --> D[Delta Bronze<br/>Raw Ingestion]
+  D --> E[Delta Live Tables<br/>Pipeline Transformations]
+  E --> F[Silver & Gold Layers<br/>Curated Data]
+  F --> G[Analytics & ML<br/>BI + ML Workflows]
+```
+
 ## Table of contents
 
 - [Repository layout](#repository-layout)
