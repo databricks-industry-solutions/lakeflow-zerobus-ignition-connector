@@ -2,6 +2,8 @@
 *.modl
 !releases/*.modl
 module/build/
+module/build-user/
+module/build-user-*/
 module/.gradle/
 module/out/
 
@@ -18,6 +20,8 @@ gradle-app.setting
 *.ipr
 *.iws
 .vscode/
+.cursor/
+.claude/
 .settings/
 .project
 .classpath

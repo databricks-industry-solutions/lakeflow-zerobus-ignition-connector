@@ -1,16 +1,23 @@
-# Ignition 8.1.50 Onboarding (Direct Subscription + Optional Script Mode)
+# Ignition 8.1.50 Onboarding (GUI configuration)
 
-## Recommended: Direct tag subscription (no Gateway scripts)
+## Configure in the Gateway UI (recommended)
 
-1) **Install/upgrade** the module in Gateway UI (Modules → Install/Upgrade).
+1) **Install/upgrade** the **8.1** module:
 
-2) **Configure** with explicit tag paths:
+- Gateway UI: `http://localhost:8099/web/home` → Config → Modules → Install/Upgrade
+- Upload: `releases/zerobus-connector-1.0.0.modl`
 
-```bash
-python3 ../../../../scripts/configure_gateway.py \
-  --gateway-url http://localhost:8099 \
-  --config ./config/zerobus_config_direct_explicit.json.example
-```
+2) **Configure in the Gateway UI (no scripts)**:
+
+- Open the module UI (nav item: **Zerobus Configuration**), or direct:
+  - `http://localhost:8099/system/zerobus/configure`
+- Set:
+  - **Enable Direct Subscriptions** = ON
+  - **Tag Selection Mode** = `explicit`
+  - **Explicit Tag Paths** = your tag list
+  - Databricks settings (Workspace URL, Zerobus Endpoint, OAuth Client ID/Secret, Target Table)
+  - **Enabled** = true
+- Save
 
 3) **Verify**:
 
@@ -23,13 +30,12 @@ You should see:
 - `Direct Subscriptions: <N> tags`
 - `Total Events Received/Sent` increasing
 
-## Optional: Gateway Tag Change Script → HTTP ingest
+## Event Streams / HTTP ingest (optional)
 
-Use this if you prefer scripts or can’t use direct subscriptions.
+If you want to ingest only via HTTP endpoints, disable direct subscriptions:
+- **Enable Direct Subscriptions** = OFF
 
-1) Keep module config enabled (same `configure_gateway.py` flow).
-2) In Ignition Designer: Project → Gateway Events → Tag Change
-3) Paste the script from `gateway_scripts/tag_change_forwarder_http.py`
-4) Ensure you do **not** also enable direct subscriptions, or you’ll double-ingest.
-
+Then have your producer POST to:
+- `POST http://<gateway-host>:<port>/system/zerobus/ingest`
+- `POST http://<gateway-host>:<port>/system/zerobus/ingest/batch`
 

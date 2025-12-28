@@ -49,6 +49,10 @@ public class ZerobusClientManager {
     private ZerobusStream<OTEvent> zerobusStream;
     private TableProperties<OTEvent> tableProperties;
     private StreamConfigurationOptions streamOptions;
+
+    // Reconnect throttling to avoid hot-looping when the remote service is down.
+    private final AtomicLong lastReconnectAttemptMs = new AtomicLong(0);
+    private final Object reconnectLock = new Object();
     
     /**
      * Constructor.
@@ -175,7 +179,7 @@ public class ZerobusClientManager {
      * @return true if successful, false otherwise
      */
     public boolean sendEvents(List<TagEvent> events) {
-        if (!initialized.get() || !connected.get()) {
+        if (!ensureConnected()) {
             logger.warn("Cannot send events - client not initialized or not connected");
             return false;
         }
@@ -244,8 +248,63 @@ public class ZerobusClientManager {
             lastError = "Unexpected: " + e.getMessage();
             totalFailures.incrementAndGet();
             connected.set(false);
+
+            // Attempt recovery on unexpected failures as well; some gRPC/transport failures surface here.
+            attemptRecovery();
             
             return false;
+        }
+    }
+
+    /**
+     * Best-effort: ensure the client is connected, attempting recovery/reinitialize with throttling.
+     * This prevents the system from getting "stuck" in a disconnected state after a transient failure.
+     */
+    private boolean ensureConnected() {
+        // If module is disabled, do not attempt to connect.
+        if (!config.isEnabled()) {
+            return false;
+        }
+
+        if (initialized.get() && connected.get()) {
+            return true;
+        }
+
+        synchronized (reconnectLock) {
+            if (initialized.get() && connected.get()) {
+                return true;
+            }
+
+            long now = System.currentTimeMillis();
+            long last = lastReconnectAttemptMs.get();
+            long minInterval = Math.max(1000L, config.getRetryBackoffMs());
+            if ((now - last) < minInterval) {
+                return false;
+            }
+            lastReconnectAttemptMs.set(now);
+
+            try {
+                // If we have a stream but are disconnected, try stream recovery first.
+                if (initialized.get() && !connected.get() && zerobusStream != null && zerobusSdk != null) {
+                    attemptRecovery();
+                    if (connected.get()) {
+                        return true;
+                    }
+                }
+
+                // Fallback: full reinitialize.
+                try {
+                    shutdown();
+                } catch (Exception ignored) {
+                    // shutdown is best-effort
+                }
+                initialize();
+                return connected.get();
+            } catch (Exception e) {
+                lastError = e.getMessage();
+                connected.set(false);
+                return false;
+            }
         }
     }
     

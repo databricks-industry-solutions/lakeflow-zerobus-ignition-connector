@@ -4,11 +4,22 @@ import com.example.ignition.zerobus.web.TagEventPayload;
 import com.example.ignition.zerobus.web.ZerobusConfigResource;
 import com.example.ignition.zerobus.web.ZerobusConfigResourceHolder;
 import com.example.ignition.zerobus.web.ZerobusConfigServlet;
+import com.example.ignition.zerobus.web.ZerobusConfigureRedirectPanel;
+import com.example.ignition.zerobus.web.ZerobusSettingsPage;
+import com.inductiveautomation.ignition.common.BundleUtil;
 import com.inductiveautomation.ignition.common.licensing.LicenseState;
+import com.inductiveautomation.ignition.gateway.localdb.persistence.PersistenceInterface;
 import com.inductiveautomation.ignition.gateway.model.AbstractGatewayModuleHook;
 import com.inductiveautomation.ignition.gateway.model.GatewayContext;
+import com.inductiveautomation.ignition.gateway.web.models.ConfigCategory;
+import com.inductiveautomation.ignition.gateway.web.models.DefaultConfigTab;
+import com.inductiveautomation.ignition.gateway.web.models.IConfigTab;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import simpleorm.dataset.SQuery;
+
+import java.util.Collections;
+import java.util.List;
 
 /**
  * ZerobusGatewayHook - Main entry point for the Ignition-Zerobus connector module.
@@ -21,10 +32,35 @@ import org.slf4j.LoggerFactory;
  * - startup(LicenseState): Start services and activate module
  * - shutdown(): Stop services and cleanup
  */
-public class ZerobusGatewayHook extends AbstractGatewayModuleHook {
-    
+public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements ZerobusRuntime {
+
     private static final Logger logger = LoggerFactory.getLogger(ZerobusGatewayHook.class);
-    
+    private static final String I18N_BUNDLE = "zerobus";
+    private static final String I18N_BASE_NAME = "com.example.ignition.zerobus.zerobus";
+
+    /**
+     * Configuration category for Gateway Config navigation.
+     * Uses "system" as the category name to appear in the existing System section.
+     */
+    public static final ConfigCategory CONFIG_CATEGORY =
+        new ConfigCategory("system", "Zerobus Connector");
+
+    /**
+     * Configuration tab entry for the settings page.
+     * Links the ZerobusSettingsPage to the navigation menu under System.
+     *
+     * Hardcoding "Settings" since BundleUtil doesn't work. Field labels work via Wicket resources.
+     */
+    public static final IConfigTab CONFIG_ENTRY = DefaultConfigTab.builder()
+        .category(CONFIG_CATEGORY)
+        .name("zerobus")
+        // DefaultConfigTab uses Wicket ResourceModel -> BundleUtil.getString("bundle.key") format.
+        // So we must prefix the key with the bundle name to resolve from zerobus.properties.
+        .i18n(I18N_BUNDLE + ".Zerobus.nav.settings.title")
+        .page(ZerobusConfigureRedirectPanel.class)
+        .terms("zerobus databricks connector settings configuration")
+        .build();
+
     private GatewayContext gatewayContext;
     private ZerobusClientManager zerobusClientManager;
     private TagSubscriptionService tagSubscriptionService;
@@ -38,13 +74,41 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook {
     @Override
     public void setup(GatewayContext context) {
         this.gatewayContext = context;
-        
+        ZerobusGatewayHookHolder.set(this);
+
+        // Register PersistentRecord for configuration storage
+        try {
+            context.getSchemaUpdater().updatePersistentRecords(ZerobusSettings.META);
+            logger.info("ZerobusSettings PersistentRecord registered");
+        } catch (Exception e) {
+            logger.error("Failed to register ZerobusSettings PersistentRecord", e);
+        }
+
+        // Register i18n bundle for navigation + shared strings.
+        // Field labels are handled separately via FormMeta keys + ZerobusSettings.properties / ZerobusSettingsPage.properties.
+        try {
+            BundleUtil.get().addBundle(I18N_BUNDLE, ZerobusGatewayHook.class.getClassLoader(), I18N_BASE_NAME);
+            logger.info("Zerobus i18n bundle registered (BundleUtil): {} -> {}", I18N_BUNDLE, I18N_BASE_NAME);
+
+            // Smoke test: these must be non-null for nav/title rendering
+            logger.info("Bundle test: {}={}",
+                I18N_BUNDLE + ".Zerobus.nav.settings.title",
+                BundleUtil.get().getString(I18N_BUNDLE + ".Zerobus.nav.settings.title")
+            );
+            logger.info("Bundle test: {}={}",
+                I18N_BUNDLE + ".Zerobus.nav.settings.panelTitle",
+                BundleUtil.get().getString(I18N_BUNDLE + ".Zerobus.nav.settings.panelTitle")
+            );
+        } catch (Exception e) {
+            logger.error("Failed to register zerobus i18n bundle", e);
+        }
+
         // Register configuration servlet
         try {
             // Create REST resource and set it for servlet use
             this.restResource = new ZerobusConfigResource(context, this);
             ZerobusConfigResourceHolder.set(restResource);
-            
+
             // Register servlet with Ignition's WebResourceManager.
             // We support both Ignition 8.1/8.2 (javax.servlet) and 8.3+ (jakarta.servlet) by selecting at runtime.
             Class<?> servletClass = ZerobusConfigServlet.pickServletClass();
@@ -52,13 +116,13 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook {
                 .getClass()
                 .getMethod("addServlet", String.class, Class.class)
                 .invoke(context.getWebResourceManager(), "zerobus", servletClass);
-            
+
             logger.info("Configuration servlet registered: 'zerobus' → /system/zerobus");
         } catch (Throwable t) {
             // Don't prevent the module from registering if servlet registration fails.
             logger.error("Failed to register configuration servlet (module will still load)", t);
         }
-        
+
         logger.info("Zerobus Gateway Module setup complete");
     }
     
@@ -89,14 +153,21 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook {
             
             // Only start services if module is enabled
             if (configModel.isEnabled()) {
-                startServices();
+                try {
+                    startServices();
+                } catch (IllegalArgumentException iae) {
+                    // Invalid config should not fault the module. Keep it running but stop services.
+                    logger.error("Zerobus configuration is invalid; services will remain stopped until fixed: {}", iae.getMessage());
+                } catch (Exception e) {
+                    logger.error("Failed to start Zerobus services; module will remain loaded but services are stopped.", e);
+                }
             }
             
             logger.info("Zerobus Gateway Module started successfully");
             
         } catch (Exception e) {
             logger.error("Failed to start Zerobus Gateway Module", e);
-            throw new RuntimeException("Module startup failed", e);
+            // Don't fault the module due to a startup exception; keep it loaded so the UI can be used to fix config.
         }
     }
     
@@ -107,8 +178,17 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook {
     @Override
     public void shutdown() {
         logger.info("Shutting down Zerobus Gateway Module...");
-        
+
         try {
+            ZerobusGatewayHookHolder.set(null);
+            // Unregister i18n resource bundle
+            try {
+                BundleUtil.get().removeBundle(I18N_BUNDLE);
+                logger.info("Zerobus i18n bundle unregistered: {}", I18N_BUNDLE);
+            } catch (Exception e) {
+                logger.warn("Error unregistering zerobus bundle: {}", e.getMessage());
+            }
+
             // Unregister servlet
             if (gatewayContext != null) {
                 try {
@@ -121,21 +201,21 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook {
                     logger.warn("Error unregistering servlet: {}", t.getMessage());
                 }
             }
-            
+
             // Stop tag subscriptions
             if (tagSubscriptionService != null) {
                 tagSubscriptionService.shutdown();
                 tagSubscriptionService = null;
             }
-            
+
             // Close Zerobus client
             if (zerobusClientManager != null) {
                 zerobusClientManager.shutdown();
                 zerobusClientManager = null;
             }
-            
+
             logger.info("Zerobus Gateway Module shut down successfully");
-            
+
         } catch (Exception e) {
             logger.error("Error during module shutdown", e);
         }
@@ -158,92 +238,167 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook {
     
     /**
      * Load configuration from persistent storage.
-     * 
-     * REQUIRES IMPLEMENTATION: Integrate with Ignition Gateway persistence.
-     * 
-     * Implementation approach:
-     * - Use GatewayContext.getPersistenceInterface()
-     * - Read settings from internal database
-     * - Populate ConfigModel with saved values
-     * 
-     * For initial deployment, configuration is set programmatically or via UI.
+     *
+     * Reads ZerobusSettings from the Gateway's internal database and populates
+     * the ConfigModel. If no saved settings exist, uses defaults from ConfigModel.
      */
     private void loadConfiguration() {
-        logger.debug("Loading configuration...");
-        
-        /*
-         * IMPLEMENTATION REQUIRED (Ignition SDK 8.3.2):
-         * 
-         * PersistenceInterface persistence = gatewayContext.getPersistenceInterface();
-         * SQuery<SettingsRecord> query = new SQuery<>(SettingsRecord.META);
-         * List<SettingsRecord> records = persistence.query(query);
-         * 
-         * if (!records.isEmpty()) {
-         *     SettingsRecord record = records.get(0);
-         *     configModel.setWorkspaceUrl(record.getWorkspaceUrl());
-         *     configModel.setZerobusEndpoint(record.getZerobusEndpoint());
-         *     // ... populate other fields
-         * }
-         */
-        
-        logger.debug("Configuration loaded (using defaults until persistence is implemented)");
+        logger.debug("Loading configuration from persistent storage...");
+
+        try {
+            PersistenceInterface persistence = gatewayContext.getPersistenceInterface();
+            SQuery<ZerobusSettings> query = new SQuery<>(ZerobusSettings.META);
+            List<ZerobusSettings> records = persistence.query(query);
+
+            if (!records.isEmpty()) {
+                // Load configuration from first record (should only be one)
+                ZerobusSettings settings = records.get(0);
+                this.configModel = settings.toConfigModel();
+                logger.info("Configuration loaded from database");
+            } else {
+                // No saved configuration - use defaults
+                logger.info("No saved configuration found, using defaults");
+
+                // Create initial settings record with defaults
+                ZerobusSettings settings = persistence.createNew(ZerobusSettings.META);
+                settings.fromConfigModel(this.configModel);
+                persistence.save(settings);
+                logger.info("Created default configuration in database");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to load configuration from database, using defaults", e);
+            // configModel already initialized with defaults in startup()
+        }
     }
     
     /**
      * Save configuration to persistent storage.
-     * 
-     * REQUIRES IMPLEMENTATION: Integrate with Ignition Gateway persistence.
-     * 
+     *
+     * Updates the ZerobusSettings record in the Gateway database and restarts
+     * services if necessary.
+     *
      * @param newConfig The new configuration to save
      */
     public void saveConfiguration(ConfigModel newConfig) {
-        logger.info("Saving configuration...");
-        
-        /*
-         * IMPLEMENTATION REQUIRED (Ignition SDK 8.3.2):
-         * 
-         * PersistenceInterface persistence = gatewayContext.getPersistenceInterface();
-         * 
-         * // Update or create settings record
-         * SQuery<SettingsRecord> query = new SQuery<>(SettingsRecord.META);
-         * List<SettingsRecord> records = persistence.query(query);
-         * 
-         * SettingsRecord record;
-         * if (records.isEmpty()) {
-         *     record = SettingsRecord.META.newRecord();
-         * } else {
-         *     record = records.get(0);
-         * }
-         * 
-         * record.setWorkspaceUrl(newConfig.getWorkspaceUrl());
-         * record.setZerobusEndpoint(newConfig.getZerobusEndpoint());
-         * // ... set other fields
-         * 
-         * persistence.save(record);
-         */
-        
-        boolean needsRestart = configModel.requiresRestart(newConfig);
-        this.configModel.updateFrom(newConfig);
-        
-        if (needsRestart && configModel.isEnabled()) {
-            try {
-                // Restart services with new configuration
+        logger.info("Saving configuration to persistent storage...");
+
+        try {
+            PersistenceInterface persistence = gatewayContext.getPersistenceInterface();
+
+            // Get or create settings record
+            SQuery<ZerobusSettings> query = new SQuery<>(ZerobusSettings.META);
+            List<ZerobusSettings> records = persistence.query(query);
+            ZerobusSettings settings;
+
+            if (records.isEmpty()) {
+                // Create new record
+                settings = persistence.createNew(ZerobusSettings.META);
+                logger.debug("Creating new settings record");
+            } else {
+                // Update existing record
+                settings = records.get(0);
+                logger.debug("Updating existing settings record");
+            }
+
+            // Check if restart is needed before updating
+            boolean needsRestart = configModel.requiresRestart(newConfig);
+
+            // Update record from config model
+            settings.fromConfigModel(newConfig);
+
+            // Save to database
+            persistence.save(settings);
+            logger.info("Configuration saved to database");
+
+            // Update in-memory config
+            this.configModel.updateFrom(newConfig);
+
+            // Restart services if needed
+            if (needsRestart && configModel.isEnabled()) {
+                try {
+                    // Shutdown existing services
+                    if (tagSubscriptionService != null) {
+                        tagSubscriptionService.shutdown();
+                    }
+                    if (zerobusClientManager != null) {
+                        zerobusClientManager.shutdown();
+                    }
+
+                    // Start services with new configuration
+                    try {
+                        startServices();
+                        logger.info("Services restarted with new configuration");
+                    } catch (IllegalArgumentException iae) {
+                        logger.error("New configuration is invalid; services will remain stopped until fixed: {}", iae.getMessage());
+                    }
+
+                } catch (Exception e) {
+                    logger.error("Failed to restart services with new configuration; services will remain stopped.", e);
+                }
+            } else if (!needsRestart) {
+                logger.info("Configuration updated, no service restart required");
+            } else {
+                logger.info("Configuration saved, services not started (module disabled)");
+            }
+
+        } catch (Exception e) {
+            logger.error("Failed to save configuration to database", e);
+            throw new RuntimeException("Configuration save failed", e);
+        }
+    }
+
+    /**
+     * Apply a new configuration to the running module without touching persistence.
+     *
+     * This is intended for use by the Gateway Config UI lifecycle (RecordEditForm onAfterCommit),
+     * where a PersistenceSession is already open on the request thread. Calling persistence APIs
+     * from that thread can trigger "session already open" errors.
+     */
+    public void applyRuntimeConfiguration(ConfigModel newConfig) {
+        try {
+            boolean needsRestart = configModel.requiresRestart(newConfig);
+
+            // Update in-memory config immediately so /system/zerobus/config reflects UI changes.
+            this.configModel.updateFrom(newConfig);
+
+            // If disabled, ensure services are stopped.
+            if (!configModel.isEnabled()) {
                 if (tagSubscriptionService != null) {
                     tagSubscriptionService.shutdown();
                 }
                 if (zerobusClientManager != null) {
                     zerobusClientManager.shutdown();
                 }
-                
-                startServices();
-                logger.info("Services restarted with new configuration");
-                
-            } catch (Exception e) {
-                logger.error("Failed to restart services with new configuration", e);
+                logger.info("Runtime configuration applied; services stopped (module disabled)");
+                return;
             }
+
+            if (!needsRestart) {
+                logger.info("Runtime configuration applied; no service restart required");
+                return;
+            }
+
+            // Restart services with new configuration
+            try {
+                if (tagSubscriptionService != null) {
+                    tagSubscriptionService.shutdown();
+                }
+                if (zerobusClientManager != null) {
+                    zerobusClientManager.shutdown();
+                }
+
+                try {
+                    startServices();
+                    logger.info("Runtime configuration applied; services restarted");
+                } catch (IllegalArgumentException iae) {
+                    logger.error("Runtime configuration is invalid; services will remain stopped until fixed: {}", iae.getMessage());
+                }
+            } catch (Exception e) {
+                logger.error("Failed applying runtime configuration; services will remain stopped.", e);
+            }
+        } catch (Exception e) {
+            logger.error("Failed applying runtime configuration", e);
         }
-        
-        logger.info("Configuration saved successfully");
     }
     
     /**
@@ -275,6 +430,17 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook {
     public boolean isFreeModule() {
         // Must match module.xml <freeModule>true</freeModule>
         return true;
+    }
+
+    /**
+     * Register configuration panels for the Gateway Config UI.
+     * This makes the Zerobus settings page appear in the Gateway web interface.
+     *
+     * @return List of configuration tabs to display
+     */
+    @Override
+    public List<? extends IConfigTab> getConfigPanels() {
+        return Collections.singletonList(CONFIG_ENTRY);
     }
     
     /**

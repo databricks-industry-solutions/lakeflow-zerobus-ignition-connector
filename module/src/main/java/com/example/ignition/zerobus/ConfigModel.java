@@ -33,9 +33,6 @@ public class ConfigModel implements Serializable {
     /** OAuth2 client secret for authentication */
     private String oauthClientSecret = "";
     
-    /** OAuth2 token endpoint (optional, defaults to Databricks standard) */
-    private String oauthTokenEndpoint = "";
-    
     // === Unity Catalog Settings ===
     
     /** Target Unity Catalog table (format: catalog.schema.table) */
@@ -52,8 +49,15 @@ public class ConfigModel implements Serializable {
     
     // === Tag Selection Settings ===
     
+    /**
+     * When true, the module subscribes directly to tags using Gateway TagManager.
+     * When false, the module will NOT subscribe to tags and will ingest only via HTTP endpoints
+     * (/system/zerobus/ingest and /ingest/batch), e.g. from Event Streams or scripts.
+     */
+    private boolean enableDirectSubscriptions = true;
+
     /** Tag selection mode: "folder", "pattern", "explicit" */
-    private String tagSelectionMode = "folder";
+    private String tagSelectionMode = "explicit";
     
     /** Tag folder path for folder mode (e.g., "[default]Tag Group/") */
     private String tagFolderPath = "";
@@ -157,14 +161,6 @@ public class ConfigModel implements Serializable {
         this.oauthClientSecret = oauthClientSecret;
     }
     
-    public String getOauthTokenEndpoint() {
-        return oauthTokenEndpoint;
-    }
-    
-    public void setOauthTokenEndpoint(String oauthTokenEndpoint) {
-        this.oauthTokenEndpoint = oauthTokenEndpoint;
-    }
-    
     public String getTargetTable() {
         return targetTable;
     }
@@ -192,6 +188,14 @@ public class ConfigModel implements Serializable {
     
     public void setTagSelectionMode(String tagSelectionMode) {
         this.tagSelectionMode = tagSelectionMode;
+    }
+
+    public boolean isEnableDirectSubscriptions() {
+        return enableDirectSubscriptions;
+    }
+
+    public void setEnableDirectSubscriptions(boolean enableDirectSubscriptions) {
+        this.enableDirectSubscriptions = enableDirectSubscriptions;
     }
     
     public String getTagFolderPath() {
@@ -373,38 +377,45 @@ public class ConfigModel implements Serializable {
             parseTableName();
         }
         
-        if (workspaceUrl == null || workspaceUrl.isEmpty()) {
-            errors.add("Workspace URL is required");
-        }
-        
-        if (zerobusEndpoint == null || zerobusEndpoint.isEmpty()) {
-            errors.add("Zerobus endpoint is required");
-        }
-        
-        if (oauthClientId == null || oauthClientId.isEmpty()) {
-            errors.add("OAuth client ID is required");
-        }
-        
-        if (oauthClientSecret == null || oauthClientSecret.isEmpty()) {
-            errors.add("OAuth client secret is required");
-        }
-        
-        if (targetTable == null || targetTable.isEmpty()) {
-            errors.add("Target table is required");
-        } else if (catalogName.isEmpty() || schemaName.isEmpty() || tableName.isEmpty()) {
-            errors.add("Target table must be in format: catalog.schema.table");
-        }
-        
-        if ("folder".equals(tagSelectionMode) && (tagFolderPath == null || tagFolderPath.isEmpty())) {
-            errors.add("Tag folder path is required when using folder selection mode");
-        }
-        
-        if ("pattern".equals(tagSelectionMode) && (tagPathPattern == null || tagPathPattern.isEmpty())) {
-            errors.add("Tag path pattern is required when using pattern selection mode");
-        }
-        
-        if ("explicit".equals(tagSelectionMode) && (explicitTagPaths == null || explicitTagPaths.isEmpty())) {
-            errors.add("At least one tag path is required when using explicit selection mode");
+        // When the module is disabled, allow saving partial configs so users can incrementally configure.
+        // When enabled, enforce required fields.
+        if (enabled) {
+            if (workspaceUrl == null || workspaceUrl.isEmpty()) {
+                errors.add("Workspace URL is required");
+            }
+
+            if (zerobusEndpoint == null || zerobusEndpoint.isEmpty()) {
+                errors.add("Zerobus endpoint is required");
+            }
+
+            if (oauthClientId == null || oauthClientId.isEmpty()) {
+                errors.add("OAuth client ID is required");
+            }
+
+            if (oauthClientSecret == null || oauthClientSecret.isEmpty()) {
+                errors.add("OAuth client secret is required");
+            }
+
+            if (targetTable == null || targetTable.isEmpty()) {
+                errors.add("Target table is required");
+            } else if (catalogName.isEmpty() || schemaName.isEmpty() || tableName.isEmpty()) {
+                errors.add("Target table must be in format: catalog.schema.table");
+            }
+
+            // Only validate tag selection when direct subscriptions are enabled.
+            if (enableDirectSubscriptions) {
+                if ("folder".equals(tagSelectionMode) && (tagFolderPath == null || tagFolderPath.isEmpty())) {
+                    errors.add("Tag folder path is required when using folder selection mode");
+                }
+
+                if ("pattern".equals(tagSelectionMode) && (tagPathPattern == null || tagPathPattern.isEmpty())) {
+                    errors.add("Tag path pattern is required when using pattern selection mode");
+                }
+
+                if ("explicit".equals(tagSelectionMode) && (explicitTagPaths == null || explicitTagPaths.isEmpty())) {
+                    errors.add("At least one tag path is required when using explicit selection mode");
+                }
+            }
         }
         
         if (batchSize <= 0 || batchSize > 10000) {
@@ -430,6 +441,7 @@ public class ConfigModel implements Serializable {
             || !Objects.equals(this.oauthClientId, newConfig.oauthClientId)
             || !Objects.equals(this.oauthClientSecret, newConfig.oauthClientSecret)
             || !Objects.equals(this.targetTable, newConfig.targetTable)
+            || this.enableDirectSubscriptions != newConfig.enableDirectSubscriptions
             || !Objects.equals(this.tagSelectionMode, newConfig.tagSelectionMode)
             || !Objects.equals(this.tagFolderPath, newConfig.tagFolderPath)
             || !Objects.equals(this.tagPathPattern, newConfig.tagPathPattern)
@@ -459,9 +471,9 @@ public class ConfigModel implements Serializable {
         this.zerobusEndpoint = other.zerobusEndpoint;
         this.oauthClientId = other.oauthClientId;
         this.oauthClientSecret = other.oauthClientSecret;
-        this.oauthTokenEndpoint = other.oauthTokenEndpoint;
         this.targetTable = other.targetTable;
         this.parseTableName();
+        this.enableDirectSubscriptions = other.enableDirectSubscriptions;
         this.tagSelectionMode = other.tagSelectionMode;
         this.tagFolderPath = other.tagFolderPath;
         this.tagPathPattern = other.tagPathPattern;

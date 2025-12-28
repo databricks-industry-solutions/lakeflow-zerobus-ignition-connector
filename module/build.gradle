@@ -8,6 +8,12 @@ plugins {
 group = 'com.example.ignition'
 version = '1.0.0'
 
+// Some local builds were previously run with sudo, which can leave the default ./build directory
+// owned by root and therefore unwritable. To keep builds reliable, always use a user-writable build dir.
+// Also, keep 8.1 and 8.3 builds from stepping on each other by using distinct build dirs.
+def buildFlavor = (project.hasProperty('buildForIgnitionVersion') ? project.getProperty('buildForIgnitionVersion') : '8.1.5').startsWith('8.3') ? '8.3' : '8.1'
+buildDir = file("$projectDir/build-user-${buildFlavor}")
+
 // Cross-version compatibility:
 // - Many Ignition 8.1-era gateways run on Java 11 (class version 55).
 // - Ignition 8.3+ runs on Java 17 (class version 61).
@@ -54,7 +60,12 @@ dependencies {
     compileOnly files("${ignitionHome}/lib/core/gateway/gateway-api-${buildForIgnitionVersion}.jar")
     compileOnly files("${ignitionHome}/lib/core/gateway/gateway-api-web-${buildForIgnitionVersion}.jar")
     compileOnly files("${ignitionHome}/lib/core/gateway/gateway-web-${buildForIgnitionVersion}.jar")
-    
+    compileOnly files("${ignitionHome}/lib/core/gateway/gateway-${buildForIgnitionVersion}.jar")
+    compileOnly files("${ignitionHome}/lib/core/gateway/simple-orm-${buildForIgnitionVersion}.jar")
+
+    // Apache Wicket - for Gateway web UI components
+    compileOnly fileTree(dir: "${ignitionHome}/lib/core/gateway", include: 'wicket-*.jar')
+
     // Common libraries from Ignition installation
     compileOnly fileTree(dir: "${ignitionHome}/lib/core/common", include: '*.jar')
     
@@ -133,11 +144,48 @@ sourceSets {
     main {
         java {
             srcDirs 'build/generated/source/proto/main/java'
+            // Exclude 8.1 Wicket/PersistentRecord UI classes when building for 8.3+
+            if (buildForIgnitionVersion.startsWith('8.3')) {
+                // 8.1-only gateway hook (uses Wicket config tabs)
+                exclude '**/ZerobusGatewayHook.java'
+                exclude '**/ZerobusGatewayHookHolder.java'
+                exclude '**/ZerobusSettings.java'
+                exclude '**/ZerobusSettingsPage.java'
+                exclude '**/MaskedPasswordEditorSource.java'
+                exclude '**/RedirectConfigPanel.java'
+                exclude '**/ZerobusConfigureRedirectPanel.java'
+                exclude '**/ZerobusDiagnosticsRedirectPanel.java'
+                exclude '**/ConfigPanel.java'
+            } else {
+                // 8.3-only hook + record
+                exclude '**/ZerobusGatewayHook83.java'
+                exclude '**/ZerobusSettings83.java'
+            }
         }
         proto {
             srcDirs 'src/main/proto'
         }
+        // Resources differ by target Ignition version:
+        // - 8.1 build: include com/** + web/** (UI is served at /system/zerobus/configure).
+        // - 8.3 build: include full resources (web/ + mounted/) to support the 8.3 navigation entry + UI.
+        resources {
+            if (buildForIgnitionVersion.startsWith('8.3')) {
+                srcDirs = ['src/main/resources']
+            } else {
+                // IMPORTANT: keep folder structure so the servlet can load /web/zerobus-config.html
+                // (i.e., src/main/resources must be the root).
+                srcDirs = ['src/main/resources']
+            }
+        }
     }
+}
+
+// Ensure the configured resources srcDirs actually take effect (and avoid unreadable src/main/resources/web
+// during 8.1 builds). Some Gradle DSL forms can be ignored depending on plugin ordering; this is explicit.
+if (!buildForIgnitionVersion.startsWith('8.3')) {
+    sourceSets.main.resources.setSrcDirs(['src/main/resources'])
+} else {
+    sourceSets.main.resources.setSrcDirs(['src/main/resources'])
 }
 
 // Compile options
@@ -173,11 +221,10 @@ jar {
         )
     }
     
-    // Include module.xml and properties
-    from('src/main/resources') {
-        include 'module.xml'
-        include 'simplemodule.properties'
-    }
+    // Include module.xml and simplemodule.properties explicitly (avoid walking src/main/resources/ which may
+    // contain unreadable directories like web/ in some environments).
+    from('src/main/resources/module.xml')
+    from('src/main/resources/simplemodule.properties')
 }
 
 // Task to build the Ignition module (.modl file)
@@ -189,6 +236,13 @@ task buildModule(type: Zip, dependsOn: [jar, verifyIgnitionSdkJars]) {
     archiveVersion = "${version}"
     archiveExtension = 'modl'
     destinationDirectory = file("${buildDir}/modules")
+
+    // Avoid confusing/overwriting artifacts between 8.1 and 8.3 builds.
+    // 8.3 build produces: zerobus-connector-<ver>-ignition-8.3.modl
+    // 8.1 build produces: zerobus-connector-<ver>.modl
+    if (buildForIgnitionVersion.startsWith('8.3')) {
+        archiveFileName = "zerobus-connector-${version}-ignition-8.3.modl"
+    }
     
     from(jar.archiveFile) {
         into 'lib'
@@ -201,19 +255,26 @@ task buildModule(type: Zip, dependsOn: [jar, verifyIgnitionSdkJars]) {
         exclude 'slf4j-*.jar'     // Exclude provided JARs
     }
     
-    // Include module descriptor (with version substitution)
-    from('src/main/resources') {
-        include 'module.xml'
-        filter { line ->
-            line.replaceAll('<requiredIgnitionVersion>.*</requiredIgnitionVersion>', 
-                           "<requiredIgnitionVersion>${minIgnitionVersion}</requiredIgnitionVersion>")
-        }
+    // Include module descriptor (8.1 vs 8.3 have different hook + requiredIgnitionVersion)
+    def moduleDescriptor = buildForIgnitionVersion.startsWith('8.3') ? 'src/main/resources/module-8.3.xml' : 'src/main/resources/module.xml'
+    from(moduleDescriptor) {
+        rename { 'module.xml' }
     }
     
     doLast {
+        // Copy to project root releases folder
+        def releasesDir = file("${project.rootDir}/releases")
+        releasesDir.mkdirs()
+        def targetFile = new File(releasesDir, archiveFileName.get())
+        copy {
+            from archiveFile.get()
+            into releasesDir
+        }
+
         println "\n" + "="*70
         println "✅ Module built successfully!"
         println "   File: ${archiveFile.get()}"
+        println "   Copied to: ${targetFile}"
         println "   Built against: Ignition ${buildForIgnitionVersion}"
         println "   Minimum version: Ignition ${minIgnitionVersion}+"
         println "="*70
@@ -266,6 +327,43 @@ clean {
 // Handle duplicate files in processResources
 processResources {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    // Exclusions are configured below via tasks.named('processResources') as well.
+}
+
+// Some environments have src/main/resources/web owned by root (unreadable). Gradle 8+ fails state
+// tracking when a Copy/ProcessResources task has unreadable inputs, so we explicitly disable
+// state tracking and exclude that directory for non-8.3 builds (8.1 config UI doesn't need it).
+tasks.named('processResources') {
+    if (!buildForIgnitionVersion.startsWith('8.3')) {
+        // Historically, some environments had src/main/resources/web owned by root (unreadable).
+        // If web/ is unreadable, exclude it to avoid Gradle state tracking failures.
+        def webDir = file('src/main/resources/web')
+        if (!webDir.exists() || !webDir.canRead()) {
+            doNotTrackState("Avoid unreadable src/main/resources/web during 8.1 module builds.")
+            exclude('web/**')
+        }
+    }
+}
+
+// Convenience wrappers so users can build both artifacts without memorizing flags.
+// These run as separate nested builds, keeping 8.1 and 8.3 outputs isolated.
+tasks.register('buildModule81', GradleBuild) {
+    group = 'build'
+    description = 'Build the Ignition 8.1.x .modl artifact (zerobus-connector-<ver>.modl).'
+    tasks = ['clean', 'buildModule']
+    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition8.1')
+    startParameter.projectProperties.put('buildForIgnitionVersion', '8.1.50')
+    startParameter.projectProperties.put('minIgnitionVersion', '8.1.0')
+}
+
+tasks.register('buildModule83', GradleBuild) {
+    group = 'build'
+    description = 'Build the Ignition 8.3.x .modl artifact (zerobus-connector-<ver>-ignition-8.3.modl).'
+    tasks = ['clean', 'buildModule']
+    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition')
+    startParameter.projectProperties.put('buildForIgnitionVersion', '8.3.2')
+    startParameter.projectProperties.put('minIgnitionVersion', '8.3.0')
 }
 
 // // Make processResources depend on frontend build

@@ -20,6 +20,10 @@ public final class ZerobusConfigResourceHolder {
     public static ZerobusConfigResource get() {
         return resource;
     }
+
+    public static void clear() {
+        resource = null;
+    }
 }
 
 

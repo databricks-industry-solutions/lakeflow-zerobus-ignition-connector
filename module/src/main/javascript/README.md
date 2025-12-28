@@ -1,6 +1,12 @@
-# Zerobus Connector React Frontend
+# Zerobus Connector Frontend (legacy React)
 
-React-based configuration UI for the Ignition Zerobus Connector Gateway module.
+This folder contains a legacy React-based configuration UI.
+
+**Current implementation**: the module serves a static HTML UI from:
+- `module/src/main/resources/web/zerobus-config.html` (served at `GET /system/zerobus/configure`)
+
+Ignition 8.3 integrates this UI into the left navigation via a small SystemJS shim:
+- `module/src/main/resources/mounted/js/web-ui/zerobus.js`
 
 ## Development
 
@@ -32,11 +38,8 @@ This creates optimized static files in the `build/` directory.
 
 ### Integration with Ignition Module
 
-The Gradle build automatically:
-1. Installs Node.js and npm
-2. Runs `npm install`
-3. Runs `npm run build`
-4. Copies `build/` contents to `src/main/resources/web/`
+If you choose to revive the React UI, you can wire the output into the module’s web resources.
+Today, the module does **not** require this React build to function.
 
 These files are then packaged into the `.modl` file and served by the Ignition Gateway at `/system/zerobus/` (or configured mount point).
 
@@ -59,7 +62,7 @@ The UI expects the following Gateway REST endpoints (to be implemented in Java):
 - `POST /system/zerobus/test-connection` - Test Databricks connection
 - `GET /system/zerobus/diagnostics` - Get diagnostics info
 
-See `ZerobusRestResource.java` (to be created) for implementation.
+The REST endpoints are implemented in the Java module under `/system/zerobus/*`.
 
 ## Configuration Fields
 

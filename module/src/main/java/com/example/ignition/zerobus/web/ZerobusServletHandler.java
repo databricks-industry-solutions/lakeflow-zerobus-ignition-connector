@@ -1,14 +1,19 @@
 package com.example.ignition.zerobus.web;
 
 import com.example.ignition.zerobus.ConfigModel;
-import com.example.ignition.zerobus.ZerobusGatewayHook;
+import com.example.ignition.zerobus.ZerobusRuntime;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.InputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Shared HTTP handler logic for both servlet namespaces:
@@ -29,14 +34,14 @@ public final class ZerobusServletHandler {
         String path = normalizePath(pathInfo);
 
         ZerobusConfigResource resource = ZerobusConfigResourceHolder.get();
-        ZerobusGatewayHook hook = (resource != null) ? resource.getGatewayHook() : null;
+        ZerobusRuntime runtime = (resource != null) ? resource.getRuntime() : null;
 
         try {
             if ("GET".equalsIgnoreCase(method)) {
-                return handleGet(hook, path);
+                return handleGet(runtime, path);
             }
             if ("POST".equalsIgnoreCase(method)) {
-                return handlePost(hook, path, body == null ? "" : body);
+                return handlePost(runtime, path, body == null ? "" : body);
             }
             return Response.json(405, "{\"error\":\"method_not_allowed\"}");
         } catch (Throwable t) {
@@ -45,24 +50,29 @@ public final class ZerobusServletHandler {
         }
     }
 
-    private static Response handleGet(ZerobusGatewayHook hook, String path) {
+    private static Response handleGet(ZerobusRuntime runtime, String path) {
+        // Serve HTML configuration page
+        if ("/configure".equals(path)) {
+            return serveConfigPage();
+        }
+
         if ("/".equals(path) || "/health".equals(path)) {
-            boolean enabled = hook != null && hook.getConfigModel() != null && hook.getConfigModel().isEnabled();
+            boolean enabled = runtime != null && runtime.getConfigModel() != null && runtime.getConfigModel().isEnabled();
             return Response.json(200, "{\"status\":\"ok\",\"enabled\":" + enabled + "}");
         }
 
         if ("/diagnostics".equals(path)) {
-            if (hook == null) {
+            if (runtime == null) {
                 return Response.text(500, "Zerobus diagnostics unavailable (hook not initialized)");
             }
-            return Response.text(200, hook.getDiagnosticsInfo());
+            return Response.text(200, runtime.getDiagnosticsInfo());
         }
 
         if ("/config".equals(path)) {
-            if (hook == null) {
+            if (runtime == null) {
                 return Response.json(500, "{\"error\":\"hook_not_initialized\"}");
             }
-            ConfigModel cfg = hook.getConfigModel();
+            ConfigModel cfg = runtime.getConfigModel();
             if (cfg == null) {
                 return Response.json(500, "{\"error\":\"config_not_initialized\"}");
             }
@@ -84,8 +94,8 @@ public final class ZerobusServletHandler {
         return Response.json(404, "{\"error\":\"not_found\"}");
     }
 
-    private static Response handlePost(ZerobusGatewayHook hook, String path, String body) {
-        if (hook == null) {
+    private static Response handlePost(ZerobusRuntime runtime, String path, String body) {
+        if (runtime == null) {
             return Response.json(500, "{\"error\":\"hook_not_initialized\"}");
         }
 
@@ -101,6 +111,17 @@ public final class ZerobusServletHandler {
                 return Response.json(400, "{\"error\":\"invalid_config\"}");
             }
 
+            // Preserve secret if UI sends blank/"****" (masked). This allows updating other fields without
+            // overwriting the stored secret.
+            String incomingSecret = newCfg.getOauthClientSecret();
+            if (incomingSecret == null || incomingSecret.isBlank() || "****".equals(incomingSecret)) {
+                ConfigModel existing = runtime.getConfigModel();
+                String existingSecret = existing == null ? null : existing.getOauthClientSecret();
+                if (existingSecret != null && !existingSecret.isBlank()) {
+                    newCfg.setOauthClientSecret(existingSecret);
+                }
+            }
+
             List<String> errors = newCfg.validate();
             if (errors != null && !errors.isEmpty()) {
                 JsonObject resp = new JsonObject();
@@ -110,7 +131,15 @@ public final class ZerobusServletHandler {
                 return Response.json(400, gson.toJson(resp));
             }
 
-            hook.saveConfiguration(newCfg);
+            try {
+                runtime.saveConfiguration(newCfg);
+            } catch (Exception e) {
+                JsonObject resp = new JsonObject();
+                resp.addProperty("success", false);
+                resp.addProperty("error", "save_failed");
+                resp.addProperty("message", e.getMessage() == null ? "save_failed" : e.getMessage());
+                return Response.json(500, gson.toJson(resp));
+            }
 
             JsonObject resp = new JsonObject();
             resp.addProperty("success", true);
@@ -118,7 +147,7 @@ public final class ZerobusServletHandler {
         }
 
         if ("/test-connection".equals(path)) {
-            boolean ok = hook.testConnection();
+            boolean ok = runtime.testConnection();
             JsonObject resp = new JsonObject();
             resp.addProperty("success", ok);
             resp.addProperty("message", ok ? "Connection test successful" : "Connection test failed");
@@ -135,7 +164,7 @@ public final class ZerobusServletHandler {
             if (payload == null) {
                 return Response.json(400, "{\"error\":\"invalid_payload\"}");
             }
-            boolean accepted = hook.ingestTagEvent(payload);
+            boolean accepted = runtime.ingestTagEvent(payload);
             JsonObject resp = new JsonObject();
             resp.addProperty("received", 1);
             resp.addProperty("accepted", accepted ? 1 : 0);
@@ -152,7 +181,7 @@ public final class ZerobusServletHandler {
             }
 
             int received = payloads == null ? 0 : payloads.length;
-            int accepted = received == 0 ? 0 : hook.ingestTagEventBatch(payloads);
+            int accepted = received == 0 ? 0 : runtime.ingestTagEventBatch(payloads);
             int dropped = Math.max(0, received - accepted);
 
             JsonObject resp = new JsonObject();
@@ -173,6 +202,28 @@ public final class ZerobusServletHandler {
         return p.isEmpty() ? "/" : p;
     }
 
+    /**
+     * Serve the HTML configuration page from resources
+     */
+    private static Response serveConfigPage() {
+        try {
+            InputStream is = ZerobusServletHandler.class.getResourceAsStream("/web/zerobus-config.html");
+            if (is == null) {
+                logger.error("Configuration page resource not found: /web/zerobus-config.html");
+                return Response.html(404, "<html><body><h1>404 - Configuration page not found</h1></body></html>");
+            }
+
+            String html = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))
+                    .lines()
+                    .collect(Collectors.joining("\n"));
+
+            return Response.html(200, html);
+        } catch (Exception e) {
+            logger.error("Failed to load configuration page", e);
+            return Response.html(500, "<html><body><h1>500 - Failed to load configuration page</h1></body></html>");
+        }
+    }
+
     public static final class Response {
         public final int status;
         public final String contentType;
@@ -190,6 +241,10 @@ public final class ZerobusServletHandler {
 
         public static Response text(int status, String body) {
             return new Response(status, "text/plain", body);
+        }
+
+        public static Response html(int status, String body) {
+            return new Response(status, "text/html; charset=UTF-8", body);
         }
     }
 }

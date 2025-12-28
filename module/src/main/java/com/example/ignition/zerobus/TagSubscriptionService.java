@@ -180,6 +180,12 @@ public class TagSubscriptionService {
                 return;
             }
 
+            // If configured for HTTP-ingest-only, don't subscribe
+            if (!config.isEnableDirectSubscriptions()) {
+                logger.info("Direct subscriptions disabled; skipping tag subscriptions (HTTP ingest only)");
+                return;
+            }
+
             // Only implement explicit mode for now; it's the safest and most deterministic.
             String mode = config.getTagSelectionMode();
             if (!"explicit".equals(mode)) {

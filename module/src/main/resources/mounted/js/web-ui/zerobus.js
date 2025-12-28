@@ -1,0 +1,3 @@
+/*! Zerobus minimal 8.3 Gateway UI module (SystemJS) */
+!function(e,t){"object"==typeof exports&&"object"==typeof module?module.exports=t(require("react")):"function"==typeof define&&define.amd?define("zerobus",["react"],t):"object"==typeof exports?exports.zerobus=t(require("react")):e.zerobus=t(e.react)}(self,(function(e){return(()=>{"use strict";function t(){return e.createElement("div",{style:{height:"calc(100vh - 120px)",width:"100%",display:"flex",flexDirection:"column"}},e.createElement("iframe",{title:"Zerobus Configuration",src:"/system/zerobus/configure",style:{flex:"1 1 auto",width:"100%",border:"0"}}))}return{ZerobusConfig:t}})()}));
+

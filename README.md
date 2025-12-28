@@ -2,109 +2,27 @@
 
 **Version**: `1.0.0`  
 **Purpose**: Stream Ignition tag-change events to Databricks Delta tables via Zerobus (gRPC + protobuf).  
-**Ignition compatibility**: 8.1.x and 8.3.x (requires different `.modl` artifacts due to `module.xml` compatibility checks).  
-**Ingestion modes**:
-- **Direct subscriptions (recommended)**: module subscribes to tags via the Gateway TagManager.
-- **Gateway Tag Change Script → HTTP ingest**: script posts JSON to module endpoints.
-- **Event Streams → HTTP ingest (8.3+)**: Designer pipeline posts to module endpoints.
+**Ignition compatibility**: **8.1.x** and **8.3.x** (different `.modl` artifacts).  
+**Configuration**: **GUI-only** (no Python config scripts).
 
 ## Table of contents
 
-- [Choose your setup path](#choose-your-setup-path)
-- [Architecture](#architecture)
-- [Repository layout](#repository-layout)
+- [Production deployment](#production-deployment)
 - [Release artifacts (two `.modl` files)](#release-artifacts-two-modl-files)
-- [Quick start](#quick-start)
-- [Configuration](#configuration)
-- [Ingestion modes (when to use which)](#ingestion-modes-when-to-use-which)
-- [API endpoints](#api-endpoints)
+- [Configuration (GUI)](#configuration-gui)
+- [Verify ingestion](#verify-ingestion)
 - [Monitoring & troubleshooting](#monitoring--troubleshooting)
-- [Build the module (optional)](#build-the-module-optional)
-- [Code flow & structure](#code-flow--structure)
+- [Developer build](#developer-build)
+- [Reference](#reference)
 
-## Choose your setup path
+## Production deployment
 
-| Your Ignition version | Recommended path | Optional paths |
-|---|---|---|
-| **8.1.50** (port `8099` in our local setup) | **Direct subscriptions** | Gateway Tag Change Script |
-| **8.3.2** (port `8088` in our local setup) | **Direct subscriptions** | Event Streams, Gateway Tag Change Script |
+For the full production runbook (install, configure, verify, troubleshooting), see `DEPLOYMENT.md`.
 
-Versioned onboarding guides:
-- `onboarding/ignition/8.1.50/README.md`
-- `onboarding/ignition/8.3.2/README.md`
-
-## Architecture
-
-### Common data path (all modes)
-
-```
-Ignition tags  →  Zerobus Connector module  →  Zerobus (gRPC/protobuf)  →  Databricks Delta (Bronze)
-                   (batching + rate limit)
-```
-
-### Trigger mechanisms (what changes by mode)
-
-**Direct subscriptions (recommended)**
-
-```
-Tags → Gateway TagManager subscriptions → module queue/batcher → Zerobus → Delta
-```
-
-**Gateway Tag Change Script → HTTP ingest**
-
-```
-Tags → Gateway Tag Change Script → POST /system/zerobus/ingest/batch → module → Zerobus → Delta
-```
-
-**Event Streams (Ignition 8.3+) → HTTP ingest**
-
-```
-Tags → Event Streams (Designer) → POST /system/zerobus/ingest/batch → module → Zerobus → Delta
-```
-
-### Gateway → Zerobus → Databricks: what’s the transport?
-
-There are **two hops**:
-
-#### 1) Ignition Gateway → Zerobus Connector module
-
-This hop is either **in-process** (no network) or **HTTP/JSON**, depending on ingestion mode:
-
-- **Direct subscriptions (recommended)**: the module subscribes to tags via the Gateway TagManager and receives `TagChangeEvent`s as **in-JVM callbacks** (no HTTP, no gRPC).
-- **Gateway Tag Change Script**: a Gateway script **POSTs JSON** to:
-  - `POST /system/zerobus/ingest` (single event)
-  - `POST /system/zerobus/ingest/batch` (array of events)
-- **Event Streams (Ignition 8.3+)**: Event Streams **POSTs JSON** to the same ingest endpoints.
-
-#### 2) Zerobus Connector module → Databricks
-
-This hop is always **Zerobus ingest over gRPC + protobuf**:
-
-- The module converts tag events to protobuf (`module/src/main/proto/ot_event.proto`) and streams over **gRPC** to the Databricks Zerobus endpoint.
-- Authentication uses **OAuth2 client credentials** (service principal).
-
-## Repository layout
-
-```
-module/                              # Ignition module source + Gradle build
-releases/
-  zerobus-connector-1.0.0.modl        # for Ignition 8.1.x
-  zerobus-connector-1.0.0-ignition-8.3.modl  # for Ignition 8.3.x
-scripts/
-  configure_gateway.py                # interactive config push (prompts for secret)
-onboarding/
-  databricks/
-    01_create_tables.py               # creates Bronze table + minimal scaffolding
-  ignition/
-    8.1.50/
-      config/zerobus_config_direct_explicit.json.example
-      gateway_scripts/tag_change_forwarder_http.py
-      README.md
-    8.3.2/
-      config/zerobus_config_direct_explicit.json.example
-      config/zerobus_config_event_streams.json.example
-      README.md
-```
+At a glance:
+- Install the correct `.modl` for your Ignition version (below).
+- Configure in the Gateway UI at `/system/zerobus/configure`.
+- Verify via `/system/zerobus/diagnostics` and Databricks SQL.
 
 ## Release artifacts (two `.modl` files)
 
@@ -144,25 +62,29 @@ The **runtime behavior and code are the same**; the important differences are:
 
 Gateway UI → Config → Modules → Install/Upgrade → upload the `.modl`.
 
-### 3) Configure (no Designer required)
+### 3) Configure (UI-first; no Designer required)
 
-Use `scripts/configure_gateway.py` (it prompts for `oauthClientSecret` securely).
+### Ignition 8.1.x (GUI configuration)
 
-**Ignition 8.1.50 example (gateway on `8099`)**
+1) Install `releases/zerobus-connector-1.0.0.modl` (Gateway UI → Config → Modules).
+2) Configure in UI: `http://localhost:8099/system/zerobus/configure`
+3) For the standard “subscribe to tags” mode:
+   - **Enable Direct Subscriptions** = ON
+   - **Tag Selection Mode** = `explicit`
+   - **Explicit Tag Paths** = your tag list
+4) Set Databricks fields + **Enabled** = ON, then **Save**.
 
-```bash
-python3 scripts/configure_gateway.py \
-  --gateway-url http://localhost:8099 \
-  --config onboarding/ignition/8.1.50/config/zerobus_config_direct_explicit.json.example
-```
+### Ignition 8.3.x (GUI configuration)
 
-**Ignition 8.3.2 example (gateway on `8088`)**
-
-```bash
-python3 scripts/configure_gateway.py \
-  --gateway-url http://localhost:8088 \
-  --config onboarding/ignition/8.3.2/config/zerobus_config_direct_explicit.json.example
-```
+1) Install `releases/zerobus-connector-1.0.0-ignition-8.3.modl` (Gateway UI → `http://localhost:8088/app` → Configure → Modules).
+2) Configure in UI:
+   - Nav: **Platform → System → Zerobus Config**
+   - Direct: `http://localhost:8088/system/zerobus/configure`
+3) For the standard “subscribe to tags” mode:
+   - **Enable Direct Subscriptions** = ON
+   - **Tag Selection Mode** = `explicit`
+   - **Explicit Tag Paths** = your tag list
+4) Set Databricks fields + **Enabled** = ON, then **Save**.
 
 ### 4) Verify
 
@@ -170,47 +92,47 @@ python3 scripts/configure_gateway.py \
 curl -sS http://localhost:8099/system/zerobus/diagnostics | egrep 'Module Enabled|Initialized|Connected|Total Events Received|Total Events Sent|Direct Subscriptions|Last Flush'
 ```
 
-## Configuration
-
-Config files are templates (`*.json.example`) and should not hardcode secrets. The configure script asks for missing values interactively and posts to:
-- `POST /system/zerobus/config`
+## Configuration (GUI)
 
 Key fields:
 - **Databricks**: `workspaceUrl`, `zerobusEndpoint`, `oauthClientId`, `oauthClientSecret`, `targetTable`
 - **Source identity**: `sourceSystemId` (gateway/site identifier; shows up in Bronze)
+- **Direct subscriptions toggle**: `enableDirectSubscriptions`
 - **Tag selection**:
   - `tagSelectionMode: "explicit"`
   - `explicitTagPaths: ["[provider]Folder/Tag", ...]`
 - **Batching**: `batchSize`, `batchFlushIntervalMs`, `maxQueueSize`, `maxEventsPerSecond`
 
-## Ingestion modes (when to use which)
+If you are using Event Streams or an external producer to POST events, you can run the module in **ingest-only** mode:
+- Set **Enable Direct Subscriptions** = OFF
 
-### Option A — Direct subscriptions (recommended)
+Important: don’t double-ingest—use either direct subscriptions or ingest-only producers for a given tag set.
 
-- **What**: module subscribes via Gateway TagManager and receives tag change events directly.
-- **Where configured**: module config (`tagSelectionMode`, `explicitTagPaths`).
-- **Designer required**: no.
-- **Use when**: you want the simplest, lowest-overhead, easiest-to-operate setup.
+## Verify ingestion
 
-### Option B — Gateway Tag Change Script → HTTP ingest
+### 1) Gateway-side verification (diagnostics)
 
-- **What**: a Gateway Tag Change Script posts events to the module.
-- **Where configured**: Ignition scripting + module enabled.
-- **Designer required**: no (Gateway event scripts are configured in the Gateway scope).
-- **Use when**: you need custom logic at source (filter/enrich/mapping) or want script-driven control.
-- **Script template**: `onboarding/ignition/8.1.50/gateway_scripts/tag_change_forwarder_http.py`
+- 8.1: `GET http://<gateway-host>:<port>/system/zerobus/diagnostics`
+- 8.3: `GET http://<gateway-host>:<port>/system/zerobus/diagnostics`
 
-### Option C — Event Streams (Ignition 8.3+) → HTTP ingest
+Look for:
+- `Module Enabled: true`
+- `Connected: true` (or at least `Initialized: true`)
+- `Total Events Received` and `Total Events Sent` increasing
 
-- **What**: Event Streams posts to the module ingest endpoints.
-- **Where configured**: Designer (Event Streams) + module enabled.
-- **Designer required**: yes.
-- **Use when**: you want Designer-managed pipelines with transformations/filters per project.
-- **Config template**: `onboarding/ignition/8.3.2/config/zerobus_config_event_streams.json.example`
+### 2) Databricks verification (SQL)
 
-### Important: don’t double-ingest
+If your table has a `TIMESTAMP` column named `ingestion_timestamp`:
 
-Run **only one** of: direct subscriptions, tag-change script, or event streams for the same tags (otherwise you’ll create duplicates).
+```sql
+SELECT
+  source_system_id,
+  COUNT(*) AS rows_last_10m
+FROM ignition_demo.scada_data.tag_events
+WHERE ingestion_timestamp >= current_timestamp() - INTERVAL 10 MINUTES
+GROUP BY source_system_id
+ORDER BY rows_last_10m DESC;
+```
 
 ## API endpoints
 
@@ -245,7 +167,7 @@ All endpoints are under `/system/zerobus`:
 - **`Target table must be in format catalog.schema.table`**:
   - ensure there are exactly 3 dot-separated parts and the table name does not contain extra dots
 
-## Build the module (optional)
+## Developer build
 
 ### Requirements
 
@@ -254,35 +176,76 @@ All endpoints are under `/system/zerobus`:
   - 8.1: `/usr/local/ignition8.1`
   - 8.3: `/usr/local/ignition`
 
+### Code flow explainer (runtime)
+
+#### High-level architecture
+
+Two ways for events to enter the module:
+- **Direct subscriptions** (recommended): in-JVM tag change callbacks from Ignition’s TagManager
+- **HTTP ingest** (ingest-only mode): external producer POSTs JSON to module endpoints
+
+One way for events to leave the module:
+- **Zerobus ingest over gRPC/protobuf** to the Databricks Zerobus endpoint
+
+#### Lifecycle and configuration
+
+**Startup**
+- Gateway hook entrypoints:
+  - Ignition **8.1.x**: `com.example.ignition.zerobus.ZerobusGatewayHook`
+  - Ignition **8.3.x**: `com.example.ignition.zerobus.ZerobusGatewayHook83`
+- PersistentRecord schema is registered (tables created if missing).
+- Configuration is loaded from the Gateway internal DB into `com.example.ignition.zerobus.ConfigModel`.
+- Services start **only if** configuration is valid enough to run (and module is enabled). Invalid config **does not fault the module**; it keeps services stopped and exposes the error in diagnostics.
+
+**Save/apply configuration**
+- New values are persisted to PersistentRecord.
+- Runtime `ConfigModel` is updated (`updateFrom(...)`).
+- Services are restarted only if necessary (and without crashing the module on validation errors).
+- OAuth client secret is stored in the Gateway internal DB (masked in UI); leaving it blank preserves the existing value.
+
+#### Data path: Direct subscriptions mode
+
+1) **Tag change happens**: Ignition calls into the module via TagManager subscription callbacks.  
+2) **Module enqueues events**: `TagSubscriptionService` converts the change to internal `TagEvent` objects and pushes them onto a bounded queue.  
+3) **Batch/flush loop**: flushes based on `batchSize` and `batchFlushIntervalMs` (plus rate limits/backpressure).  
+4) **Send to Databricks via Zerobus**: `ZerobusClientManager` converts events to protobuf (`module/src/main/proto/ot_event.proto`) and streams them over gRPC to Databricks Zerobus (with reconnect/recovery on transient failures).
+
+#### Data path: HTTP ingest mode (ingest-only)
+
+Prerequisite: set **Enable Direct Subscriptions** = OFF in the module UI.
+
+1) **Producer POSTs JSON**:
+   - `POST /system/zerobus/ingest` (single)
+   - `POST /system/zerobus/ingest/batch` (batch)
+2) **Servlet routes the request**:
+   - `.../web/ZerobusConfigServlet` (dispatcher)
+   - `.../web/ZerobusServletHandler` (shared request parsing/routing)
+3) **Events are enqueued**: same queue as direct subscriptions.
+4) **Batch/flush/send**: same flush loop and Zerobus sender as direct subscriptions.
+
 ### Build the 8.1 module artifact
 
 ```bash
 cd module
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PATH \
-  ./gradlew buildModule \
-    -PignitionHome=/usr/local/ignition8.1 \
-    -PbuildForIgnitionVersion=8.1.50 \
-    -PminIgnitionVersion=8.1.0
+  ./gradlew buildModule81
 ```
 
 Output:
-- `module/build/modules/zerobus-connector-1.0.0.modl`
+- `module/build-user-8.1/modules/zerobus-connector-1.0.0.modl`
 
 ### Build the 8.3 module artifact
 
 ```bash
 cd module
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PATH \
-  ./gradlew buildModule \
-    -PignitionHome=/usr/local/ignition \
-    -PbuildForIgnitionVersion=8.3.2 \
-    -PminIgnitionVersion=8.3.0
+  ./gradlew buildModule83
 ```
 
 Output:
-- `module/build/modules/zerobus-connector-1.0.0-ignition-8.3.modl`
+- `module/build-user-8.3/modules/zerobus-connector-1.0.0-ignition-8.3.modl`
 
-## Code flow & structure
+## Reference
 
 ### Key classes
 
@@ -305,7 +268,7 @@ Output:
 3) Flush loop batches → `ZerobusClientManager`  
 4) Protobuf (OTEvent) → Zerobus stream → Delta
 
-**HTTP ingest (Tag Change Script / Event Streams)**
+**HTTP ingest (Event Streams / external producer)**
 1) Producer POSTs JSON → `/system/zerobus/ingest` or `/ingest/batch`  
 2) Handler parses + enqueues `TagEvent`s  
 3) Batching + streaming as above

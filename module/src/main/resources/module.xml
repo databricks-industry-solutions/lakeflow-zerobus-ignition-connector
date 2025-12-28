@@ -5,7 +5,7 @@
         <id>com.example.ignition.zerobus</id>
         <version>1.0.0</version>
         <description>Streams Ignition tags to Databricks Delta via Zerobus Ingest</description>
-        <requiredIgnitionVersion>8.1.0</requiredIgnitionVersion>
+        <requiredIgnitionVersion>8.1.50</requiredIgnitionVersion>
         <freeModule>true</freeModule>
         <hook scope="G">com.example.ignition.zerobus.ZerobusGatewayHook</hook>
         <requiredFrameworkVersion>8</requiredFrameworkVersion>

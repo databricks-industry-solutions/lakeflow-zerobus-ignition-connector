@@ -1,0 +1,290 @@
+package com.example.ignition.zerobus;
+
+import com.example.ignition.zerobus.web.ZerobusConfigResourceHolder;
+import com.example.ignition.zerobus.web.ZerobusConfigServlet;
+import com.example.ignition.zerobus.web.TagEventPayload;
+import com.example.ignition.zerobus.web.ZerobusConfigResource;
+import com.inductiveautomation.ignition.common.licensing.LicenseState;
+import com.inductiveautomation.ignition.gateway.model.AbstractGatewayModuleHook;
+import com.inductiveautomation.ignition.gateway.model.GatewayContext;
+import com.inductiveautomation.ignition.gateway.web.WebResourceManager;
+import com.inductiveautomation.ignition.gateway.web.nav.NavigationModel;
+import com.inductiveautomation.ignition.gateway.web.systemjs.SystemJsModule;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Ignition 8.3+ gateway hook.
+ *
+ * Ignition 8.3 removed the Wicket-based config UI APIs. Instead, modules integrate into the left navigation
+ * using the new NavigationModel + SystemJsModule mechanism.
+ *
+ * This hook registers ONE nav entry under Services that loads a minimal SystemJS module which embeds our
+ * existing HTML config page (/system/zerobus/configure) that includes inline diagnostics.
+ */
+public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements ZerobusRuntime {
+    private static final Logger logger = LoggerFactory.getLogger(ZerobusGatewayHook83.class);
+
+    private GatewayContext gatewayContext;
+    private ZerobusClientManager zerobusClientManager;
+    private TagSubscriptionService tagSubscriptionService;
+    private ConfigModel configModel;
+    private ZerobusConfigResource restResource;
+
+    // 8.3 web-ui module registration
+    private static final String MOUNT_ALIAS = "zerobus";
+    private static final String UI_JS_URL = "/res/" + MOUNT_ALIAS + "/js/web-ui/zerobus.js";
+    private static final String NAV_URL = "/services/zerobus";
+    private static final String NAV_COMPONENT_ID = "ZerobusConfig";
+
+    @Override
+    public void setup(GatewayContext context) {
+        this.gatewayContext = context;
+
+        this.configModel = new ConfigModel();
+        try {
+            // Ensure our PersistentRecord schema exists before any persistence queries.
+            // Without this, /system/zerobus/config will always show defaults and saves will fail.
+            context.getSchemaUpdater().updatePersistentRecords(ZerobusSettings83.META);
+            loadConfiguration();
+        } catch (Exception e) {
+            logger.error("Failed to load configuration; using defaults", e);
+        }
+
+        // Register the servlet endpoints under /system/zerobus/*
+        try {
+            restResource = new ZerobusConfigResource(context, this);
+            ZerobusConfigResourceHolder.set(restResource);
+
+            Class<?> servletClass = ZerobusConfigServlet.pickServletClass();
+            @SuppressWarnings("unchecked")
+            Class<? extends jakarta.servlet.http.HttpServlet> clazz =
+                (Class<? extends jakarta.servlet.http.HttpServlet>) servletClass;
+            // IMPORTANT (8.3): addServlet takes a servlet name, not a URL mapping. Ignition maps it as /system/<name>/*
+            context.getWebResourceManager().addServlet("zerobus", clazz);
+            logger.info("Registered Zerobus servlet: /system/zerobus/* (8.3)");
+        } catch (Throwable t) {
+            logger.error("Failed to register Zerobus servlet endpoints", t);
+        }
+
+        // Add ONE left-nav entry under Platform -> System that opens our embedded config UI.
+        try {
+            WebResourceManager web = context.getWebResourceManager();
+            SystemJsModule jsModule = new SystemJsModule("com.example.ignition.zerobus", UI_JS_URL);
+            web.getSystemJsModuleRegistry().add(jsModule);
+
+            NavigationModel nav = web.getNavigationModel();
+            nav.getPlatform().addCategory("system", cat -> cat
+                .addPage("Zerobus Config", page -> page
+                    .title("Zerobus Config")
+                    .mount(NAV_URL, NAV_COMPONENT_ID, jsModule)
+                    .position(150)
+                    .build()
+                )
+                .build()
+            );
+
+            logger.info("Registered 8.3 navigation entry: Platform -> System -> Zerobus Config ({})", NAV_URL);
+        } catch (Throwable t) {
+            logger.error("Failed to register 8.3 navigation entry", t);
+        }
+    }
+
+    @Override
+    public void startup(LicenseState licenseState) {
+        logger.info("Starting Zerobus Gateway Module (8.3)...");
+        try {
+            if (configModel != null && configModel.isEnabled()) {
+                try {
+                    startServices();
+                } catch (IllegalArgumentException iae) {
+                    logger.error("Zerobus configuration is invalid; services will remain stopped until fixed: {}", iae.getMessage());
+                } catch (Exception e) {
+                    logger.error("Failed to start Zerobus services; services are stopped.", e);
+                }
+            }
+            logger.info("Zerobus Gateway Module started successfully (8.3)");
+        } catch (Exception e) {
+            logger.error("Failed to start Zerobus Gateway Module (8.3)", e);
+        }
+    }
+
+    @Override
+    public void shutdown() {
+        logger.info("Shutting down Zerobus Gateway Module (8.3)...");
+        try {
+            if (tagSubscriptionService != null) {
+                tagSubscriptionService.shutdown();
+                tagSubscriptionService = null;
+            }
+            if (zerobusClientManager != null) {
+                zerobusClientManager.shutdown();
+                zerobusClientManager = null;
+            }
+        } catch (Exception e) {
+            logger.warn("Error shutting down services", e);
+        } finally {
+            ZerobusConfigResourceHolder.clear();
+        }
+    }
+
+    @Override
+    public Optional<String> getMountPathAlias() {
+        return Optional.of(MOUNT_ALIAS);
+    }
+
+    @Override
+    public Optional<String> getMountedResourceFolder() {
+        // Serves resources under src/main/resources/mounted/** at /res/<alias>/**
+        return Optional.of("mounted");
+    }
+
+    // ---- Internal helpers (copied from 8.1 hook with no Wicket dependencies) ----
+
+    private void startServices() throws Exception {
+        logger.info("Starting Zerobus services (8.3)...");
+        if (zerobusClientManager == null) {
+            zerobusClientManager = new ZerobusClientManager(configModel);
+        }
+        zerobusClientManager.initialize();
+
+        if (tagSubscriptionService == null) {
+            tagSubscriptionService = new TagSubscriptionService(gatewayContext, zerobusClientManager, configModel);
+        }
+        tagSubscriptionService.start();
+    }
+
+    private void loadConfiguration() {
+        try {
+            var persistence = gatewayContext.getPersistenceInterface();
+            var query = new simpleorm.dataset.SQuery<>(ZerobusSettings83.META);
+            var records = persistence.query(query);
+            if (!records.isEmpty()) {
+                this.configModel = records.get(0).toConfigModel();
+                logger.info("Configuration loaded from database (8.3)");
+            } else {
+                logger.info("No saved configuration found, using defaults (8.3)");
+                ZerobusSettings83 settings = persistence.createNew(ZerobusSettings83.META);
+                settings.fromConfigModel(this.configModel);
+                persistence.save(settings);
+                logger.info("Created default configuration in database (8.3)");
+            }
+        } catch (Throwable t) {
+            logger.warn("Failed to load configuration from database (8.3); using defaults", t);
+        }
+    }
+
+    // ---- ZerobusRuntime implementation (used by servlet handler) ----
+
+    @Override
+    public ConfigModel getConfigModel() {
+        return configModel;
+    }
+
+    @Override
+    public String getDiagnosticsInfo() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== Zerobus Module Diagnostics ===\n");
+        sb.append("Module Enabled: ").append(configModel != null && configModel.isEnabled()).append("\n\n");
+
+        sb.append("=== Zerobus Client Diagnostics ===\n");
+        if (zerobusClientManager == null) {
+            sb.append("Initialized: false\nConnected: false\n");
+        } else {
+            sb.append(zerobusClientManager.getDiagnostics());
+        }
+
+        sb.append("\n=== Event Processing Service Diagnostics ===\n");
+        if (tagSubscriptionService == null) {
+            sb.append("Running: false\n");
+        } else {
+            sb.append(tagSubscriptionService.getDiagnostics());
+        }
+        return sb.toString();
+    }
+
+    @Override
+    public void saveConfiguration(ConfigModel newConfig) {
+        logger.info("Saving configuration to persistent storage (8.3)...");
+        try {
+            var persistence = gatewayContext.getPersistenceInterface();
+            var query = new simpleorm.dataset.SQuery<>(ZerobusSettings83.META);
+            List<ZerobusSettings83> records = persistence.query(query);
+            ZerobusSettings83 settings = records.isEmpty() ? persistence.createNew(ZerobusSettings83.META) : records.get(0);
+
+            boolean needsRestart = configModel.requiresRestart(newConfig);
+            settings.fromConfigModel(newConfig);
+            persistence.save(settings);
+            logger.info("Configuration saved to database (8.3)");
+
+            // Update runtime
+            this.configModel.updateFrom(newConfig);
+
+            if (needsRestart && configModel.isEnabled()) {
+                try {
+                    if (tagSubscriptionService != null) tagSubscriptionService.shutdown();
+                    if (zerobusClientManager != null) zerobusClientManager.shutdown();
+                    tagSubscriptionService = null;
+                    zerobusClientManager = null;
+                    startServices();
+                } catch (IllegalArgumentException iae) {
+                    logger.error("New configuration is invalid; services will remain stopped until fixed: {}", iae.getMessage());
+                } catch (Exception e) {
+                    logger.error("Failed to restart services with new configuration; services will remain stopped.", e);
+                }
+            } else if (!needsRestart) {
+                logger.info("Configuration updated, no service restart required (8.3)");
+            } else {
+                logger.info("Configuration saved, services not started (module disabled) (8.3)");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to save configuration to database (8.3)", e);
+            throw new RuntimeException("Configuration save failed", e);
+        }
+    }
+
+    @Override
+    public boolean testConnection() {
+        try {
+            ZerobusClientManager testClient = new ZerobusClientManager(configModel);
+            testClient.initialize();
+            boolean success = testClient.testConnection();
+            testClient.shutdown();
+            return success;
+        } catch (Exception e) {
+            logger.error("Connection test failed (8.3)", e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean ingestTagEvent(TagEventPayload payload) {
+        if (configModel == null || !configModel.isEnabled()) {
+            logger.warn("Cannot ingest: module is disabled");
+            return false;
+        }
+        if (tagSubscriptionService == null) {
+            logger.warn("Cannot ingest: services not running");
+            return false;
+        }
+        return tagSubscriptionService.ingestEvent(payload);
+    }
+
+    @Override
+    public int ingestTagEventBatch(TagEventPayload[] payloads) {
+        if (configModel == null || !configModel.isEnabled()) {
+            logger.warn("Cannot ingest batch: module is disabled");
+            return 0;
+        }
+        if (tagSubscriptionService == null) {
+            logger.warn("Cannot ingest batch: services not running");
+            return 0;
+        }
+        return tagSubscriptionService.ingestEventBatch(payloads);
+    }
+}
+
+

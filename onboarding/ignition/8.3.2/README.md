@@ -1,16 +1,24 @@
 # Ignition 8.3.2 Onboarding
 
-## Recommended: Direct tag subscription (no Event Streams, no scripts)
+## Configure in the Gateway UI (recommended)
 
-1) Install/upgrade the module (Gateway UI → Config → Modules).
+1) Install/upgrade the **8.3** module:
 
-2) Configure explicit tag paths:
+- Gateway UI: `http://localhost:8088/app` → Configure → Modules → Install/Upgrade
+- Upload: `releases/zerobus-connector-1.0.0-ignition-8.3.modl`
 
-```bash
-python3 ../../../../scripts/configure_gateway.py \
-  --gateway-url http://localhost:8088 \
-  --config ./config/zerobus_config_direct_explicit.json.example
-```
+2) Configure in the Gateway UI (no scripts):
+
+- Open the module UI:
+  - Nav: **Platform → System → Zerobus Config**
+  - Direct URL: `http://localhost:8088/system/zerobus/configure`
+- Set:
+  - **Enable Direct Subscriptions** = ON
+  - **Tag Selection Mode** = `explicit`
+  - **Explicit Tag Paths** = your tag list
+  - Databricks settings (Workspace URL, Zerobus Endpoint, OAuth Client ID/Secret, Target Table)
+  - **Enabled** = true
+- Save
 
 3) Verify:
 
@@ -25,11 +33,10 @@ to POST to the module’s ingest endpoint.
 
 ### 1) Configure the module (Event Streams config)
 
-```bash
-python3 ../../../../scripts/configure_gateway.py \
-  --gateway-url http://localhost:8088 \
-  --config ./config/zerobus_config_event_streams.json.example
-```
+Configure in UI as above, but set:
+- **Enable Direct Subscriptions** = OFF
+
+This makes the module ingest-only (it will not subscribe to tags).
 
 ### 2) Configure Event Streams to send to the module
 
