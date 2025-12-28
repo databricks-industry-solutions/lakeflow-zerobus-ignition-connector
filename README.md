@@ -151,6 +151,44 @@ Output: `module/build-user-8.3/modules/zerobus-connector-1.0.0-ignition-8.3.modl
 
 After building, the Gradle task also copies the `.modl` into the repo-level `releases/` directory.
 
+### 4) Local testing (run Ignition gateways)
+
+#### 4.1) Install prerequisites
+
+- Install **Ignition 8.1.x** and/or **Ignition 8.3.x** locally.
+- Install **JDK 17** (required for building the module).
+
+#### 4.2) Where the Gateway port is configured
+
+On a default local install, the HTTP port is configured in:
+- **Ignition 8.3.x**: `/usr/local/ignition/data/ignition.conf`
+- **Ignition 8.1.x**: `/usr/local/ignition8.1/data/ignition.conf`
+
+To see what port is currently set:
+
+```bash
+grep -E '^(webserver\\.http\\.port|webserver\\.https\\.port)=' /usr/local/ignition/data/ignition.conf
+grep -E '^(webserver\\.http\\.port|webserver\\.https\\.port)=' /usr/local/ignition8.1/data/ignition.conf
+```
+
+#### 4.3) Start / stop / status commands
+
+Ignition installs include an `ignition.sh` control script:
+
+```bash
+# Ignition 8.3.x
+/usr/local/ignition/ignition.sh start
+/usr/local/ignition/ignition.sh stop
+/usr/local/ignition/ignition.sh status
+
+# Ignition 8.1.x
+/usr/local/ignition8.1/ignition.sh start
+/usr/local/ignition8.1/ignition.sh stop
+/usr/local/ignition8.1/ignition.sh status
+```
+
+If you run into permissions errors starting/stopping, run the same commands with `sudo`.
+
 ## Reference
 
 ### API endpoints
