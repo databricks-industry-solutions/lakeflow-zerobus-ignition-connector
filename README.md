@@ -52,12 +52,22 @@ In all cases, the connector publishes **the same protobuf event type** to Databr
 
 ## Table of contents
 
+- [Get started (download the module)](#get-started-download-the-module)
 - [Repository layout](#repository-layout)
 - [Release artifacts (two `.modl` files)](#release-artifacts-two-modl-files)
 - [Developer build](#developer-build)
 - [Reference](#reference)
 
 For production setup (prereqs, install, configure, verify, troubleshooting), see `DEPLOYMENT.md`.
+
+## Get started (download the module)
+
+Download the prebuilt Ignition module (`.modl`) from GitHub Releases:
+
+- **Ignition 8.1.x**: [`zerobus-connector-1.0.0.modl`](https://github.com/pravinva/lakeflow-ignition-zerobus-connector/releases/download/v1.0.0/zerobus-connector-1.0.0.modl)
+- **Ignition 8.3.x**: [`zerobus-connector-1.0.0-ignition-8.3.modl`](https://github.com/pravinva/lakeflow-ignition-zerobus-connector/releases/download/v1.0.0/zerobus-connector-1.0.0-ignition-8.3.modl)
+
+Then follow `DEPLOYMENT.md` for installation and configuration.
 
 ## Repository layout
 
