@@ -48,9 +48,9 @@ In all cases, the connector publishes **the same protobuf event type** to Databr
 
 ## Reference architecture
 
-![Ignition to Databricks reference architecture](docs/ignition-to-databricks-reference-architecture.png)
+![Ignition to Databricks reference architecture](docs/ignition-to-databricks-reference-architecture.jpg)
 
-Add the reference image file at `docs/ignition-to-databricks-reference-architecture.png` (PNG/JPG) to render this as a static diagram in GitHub (no interactive controls).
+Add the reference image file at `docs/ignition-to-databricks-reference-architecture.jpg` to render this as a static diagram in GitHub (no interactive controls).
 
 ## Table of contents
 
