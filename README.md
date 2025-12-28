@@ -48,15 +48,9 @@ In all cases, the connector publishes **the same protobuf event type** to Databr
 
 ## Reference architecture
 
-```mermaid
-flowchart LR
-  A[OT Sources<br/>SCADA • PLCs • Sensors] --> B[Ignition Platform<br/>Gateway / Edge Computing]
-  B --> C[Zerobus Streaming<br/>Real-time Data Connector]
-  C --> D[Delta Bronze<br/>Raw Ingestion]
-  D --> E[Delta Live Tables<br/>Pipeline Transformations]
-  E --> F[Silver & Gold Layers<br/>Curated Data]
-  F --> G[Analytics & ML<br/>BI + ML Workflows]
-```
+![Ignition to Databricks reference architecture](docs/ignition-to-databricks-reference-architecture.png)
+
+Add the reference image file at `docs/ignition-to-databricks-reference-architecture.png` (PNG/JPG) to render this as a static diagram in GitHub (no interactive controls).
 
 ## Table of contents
 
