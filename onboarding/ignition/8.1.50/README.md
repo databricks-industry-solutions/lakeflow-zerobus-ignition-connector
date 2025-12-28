@@ -1,41 +1,23 @@
 # Ignition 8.1.50 Onboarding (GUI configuration)
 
-## Configure in the Gateway UI (recommended)
+This is a short, version-specific pointer to the module UI in Ignition **8.1.50**.
 
-1) **Install/upgrade** the **8.1** module:
+For the full runbook (prereqs, configuration fields, verification SQL, troubleshooting), see `DEPLOYMENT.md`.
+
+## 1) Install the module
 
 - Gateway UI: `http://localhost:8099/web/home` → Config → Modules → Install/Upgrade
 - Upload: `releases/zerobus-connector-1.0.0.modl`
 
-2) **Configure in the Gateway UI**:
+## 2) Open the configuration UI
 
-- Open the module UI (nav item: **Zerobus Configuration**), or direct:
-  - `http://localhost:8099/system/zerobus/configure`
-- Set:
-  - **Enable Direct Subscriptions** = ON
-  - **Tag Selection Mode** = `explicit`
-  - **Explicit Tag Paths** = your tag list
-  - Databricks settings (Workspace URL, Zerobus Endpoint, OAuth Client ID/Secret, Target Table)
-  - **Enabled** = true
-- Save
+- Nav item: **Zerobus Configuration**
+- Direct URL: `http://localhost:8099/system/zerobus/configure`
 
-3) **Verify**:
+## 3) Quick verify
 
 ```bash
 curl -sS http://localhost:8099/system/zerobus/diagnostics | head -n 120
 ```
 
-You should see:
-- `Module Enabled: true`
-- `Direct Subscriptions: <N> tags`
-- `Total Events Received/Sent` increasing
-
-## HTTP ingest (optional)
-
-If you want to ingest only via HTTP endpoints, disable direct subscriptions:
-- **Enable Direct Subscriptions** = OFF
-
-Then have your producer POST to:
-- `POST http://<gateway-host>:<port>/system/zerobus/ingest`
-- `POST http://<gateway-host>:<port>/system/zerobus/ingest/batch`
-
+If you need ingest-only mode, use the same endpoints described in `DEPLOYMENT.md` under “Ingest-only mode”.

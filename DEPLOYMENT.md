@@ -1,6 +1,6 @@
-## Zerobus Connector — Production Deployment & Developer Build
+## Zerobus Connector — Production Deployment
 
-This doc is the production runbook for deploying the **Ignition Zerobus Connector** module, plus a short **developer build** section for generating the `.modl` artifacts.
+This is the production runbook for deploying the **Ignition Zerobus Connector** module.
 
 ## Production deployment
 
@@ -103,32 +103,3 @@ ORDER BY rows_last_10m DESC;
 ### Ignition 8.3 module won’t install
 
 You likely uploaded the 8.1 artifact. Use `releases/zerobus-connector-1.0.0-ignition-8.3.modl`.
-
-## Developer build (produce `.modl`)
-
-### Requirements
-
-- **JDK 17**
-- Ignition installs available locally for SDK jars:
-  - 8.1: `/usr/local/ignition8.1`
-  - 8.3: `/usr/local/ignition`
-
-### Build
-
-```bash
-cd module
-JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PATH \
-  ./gradlew buildModule81
-```
-
-```bash
-cd module
-JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PATH \
-  ./gradlew buildModule83
-```
-
-Outputs:
-- 8.1: `module/build-user-8.1/modules/zerobus-connector-1.0.0.modl`
-- 8.3: `module/build-user-8.3/modules/zerobus-connector-1.0.0-ignition-8.3.modl`
-
-

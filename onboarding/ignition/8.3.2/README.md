@@ -1,26 +1,20 @@
 # Ignition 8.3.2 Onboarding
 
-## Configure in the Gateway UI (recommended)
+This is a short, version-specific pointer to the module UI in Ignition **8.3.2**.
 
-1) Install/upgrade the **8.3** module:
+For the full runbook (prereqs, configuration fields, verification SQL, troubleshooting), see `DEPLOYMENT.md`.
+
+## 1) Install the module
 
 - Gateway UI: `http://localhost:8088/app` → Configure → Modules → Install/Upgrade
 - Upload: `releases/zerobus-connector-1.0.0-ignition-8.3.modl`
 
-2) Configure in the Gateway UI:
+## 2) Open the configuration UI
 
-- Open the module UI:
-  - Nav: **Platform → System → Zerobus Config**
-  - Direct URL: `http://localhost:8088/system/zerobus/configure`
-- Set:
-  - **Enable Direct Subscriptions** = ON
-  - **Tag Selection Mode** = `explicit`
-  - **Explicit Tag Paths** = your tag list
-  - Databricks settings (Workspace URL, Zerobus Endpoint, OAuth Client ID/Secret, Target Table)
-  - **Enabled** = true
-- Save
+- Nav: **Platform → System → Zerobus Config**
+- Direct URL: `http://localhost:8088/system/zerobus/configure`
 
-3) Verify:
+## 3) Quick verify
 
 ```bash
 curl -sS http://localhost:8088/system/zerobus/diagnostics | head -n 120
@@ -31,10 +25,9 @@ curl -sS http://localhost:8088/system/zerobus/diagnostics | head -n 120
 If you need Designer-level transforms/filters per project, you can use Event Streams
 to POST to the module’s ingest endpoint.
 
-### 1) Configure the module (Event Streams config)
+### 1) Configure the module (ingest-only)
 
-Configure in UI as above, but set:
-- **Enable Direct Subscriptions** = OFF
+In the module UI, set **Enable Direct Subscriptions** = OFF.
 
 This makes the module ingest-only (it will not subscribe to tags).
 
