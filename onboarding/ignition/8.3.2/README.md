@@ -7,7 +7,7 @@
 - Gateway UI: `http://localhost:8088/app` → Configure → Modules → Install/Upgrade
 - Upload: `releases/zerobus-connector-1.0.0-ignition-8.3.modl`
 
-2) Configure in the Gateway UI (no scripts):
+2) Configure in the Gateway UI:
 
 - Open the module UI:
   - Nav: **Platform → System → Zerobus Config**

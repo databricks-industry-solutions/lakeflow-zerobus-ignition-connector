@@ -7,7 +7,7 @@
 - Gateway UI: `http://localhost:8099/web/home` → Config → Modules → Install/Upgrade
 - Upload: `releases/zerobus-connector-1.0.0.modl`
 
-2) **Configure in the Gateway UI (no scripts)**:
+2) **Configure in the Gateway UI**:
 
 - Open the module UI (nav item: **Zerobus Configuration**), or direct:
   - `http://localhost:8099/system/zerobus/configure`
@@ -30,7 +30,7 @@ You should see:
 - `Direct Subscriptions: <N> tags`
 - `Total Events Received/Sent` increasing
 
-## Event Streams / HTTP ingest (optional)
+## HTTP ingest (optional)
 
 If you want to ingest only via HTTP endpoints, disable direct subscriptions:
 - **Enable Direct Subscriptions** = OFF
