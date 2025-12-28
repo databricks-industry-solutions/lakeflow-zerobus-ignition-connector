@@ -196,6 +196,44 @@ Output: `module/build-user-8.3/modules/zerobus-connector-1.0.0-ignition-8.3.modl
 
 After building, the Gradle task also copies the `.modl` into the repo-level `releases/` directory.
 
+#### 3.4) Docker-based build (optional)
+
+If you don’t want to install Ignition locally just to access SDK jars, you can build the `.modl` in Docker using:
+- the official `inductiveautomation/ignition` image (source of Ignition SDK/runtime jars)
+- an official Java 17 JDK image (`eclipse-temurin:17-jdk`) for the Gradle build
+
+This uses BuildKit `--output` to write the `.modl` to a local folder:
+
+**Ignition 8.3.x**
+
+```bash
+DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.build-modl \
+  --target out \
+  --build-arg IGNITION_TAG=8.3 \
+  --build-arg BUILD_FOR_IGNITION_VERSION=8.3.2 \
+  --build-arg MIN_IGNITION_VERSION=8.3.0 \
+  --output type=local,dest=./docker-out/8.3 \
+  .
+```
+
+**Ignition 8.1.x**
+
+```bash
+DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.build-modl \
+  --target out \
+  --build-arg IGNITION_TAG=8.1 \
+  --build-arg BUILD_FOR_IGNITION_VERSION=8.1.50 \
+  --build-arg MIN_IGNITION_VERSION=8.1.0 \
+  --output type=local,dest=./docker-out/8.1 \
+  .
+```
+
+If the Ignition image uses a different install root than `/usr/local/ignition`, pass:
+
+```bash
+--build-arg IGNITION_HOME=/path/inside/container
+```
+
 ### 4) Local testing (run Ignition gateways)
 
 #### 4.1) Install prerequisites

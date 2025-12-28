@@ -1,0 +1,64 @@
+# syntax=docker/dockerfile:1
+#
+# Build Ignition module artifacts (.modl) in Docker using:
+# - Official Inductive Automation Ignition Docker image (as a source of SDK/runtime jars)
+# - Java 17 JDK image (Gradle build)
+#
+# Build (Ignition 8.3.x example):
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.build-modl \
+#     --target out \
+#     --build-arg IGNITION_TAG=8.3 \
+#     --build-arg BUILD_FOR_IGNITION_VERSION=8.3.2 \
+#     --build-arg MIN_IGNITION_VERSION=8.3.0 \
+#     --output type=local,dest=./docker-out/8.3 \
+#     .
+#
+# Build (Ignition 8.1.x example):
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.build-modl \
+#     --target out \
+#     --build-arg IGNITION_TAG=8.1 \
+#     --build-arg BUILD_FOR_IGNITION_VERSION=8.1.50 \
+#     --build-arg MIN_IGNITION_VERSION=8.1.0 \
+#     --output type=local,dest=./docker-out/8.1 \
+#     .
+#
+# Note: if the Ignition image uses a different install root, override IGNITION_HOME.
+
+ARG IGNITION_IMAGE=inductiveautomation/ignition
+ARG IGNITION_TAG=8.3
+ARG IGNITION_HOME=/usr/local/ignition
+
+FROM ${IGNITION_IMAGE}:${IGNITION_TAG} AS ignition
+
+# Java 17 build stage
+FROM eclipse-temurin:17-jdk AS builder
+
+ARG IGNITION_HOME=/usr/local/ignition
+ARG BUILD_FOR_IGNITION_VERSION=8.3.2
+ARG MIN_IGNITION_VERSION=8.3.0
+
+WORKDIR /workspace
+
+# Copy only the Gradle module project (keeps context smaller).
+COPY module/ module/
+
+# Bring the Ignition install from the Ignition image into this build container.
+# This provides the SDK jars at /ignition/lib/core/** used by module/build.gradle.
+COPY --from=ignition ${IGNITION_HOME} /ignition
+
+WORKDIR /workspace/module
+RUN chmod +x ./gradlew
+
+# Build a single .modl artifact (8.1 or 8.3) based on BUILD_FOR_IGNITION_VERSION.
+RUN ./gradlew --no-daemon buildModule \
+  -PignitionHome=/ignition \
+  -PbuildForIgnitionVersion=${BUILD_FOR_IGNITION_VERSION} \
+  -PminIgnitionVersion=${MIN_IGNITION_VERSION}
+
+# Export stage for BuildKit `--output`.
+FROM scratch AS out
+
+# Copy the resulting .modl(s) out of the build dir.
+COPY --from=builder /workspace/module/build-user-*/modules/*.modl /
+
+
