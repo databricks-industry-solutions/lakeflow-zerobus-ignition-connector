@@ -5,6 +5,23 @@
 **Ignition compatibility**: **8.1.x** and **8.3.x** (different `.modl` artifacts).  
 **Configuration**: via the **Ignition Gateway UI**.
 
+## Concepts (Ignition Gateway + Databricks Zerobus)
+
+### What is an Ignition Gateway?
+
+An **Ignition Gateway** is the runtime server for the Ignition platform. It connects to industrial data sources (OPC UA, MQTT, PLC drivers, etc.), exposes those values as **tags**, and runs gateway services (history, alarming, scripting, eventing). This module runs inside the Gateway as an Ignition module (`.modl`).
+
+### What is Databricks Zerobus, and why use it?
+
+**Databricks Zerobus** is Databricks’ managed real-time ingestion transport used to stream events into Delta (typically landing in a **Bronze** table).
+
+Using Zerobus means you get a **streaming ingestion path without operating Kafka infrastructure**:
+- no standing up brokers/zookeepers/controllers
+- no partition planning / retention management
+- no connector fleet management
+
+Instead, this module batches tag-change events and streams them directly to Databricks over gRPC/protobuf.
+
 ## Source-agnostic by design (OPC UA, MQTT, and more)
 
 This connector is **agnostic to the underlying OT/IIoT source** because it subscribes to **Ignition tags**, not to a specific protocol.
