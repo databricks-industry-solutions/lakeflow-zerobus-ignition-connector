@@ -4,6 +4,25 @@ This doc is the production runbook for deploying the **Ignition Zerobus Connecto
 
 ## Production deployment
 
+### Prerequisites
+
+#### Ignition / Gateway
+
+- Gateway admin access (module install + configuration).
+- Outbound network access from the Gateway host to Databricks:
+  - HTTPS to your workspace URL (`https://<workspace-host>`)
+  - Connectivity to the Zerobus endpoint you configure
+
+#### Databricks OAuth (service principal)
+
+Create/use a Databricks service principal and generate an OAuth client ID/secret for it. Grant it Unity Catalog permissions to write to the target table:
+
+```sql
+GRANT USE CATALOG ON CATALOG <catalog> TO `<service_principal_name_or_id>`;
+GRANT USE SCHEMA ON SCHEMA <catalog>.<schema> TO `<service_principal_name_or_id>`;
+GRANT MODIFY ON TABLE <catalog>.<schema>.<table> TO `<service_principal_name_or_id>`;
+```
+
 ### Choose the correct module artifact
 
 - **Ignition 8.1.x**: use `releases/zerobus-connector-1.0.0.modl`

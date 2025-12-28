@@ -3,10 +3,11 @@
 **Version**: `1.0.0`  
 **Purpose**: Stream Ignition tag-change events to Databricks Delta tables via Zerobus (gRPC + protobuf).  
 **Ignition compatibility**: **8.1.x** and **8.3.x** (different `.modl` artifacts).  
-**Configuration**: **GUI-only** (no Python config scripts).
+**Configuration**: via the **Ignition Gateway UI**.
 
 ## Table of contents
 
+- [Prerequisites](#prerequisites)
 - [Production deployment](#production-deployment)
 - [Release artifacts (two `.modl` files)](#release-artifacts-two-modl-files)
 - [Configuration (GUI)](#configuration-gui)
@@ -14,6 +15,32 @@
 - [Monitoring & troubleshooting](#monitoring--troubleshooting)
 - [Developer build](#developer-build)
 - [Reference](#reference)
+
+## Prerequisites
+
+### Ignition / Gateway
+
+- **Gateway admin access** to install modules and edit module configuration.
+- **Outbound network access** from the Gateway host to Databricks:
+  - HTTPS to your workspace URL (`https://<workspace-host>`)
+  - Connectivity to the Zerobus endpoint you configure
+
+### Databricks OAuth (service principal)
+
+You need an OAuth **client ID/secret** for a Databricks **service principal** that is allowed to write to your target Unity Catalog table.
+
+Minimum recommended Unity Catalog permissions for the service principal:
+
+```sql
+-- replace these with your values
+GRANT USE CATALOG ON CATALOG <catalog> TO `<service_principal_name_or_id>`;
+GRANT USE SCHEMA ON SCHEMA <catalog>.<schema> TO `<service_principal_name_or_id>`;
+GRANT MODIFY ON TABLE <catalog>.<schema>.<table> TO `<service_principal_name_or_id>`;
+```
+
+Notes:
+- `MODIFY` covers writes to an existing table (INSERT/UPDATE/DELETE as applicable).
+- If you want the pipeline to create tables automatically (not typical for production), grant `CREATE` on the schema instead.
 
 ## Production deployment
 
@@ -52,7 +79,7 @@ The **runtime behavior and code are the same**; the important differences are:
 
 ### 1) Databricks: create the Bronze table
 
-- Import + run `onboarding/databricks/01_create_tables.py` in Databricks.
+- Create the target Delta table in Databricks (Bronze).
 - The Bronze schema matches `module/src/main/proto/ot_event.proto`.
 
 ### 2) Install the module (.modl)
@@ -169,16 +196,16 @@ All endpoints are under `/system/zerobus`:
 
 ## Developer build
 
-### Requirements
+### 1) Prerequisites (local dev machine)
 
-- **JDK 17** (Gradle/tooling)
-- Ignition installs for SDK jars:
-  - 8.1: `/usr/local/ignition8.1`
-  - 8.3: `/usr/local/ignition`
+- **JDK 17** installed (Gradle/tooling).
+- **Ignition SDK jars available locally** (used as `compileOnly` dependencies):
+  - **8.1.x** install at: `/usr/local/ignition8.1`
+  - **8.3.x** install at: `/usr/local/ignition`
 
-### Code flow explainer (runtime)
+### 2) Code flow explainer (runtime)
 
-#### High-level architecture
+#### 2.1) High-level architecture
 
 Two ways for events to enter the module:
 - **Direct subscriptions** (recommended): in-JVM tag change callbacks from Ignition’s TagManager
@@ -187,7 +214,7 @@ Two ways for events to enter the module:
 One way for events to leave the module:
 - **Zerobus ingest over gRPC/protobuf** to the Databricks Zerobus endpoint
 
-#### Lifecycle and configuration
+#### 2.2) Lifecycle and configuration
 
 **Startup**
 - Gateway hook entrypoints:
@@ -203,14 +230,14 @@ One way for events to leave the module:
 - Services are restarted only if necessary (and without crashing the module on validation errors).
 - OAuth client secret is stored in the Gateway internal DB (masked in UI); leaving it blank preserves the existing value.
 
-#### Data path: Direct subscriptions mode
+#### 2.3) Data path: Direct subscriptions mode
 
 1) **Tag change happens**: Ignition calls into the module via TagManager subscription callbacks.  
 2) **Module enqueues events**: `TagSubscriptionService` converts the change to internal `TagEvent` objects and pushes them onto a bounded queue.  
 3) **Batch/flush loop**: flushes based on `batchSize` and `batchFlushIntervalMs` (plus rate limits/backpressure).  
 4) **Send to Databricks via Zerobus**: `ZerobusClientManager` converts events to protobuf (`module/src/main/proto/ot_event.proto`) and streams them over gRPC to Databricks Zerobus (with reconnect/recovery on transient failures).
 
-#### Data path: HTTP ingest mode (ingest-only)
+#### 2.4) Data path: HTTP ingest mode (ingest-only)
 
 Prerequisite: set **Enable Direct Subscriptions** = OFF in the module UI.
 
@@ -223,7 +250,9 @@ Prerequisite: set **Enable Direct Subscriptions** = OFF in the module UI.
 3) **Events are enqueued**: same queue as direct subscriptions.
 4) **Batch/flush/send**: same flush loop and Zerobus sender as direct subscriptions.
 
-### Build the 8.1 module artifact
+### 3) Build artifacts
+
+#### 3.1) Build the Ignition 8.1.x module (`.modl`)
 
 ```bash
 cd module
@@ -231,10 +260,9 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PA
   ./gradlew buildModule81
 ```
 
-Output:
-- `module/build-user-8.1/modules/zerobus-connector-1.0.0.modl`
+Output: `module/build-user-8.1/modules/zerobus-connector-1.0.0.modl`
 
-### Build the 8.3 module artifact
+#### 3.2) Build the Ignition 8.3.x module (`.modl`)
 
 ```bash
 cd module
@@ -242,8 +270,11 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PA
   ./gradlew buildModule83
 ```
 
-Output:
-- `module/build-user-8.3/modules/zerobus-connector-1.0.0-ignition-8.3.modl`
+Output: `module/build-user-8.3/modules/zerobus-connector-1.0.0-ignition-8.3.modl`
+
+#### 3.3) Where release artifacts go
+
+After building, the Gradle task also copies the `.modl` into the repo-level `releases/` directory.
 
 ## Reference
 
