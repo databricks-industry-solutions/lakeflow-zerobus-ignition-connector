@@ -8,6 +8,7 @@
 ## Table of contents
 
 - [Prerequisites](#prerequisites)
+- [Repository layout](#repository-layout)
 - [Production deployment](#production-deployment)
 - [Release artifacts (two `.modl` files)](#release-artifacts-two-modl-files)
 - [Configuration (GUI)](#configuration-gui)
@@ -41,6 +42,37 @@ GRANT MODIFY ON TABLE <catalog>.<schema>.<table> TO `<service_principal_name_or_
 Notes:
 - `MODIFY` covers writes to an existing table (INSERT/UPDATE/DELETE as applicable).
 - If you want the pipeline to create tables automatically (not typical for production), grant `CREATE` on the schema instead.
+
+## Repository layout
+
+Canonical locations:
+- **Module source/build**: `module/`
+- **Published module artifacts (`.modl`)**: `releases/` (repo root)
+
+Directory structure (high-level):
+
+```text
+.
+├── README.md
+├── DEPLOYMENT.md
+├── releases/                       # canonical .modl artifacts (root)
+│   ├── zerobus-connector-1.0.0.modl
+│   └── zerobus-connector-1.0.0-ignition-8.3.modl
+├── module/                         # Ignition module source + Gradle build
+│   ├── build.gradle
+│   ├── settings.gradle
+│   ├── gradlew
+│   └── src/
+│       └── main/
+│           ├── java/               # gateway hooks, services, servlet layer
+│           ├── resources/          # module.xml, i18n, UI assets (web/, mounted/)
+│           └── proto/              # protobuf schema (ot_event.proto)
+└── onboarding/
+    ├── databricks/                 # optional: helper to create/align target table schema
+    └── ignition/
+        ├── 8.1.50/README.md
+        └── 8.3.2/README.md
+```
 
 ## Production deployment
 
