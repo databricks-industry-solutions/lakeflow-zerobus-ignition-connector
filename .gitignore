@@ -90,4 +90,3 @@ keystore
 
 my-config.json
 *.json
-!examples/tilt_sim/tilt_sim_windfarm01_tags.json
