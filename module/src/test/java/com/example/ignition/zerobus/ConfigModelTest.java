@@ -37,9 +37,11 @@ public class ConfigModelTest {
     
     @Test
     public void testValidationWithMissingFields() {
+        // When disabled, ConfigModel allows saving partial config so operators can incrementally configure.
+        config.setEnabled(true);
         List<String> errors = config.validate();
-        
-        assertFalse(errors.isEmpty(), "Should have validation errors");
+
+        assertFalse(errors.isEmpty(), "Should have validation errors when enabled");
         assertTrue(errors.stream().anyMatch(e -> e.contains("Workspace URL")));
         assertTrue(errors.stream().anyMatch(e -> e.contains("Zerobus endpoint")));
         assertTrue(errors.stream().anyMatch(e -> e.contains("OAuth client ID")));
@@ -87,10 +89,10 @@ public class ConfigModelTest {
         newConfig.setWorkspaceUrl("https://different.databricks.com");
         assertTrue(config.requiresRestart(newConfig));
         
-        // Different batch size only - no restart needed
+        // Different batch size only - restart needed (batch size affects runtime batching behavior)
         newConfig = new ConfigModel();
         newConfig.setBatchSize(1000);
-        assertFalse(config.requiresRestart(newConfig));
+        assertTrue(config.requiresRestart(newConfig));
     }
     
     @Test
@@ -119,6 +121,8 @@ public class ConfigModelTest {
         config.setOauthClientId("client-id");
         config.setOauthClientSecret("client-secret");
         config.setTargetTable("dev.bronze.events");
+        config.setEnabled(true);
+        config.setEnableDirectSubscriptions(true);
         
         // Folder mode without folder path
         config.setTagSelectionMode("folder");

@@ -6,6 +6,7 @@ import com.example.ignition.zerobus.web.ZerobusConfigResourceHolder;
 import com.example.ignition.zerobus.web.ZerobusConfigServlet;
 import com.example.ignition.zerobus.web.ZerobusConfigureRedirectPanel;
 import com.example.ignition.zerobus.web.ZerobusSettingsPage;
+import com.example.ignition.zerobus.pipeline.ZerobusPipelineFactory;
 import com.inductiveautomation.ignition.common.BundleUtil;
 import com.inductiveautomation.ignition.common.licensing.LicenseState;
 import com.inductiveautomation.ignition.gateway.localdb.persistence.PersistenceInterface;
@@ -142,12 +143,9 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements Zer
             // Initialize Zerobus client manager
             this.zerobusClientManager = new ZerobusClientManager(configModel);
             
-            // Initialize tag subscription service
-            this.tagSubscriptionService = new TagSubscriptionService(
-                gatewayContext, 
-                zerobusClientManager, 
-                configModel
-            );
+            // Initialize tag subscription service (pipeline wiring is external)
+            ZerobusPipelineFactory.PipelineComponents comps = ZerobusPipelineFactory.create(configModel, zerobusClientManager);
+            this.tagSubscriptionService = new TagSubscriptionService(gatewayContext, configModel, comps.mapper, comps.buffer, comps.sink);
             
             // Note: REST servlet is registered in setup() method
             
@@ -226,12 +224,16 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements Zer
      */
     private void startServices() throws Exception {
         logger.info("Starting Zerobus services...");
-        
-        // Initialize Zerobus connection
-        zerobusClientManager.initialize();
-        
-        // Start tag subscriptions
+
+        // Always start buffering/ingest service first so "sink down" does not prevent ingestion.
         tagSubscriptionService.start();
+
+        // Best-effort: try to connect the sink. Failures should not stop ingestion; events will buffer.
+        try {
+            zerobusClientManager.initialize();
+        } catch (Exception e) {
+            logger.error("Zerobus sink is unavailable during startup. Ingestion will continue and buffer until the sink recovers.", e);
+        }
         
         logger.info("Zerobus services started");
     }
@@ -336,7 +338,18 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements Zer
                     logger.error("Failed to restart services with new configuration; services will remain stopped.", e);
                 }
             } else if (!needsRestart) {
-                logger.info("Configuration updated, no service restart required");
+                // Even when a restart isn't required, if the module is enabled and services are down,
+                // start them to avoid requiring the operator to manually restart the gateway.
+                if (configModel.isEnabled() && (tagSubscriptionService == null || !tagSubscriptionService.isRunning())) {
+                    try {
+                        startServices();
+                        logger.info("Configuration updated; services started");
+                    } catch (Exception e) {
+                        logger.error("Configuration updated but services could not be started", e);
+                    }
+                } else {
+                    logger.info("Configuration updated, no service restart required");
+                }
             } else {
                 logger.info("Configuration saved, services not started (module disabled)");
             }

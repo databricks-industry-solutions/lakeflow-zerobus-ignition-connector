@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'com.example.ignition'
-version = '1.0.0'
+version = '1.0.1'
 
 // Some local builds were previously run with sudo, which can leave the default ./build directory
 // owned by root and therefore unwritable. To keep builds reliable, always use a user-writable build dir.
@@ -20,13 +20,18 @@ buildDir = file("$projectDir/build-user-${buildFlavor}")
 //
 // IMPORTANT: On this machine, the Ignition SDK jars under /usr/local/ignition8.1 are themselves Java 17 bytecode,
 // so the compiler must be JDK 17+ to even *read* those jars. We still *emit* Java 11 bytecode for runtime
-// compatibility by using `--release 11`.
+// compatibility by using `--release 11` for 8.1 builds.
+//
+// For Ignition 8.3 builds, we emit Java 17 bytecode to match the platform runtime.
+def isIgnition83Build = (project.hasProperty('buildForIgnitionVersion')
+        ? project.getProperty('buildForIgnitionVersion')
+        : '8.1.5').startsWith('8.3')
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(17)
     }
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = isIgnition83Build ? JavaVersion.VERSION_17 : JavaVersion.VERSION_11
+    targetCompatibility = isIgnition83Build ? JavaVersion.VERSION_17 : JavaVersion.VERSION_11
 }
 
 repositories {
@@ -191,8 +196,10 @@ if (!buildForIgnitionVersion.startsWith('8.3')) {
 // Compile options
 tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
-    // Emit Java 11 bytecode even when compiling with JDK 17
-    options.release = 11
+    // Emit bytecode appropriate to the Ignition target version:
+    // - 8.1.x: Java 11
+    // - 8.3.x: Java 17
+    options.release = isIgnition83Build ? 17 : 11
     options.compilerArgs << '-Xlint:unchecked' << '-Xlint:deprecation'
 }
 

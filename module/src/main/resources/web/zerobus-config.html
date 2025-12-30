@@ -647,6 +647,52 @@
                     </div>
                 </div>
 
+                <!-- Store & Forward (disk spool) -->
+                <div class="collapsible-section">
+                    <div class="collapsible-header" onclick="toggleSection(this)">
+                        <span>Store &amp; Forward</span>
+                        <span class="toggle-icon">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="enableStoreAndForward" name="enableStoreAndForward">
+                                <label for="enableStoreAndForward">Enable Store &amp; Forward (Disk Spool)</label>
+                            </div>
+                            <small class="form-help">When enabled, events are buffered on disk if the sink is unavailable. This provides at-least-once delivery across outages.</small>
+                        </div>
+
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="spoolDirectory">Spool Directory</label>
+                                <input type="text" class="form-control" id="spoolDirectory" name="spoolDirectory" value="data/zerobus-spool"
+                                       autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+                                <small class="form-help">Directory for on-disk backlog (absolute or relative to Ignition install dir)</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="spoolMaxBytes">Spool Max Bytes</label>
+                                <input type="number" class="form-control" id="spoolMaxBytes" name="spoolMaxBytes" value="1073741824" min="0" step="1">
+                                <small class="form-help">Max on-disk backlog size in bytes (default: 1 GiB)</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="spoolHighWatermarkPct">High Watermark (0-1)</label>
+                                <input type="number" class="form-control" id="spoolHighWatermarkPct" name="spoolHighWatermarkPct" value="0.85" min="0" max="1" step="0.01">
+                                <small class="form-help">Above this, direct subscriptions auto-pause (backpressure)</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="spoolLowWatermarkPct">Low Watermark (0-1)</label>
+                                <input type="number" class="form-control" id="spoolLowWatermarkPct" name="spoolLowWatermarkPct" value="0.70" min="0" max="1" step="0.01">
+                                <small class="form-help">Below this, direct subscriptions auto-resume</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="spoolReadMaxBytes">Read Max Bytes (per flush)</label>
+                                <input type="number" class="form-control" id="spoolReadMaxBytes" name="spoolReadMaxBytes" value="2097152" min="0" step="1">
+                                <small class="form-help">Safety cap for how much to read from spool per flush (default: 2 MiB)</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Reliability -->
                 <div class="collapsible-section">
                     <div class="collapsible-header" onclick="toggleSection(this)">
@@ -762,6 +808,8 @@
                                 <div class="k">Tag Mode</div><div class="v" id="cfgTagMode">—</div>
                                 <div class="k">Explicit Tags</div><div class="v" id="cfgExplicitCount">—</div>
                                 <div class="k">Include Subfolders</div><div class="v" id="cfgIncludeSubfolders">—</div>
+                                <div class="k">Store &amp; Forward</div><div class="v" id="cfgSafEnabled">—</div>
+                                <div class="k">Spool Dir</div><div class="v mono" id="cfgSpoolDir">—</div>
                             </div>
                         </div>
                     </div>
@@ -799,6 +847,12 @@
                 directToggle.addEventListener('change', updateTagSelectionUI);
             }
 
+            // Store-and-forward toggle
+            const safToggle = document.getElementById('enableStoreAndForward');
+            if (safToggle) {
+                safToggle.addEventListener('change', updateSafUI);
+            }
+
             // Tag input handler
             const tagInput = document.getElementById('explicitTagPathsInput');
             tagInput.addEventListener('keypress', function(e) {
@@ -834,6 +888,24 @@
 
             // Disable mode selection if direct subscriptions are disabled
             document.getElementById('tagSelectionMode').disabled = !directEnabled;
+        }
+
+        function updateSafUI() {
+            const enabled = document.getElementById('enableStoreAndForward')
+                ? document.getElementById('enableStoreAndForward').checked
+                : false;
+
+            const ids = [
+                'spoolDirectory',
+                'spoolMaxBytes',
+                'spoolHighWatermarkPct',
+                'spoolLowWatermarkPct',
+                'spoolReadMaxBytes'
+            ];
+            for (const id of ids) {
+                const el = document.getElementById(id);
+                if (el) el.disabled = !enabled;
+            }
         }
 
         function addTag(tagPath) {
@@ -922,6 +994,8 @@
                 const tagCount = cfg && Array.isArray(cfg.explicitTagPaths) ? cfg.explicitTagPaths.length : 0;
                 safeText('cfgExplicitCount', cfg ? `${tagCount} tag(s)` : '—');
                 safeText('cfgIncludeSubfolders', cfg && typeof cfg.includeSubfolders === 'boolean' ? (cfg.includeSubfolders ? 'true' : 'false') : '—');
+                safeText('cfgSafEnabled', cfg && typeof cfg.enableStoreAndForward === 'boolean' ? (cfg.enableStoreAndForward ? 'true' : 'false') : '—');
+                safeText('cfgSpoolDir', cfg ? cfg.spoolDirectory : '—');
 
                 // Runtime diagnostics (already human formatted text)
                 const diagResp = await fetch(`${apiBase}/diagnostics`);
@@ -989,6 +1063,15 @@
             document.getElementById('maxQueueSize').value = config.maxQueueSize || 10000;
             document.getElementById('maxEventsPerSecond').value = config.maxEventsPerSecond || 10000;
 
+            // Store-and-forward
+            document.getElementById('enableStoreAndForward').checked = config.enableStoreAndForward || false;
+            document.getElementById('spoolDirectory').value = config.spoolDirectory || 'data/zerobus-spool';
+            document.getElementById('spoolMaxBytes').value = (config.spoolMaxBytes !== undefined && config.spoolMaxBytes !== null) ? config.spoolMaxBytes : 1073741824;
+            document.getElementById('spoolHighWatermarkPct').value = (config.spoolHighWatermarkPct !== undefined && config.spoolHighWatermarkPct !== null) ? config.spoolHighWatermarkPct : 0.85;
+            document.getElementById('spoolLowWatermarkPct').value = (config.spoolLowWatermarkPct !== undefined && config.spoolLowWatermarkPct !== null) ? config.spoolLowWatermarkPct : 0.70;
+            document.getElementById('spoolReadMaxBytes').value = (config.spoolReadMaxBytes !== undefined && config.spoolReadMaxBytes !== null) ? config.spoolReadMaxBytes : 2097152;
+            updateSafUI();
+
             // Reliability
             document.getElementById('maxRetries').value = config.maxRetries || 3;
             document.getElementById('retryBackoffMs').value = config.retryBackoffMs || 1000;
@@ -1021,6 +1104,12 @@
                 batchFlushIntervalMs: parseInt(document.getElementById('batchFlushIntervalMs').value),
                 maxQueueSize: parseInt(document.getElementById('maxQueueSize').value),
                 maxEventsPerSecond: parseInt(document.getElementById('maxEventsPerSecond').value),
+                enableStoreAndForward: document.getElementById('enableStoreAndForward').checked,
+                spoolDirectory: document.getElementById('spoolDirectory').value,
+                spoolMaxBytes: parseInt(document.getElementById('spoolMaxBytes').value),
+                spoolHighWatermarkPct: parseFloat(document.getElementById('spoolHighWatermarkPct').value),
+                spoolLowWatermarkPct: parseFloat(document.getElementById('spoolLowWatermarkPct').value),
+                spoolReadMaxBytes: parseInt(document.getElementById('spoolReadMaxBytes').value),
                 maxRetries: parseInt(document.getElementById('maxRetries').value),
                 retryBackoffMs: parseInt(document.getElementById('retryBackoffMs').value),
                 connectionTimeoutMs: parseInt(document.getElementById('connectionTimeoutMs').value),

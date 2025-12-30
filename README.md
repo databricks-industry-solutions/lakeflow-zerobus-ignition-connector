@@ -1,6 +1,6 @@
 ## Ignition Zerobus Connector
 
-**Version**: `1.0.0`  
+**Version**: `1.0.1`  
 **Purpose**: Stream Ignition tag-change events to Databricks Delta tables via Zerobus (gRPC + protobuf).  
 **Ignition compatibility**: **8.1.x** and **8.3.x** (different `.modl` artifacts).  
 **Configuration**: via the **Ignition Gateway UI**.
@@ -64,8 +64,8 @@ For production setup (prereqs, install, configure, verify, troubleshooting), see
 
 Download the prebuilt Ignition module (`.modl`) from GitHub Releases:
 
-- **Ignition 8.1.x**: [`zerobus-connector-1.0.0.modl`](https://github.com/pravinva/lakeflow-ignition-zerobus-connector/releases/download/v1.0.0/zerobus-connector-1.0.0.modl)
-- **Ignition 8.3.x**: [`zerobus-connector-1.0.0-ignition-8.3.modl`](https://github.com/pravinva/lakeflow-ignition-zerobus-connector/releases/download/v1.0.0/zerobus-connector-1.0.0-ignition-8.3.modl)
+- **Ignition 8.1.x**: `zerobus-connector-1.0.1.modl`
+- **Ignition 8.3.x**: `zerobus-connector-1.0.1-ignition-8.3.modl`
 
 Then follow `DEPLOYMENT.md` for installation and configuration.
 
@@ -104,11 +104,11 @@ Directory structure (high-level):
 
 There are **two** prebuilt module packages under `releases/`:
 
-- **`releases/zerobus-connector-1.0.0.modl`**:
+- **`releases/zerobus-connector-1.0.1.modl`**:
   - **Install on**: Ignition **8.1.x** (and 8.2.x if you run it)
   - **Why**: the packaged `module.xml` sets `<requiredIgnitionVersion>` to `8.1.0`
 
-- **`releases/zerobus-connector-1.0.0-ignition-8.3.modl`**:
+- **`releases/zerobus-connector-1.0.1-ignition-8.3.modl`**:
   - **Install on**: Ignition **8.3.x**
   - **Why**: the packaged `module.xml` sets `<requiredIgnitionVersion>` to `8.3.0`
 
@@ -144,6 +144,15 @@ Two ways for events to enter the module:
 One way for events to leave the module:
 - **Zerobus ingest over gRPC/protobuf** to the Databricks Zerobus endpoint
 
+#### 2.2) Pipeline components (architectural separation)
+
+The runtime data path is built as a small pipeline:
+
+- **Mapper**: `TagEvent → OTEvent` (`module/src/main/java/com/example/ignition/zerobus/pipeline/OtEventMapper.java`)
+- **Buffer**: commit-based buffer backed by memory or disk (`module/src/main/java/com/example/ignition/zerobus/pipeline/StoreAndForwardBuffer.java`)
+- **Sink**: Zerobus write boundary (`module/src/main/java/com/example/ignition/zerobus/pipeline/EventSink.java`)
+  - Zerobus implementation: `ZerobusEventSink` → `ZerobusClientManager.sendOtEvents(...)`
+
 #### 2.2) Lifecycle and configuration
 
 **Startup**
@@ -163,9 +172,10 @@ One way for events to leave the module:
 #### 2.3) Data path: Direct subscriptions mode
 
 1) **Tag change happens**: Ignition calls into the module via TagManager subscription callbacks.  
-2) **Module enqueues events**: `TagSubscriptionService` converts the change to internal `TagEvent` objects and pushes them onto a bounded queue.  
-3) **Batch/flush loop**: flushes based on `batchSize` and `batchFlushIntervalMs` (plus rate limits/backpressure).  
-4) **Send to Databricks via Zerobus**: `ZerobusClientManager` converts events to protobuf (`module/src/main/proto/ot_event.proto`) and streams them over gRPC to Databricks Zerobus (with reconnect/recovery on transient failures).
+2) **Normalize**: `TagSubscriptionService` builds a `TagEvent`, then maps it to `OTEvent` via `OtEventMapper`.  
+3) **Buffer**: the `OTEvent` is offered to the buffer (memory or disk store-and-forward).  
+4) **Flush loop**: a scheduled flusher runs every `batchFlushIntervalMs`. When the sink is ready, it drains up to `batchSize` events and calls the sink.  
+5) **Commit semantics**: the buffer is committed only after a successful send (at-least-once).  
 
 #### 2.4) Data path: HTTP ingest mode (ingest-only)
 
@@ -177,8 +187,23 @@ Prerequisite: set **Enable Direct Subscriptions** = OFF in the module UI.
 2) **Servlet routes the request**:
    - `.../web/ZerobusConfigServlet` (dispatcher)
    - `.../web/ZerobusServletHandler` (shared request parsing/routing)
-3) **Events are enqueued**: same queue as direct subscriptions.
-4) **Batch/flush/send**: same flush loop and Zerobus sender as direct subscriptions.
+3) **Normalize + buffer**: payload → `TagEvent` → `OTEvent` → buffer.
+4) **Batch/flush/send**: same flush loop and sink as direct subscriptions.
+
+### 2.5) Store-and-forward + backpressure + “sink down” behavior
+
+When **Store-and-Forward** is enabled:
+
+- Events are buffered to disk (`DiskSpool`) and only removed after successful send (commit).
+- The module applies high/low watermark backpressure:
+  - When spool backlog exceeds **high watermark**, direct subscriptions auto-pause (unsubscribe) and new events may be rejected (instead of unbounded growth).
+  - When backlog drops below **low watermark**, direct subscriptions auto-resume.
+
+When the **sink is down** (auth/network outages):
+
+- **Ingestion continues** (events keep buffering).
+- The flusher **does not drain disk** unless the sink is ready (prevents repeatedly reading/parsing the same records while disconnected).
+- Once auth/network recovers, the sink reconnects, the backlog drains, and subscriptions resume.
 
 ### 3) Build artifacts
 
@@ -190,7 +215,7 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PA
   ./gradlew buildModule81
 ```
 
-Output: `module/build-user-8.1/modules/zerobus-connector-1.0.0.modl`
+Output: `module/build-user-8.1/modules/zerobus-connector-1.0.1.modl`
 
 #### 3.2) Build the Ignition 8.3.x module (`.modl`)
 
@@ -200,11 +225,29 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PA
   ./gradlew buildModule83
 ```
 
-Output: `module/build-user-8.3/modules/zerobus-connector-1.0.0-ignition-8.3.modl`
+Output: `module/build-user-8.3/modules/zerobus-connector-1.0.1-ignition-8.3.modl`
 
 #### 3.3) Where release artifacts go
 
 After building, the Gradle task also copies the `.modl` into the repo-level `releases/` directory.
+
+### 3.5) Run unit tests (8.1 vs 8.3 SDK jars)
+
+Gradle needs to know which local Ignition SDK jars to compile against. Run tests like:
+
+**Ignition 8.1**
+
+```bash
+cd module
+./gradlew test -PignitionHome=/usr/local/ignition8.1 -PbuildForIgnitionVersion=8.1.50
+```
+
+**Ignition 8.3**
+
+```bash
+cd module
+./gradlew test -PignitionHome=/usr/local/ignition -PbuildForIgnitionVersion=8.3.2
+```
 
 #### 3.4) Docker-based build (optional)
 

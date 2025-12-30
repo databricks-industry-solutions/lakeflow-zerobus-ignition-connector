@@ -1,6 +1,11 @@
 package com.example.ignition.zerobus;
 
 import com.example.ignition.zerobus.web.TagEventPayload;
+import com.example.ignition.zerobus.pipeline.OtEventMapper;
+import com.example.ignition.zerobus.pipeline.StoreAndForwardBuffer;
+import com.example.ignition.zerobus.pipeline.EventSink;
+import com.example.ignition.zerobus.pipeline.ZerobusPipelineFactory;
+import com.example.ignition.zerobus.proto.OTEvent;
 import com.inductiveautomation.ignition.gateway.model.GatewayContext;
 import com.inductiveautomation.ignition.gateway.tags.model.GatewayTagManager;
 import com.inductiveautomation.ignition.common.model.values.QualifiedValue;
@@ -37,18 +42,19 @@ public class TagSubscriptionService {
     private static final Logger logger = LoggerFactory.getLogger(TagSubscriptionService.class);
     
     private final GatewayContext gatewayContext;
-    private final ZerobusClientManager zerobusClientManager;
     private final ConfigModel config;
     
     private AtomicBoolean running = new AtomicBoolean(false);
-    private BlockingQueue<TagEvent> eventQueue;
     private ScheduledExecutorService scheduledExecutor;
-    private ExecutorService workerExecutor;
+    private final StoreAndForwardBuffer buffer;
+    private final OtEventMapper mapper;
+    private final EventSink sink;
 
     // Direct tag subscription state
     private volatile GatewayTagManager tagManager;
     private final Map<TagPath, TagChangeListener> subscribedListeners = new ConcurrentHashMap<>();
     private final Map<String, Object> lastSentValueByTag = new ConcurrentHashMap<>();
+    private volatile boolean autoPausedDirectSubscriptions = false;
     
     // Metrics
     private AtomicLong totalEventsReceived = new AtomicLong(0);
@@ -64,18 +70,37 @@ public class TagSubscriptionService {
      * Constructor.
      * 
      * @param gatewayContext Ignition Gateway context
-     * @param zerobusClientManager Zerobus client for sending events
      * @param config Configuration model
      */
-    public TagSubscriptionService(GatewayContext gatewayContext, 
-                                   ZerobusClientManager zerobusClientManager,
-                                   ConfigModel config) {
+    public TagSubscriptionService(GatewayContext gatewayContext,
+                                  ConfigModel config,
+                                  OtEventMapper mapper,
+                                  StoreAndForwardBuffer buffer,
+                                  EventSink sink) {
         this.gatewayContext = gatewayContext;
-        this.zerobusClientManager = zerobusClientManager;
         this.config = config;
-        
-        // Initialize event queue with configured max size
-        this.eventQueue = new LinkedBlockingQueue<>(config.getMaxQueueSize());
+        this.mapper = mapper;
+        this.buffer = buffer;
+        this.sink = sink;
+    }
+
+    private TagSubscriptionService(GatewayContext gatewayContext,
+                                   ConfigModel config,
+                                   ZerobusPipelineFactory.PipelineComponents comps) {
+        this(gatewayContext, config, comps.mapper, comps.buffer, comps.sink);
+    }
+
+    /**
+     * Backwards-compatible convenience constructor.
+     *
+     * Prefer injecting {@link OtEventMapper}, {@link StoreAndForwardBuffer}, and {@link EventSink}
+     * (or using {@link ZerobusPipelineFactory}) so this service is not responsible for wiring.
+     */
+    @Deprecated
+    public TagSubscriptionService(GatewayContext gatewayContext,
+                                  ZerobusClientManager zerobusClientManager,
+                                  ConfigModel config) {
+        this(gatewayContext, config, ZerobusPipelineFactory.create(config, zerobusClientManager));
     }
     
     /**
@@ -113,7 +138,7 @@ public class TagSubscriptionService {
             );
             
             logger.info("Event processing service started successfully");
-            logger.info("  Event queue capacity: {}", config.getMaxQueueSize());
+            logger.info("  Buffering: {}", buffer.isDiskBacked() ? "disk store-and-forward" : "in-memory");
             logger.info("  Batch size: {}", config.getBatchSize());
             logger.info("  Flush interval: {}ms", config.getBatchFlushIntervalMs());
 
@@ -154,18 +179,15 @@ public class TagSubscriptionService {
                 }
             }
             
-            if (workerExecutor != null && !workerExecutor.isShutdown()) {
-                workerExecutor.shutdown();
-                if (!workerExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-                    workerExecutor.shutdownNow();
-                }
-            }
-            
             logger.info("Event processing service shut down successfully");
             
         } catch (Exception e) {
             logger.error("Error shutting down event processing service", e);
         }
+    }
+
+    public boolean isRunning() {
+        return running.get();
     }
     
     
@@ -319,17 +341,7 @@ public class TagSubscriptionService {
                 lastSentValueByTag.put(tagPathStr, value);
             }
 
-            TagEvent te = new TagEvent(tagPathStr, value, quality, ts);
-            boolean accepted = eventQueue.offer(te);
-            if (accepted) {
-                totalEventsReceived.incrementAndGet();
-                if (config.isDebugLogging()) {
-                    logger.debug("Accepted tag event: {}", tagPathStr);
-                }
-            } else {
-                totalEventsDropped.incrementAndGet();
-                logger.warn("Event queue full, dropped direct tag event: {}", tagPathStr);
-            }
+            acceptTagEvent(new TagEvent(tagPathStr, value, quality, ts), "direct");
         }
     }
 
@@ -356,36 +368,74 @@ public class TagSubscriptionService {
      * Multiple threads can call this concurrently without blocking each other.
      */
     private void flushBatch() {
-        if (eventQueue.isEmpty()) {
-            return;
-        }
-        
         try {
-            List<TagEvent> batch = new ArrayList<>();
-            eventQueue.drainTo(batch, config.getBatchSize());
-            
-            if (batch.isEmpty()) {
+            // Update backpressure + pause/resume subscriptions when disk-backed
+            buffer.refreshBackpressure();
+            if (buffer.isDiskBacked()) {
+                if (buffer.isPaused() && !autoPausedDirectSubscriptions && !subscribedListeners.isEmpty()) {
+                    logger.warn("Auto-pausing direct subscriptions due to backpressure (spool high watermark).");
+                    autoPausedDirectSubscriptions = true;
+                    unsubscribeAll();
+                } else if (!buffer.isPaused() && autoPausedDirectSubscriptions) {
+                    logger.info("Backpressure cleared; resubscribing direct subscriptions.");
+                    autoPausedDirectSubscriptions = false;
+                    subscribeConfiguredTags();
+                }
+            }
+
+            // Sink-down behavior: do NOT drain (especially disk spool) unless the sink is connected/ready.
+            // This avoids repeatedly reading/parsing the same records when disconnected.
+            if (!sink.isReady()) {
+                sink.tryEnsureReady();
+                if (!sink.isReady()) {
+                    return;
+                }
+            }
+
+            StoreAndForwardBuffer.DrainResult drained = buffer.drain(config.getBatchSize());
+            if (drained.events == null || drained.events.isEmpty()) {
                 return;
             }
-            
-            logger.debug("Flushing batch of {} events", batch.size());
-            
-            boolean success = zerobusClientManager.sendEvents(batch);
-            
+
+            logger.debug("Flushing batch of {} events", drained.events.size());
+            boolean success = sink.send(drained.events);
             if (success) {
+                buffer.commit(drained);
                 totalBatchesFlushed.incrementAndGet();
                 lastFlushTime = System.currentTimeMillis();
-                
-                if (config.isDebugLogging()) {
-                    logger.debug("Batch sent successfully: {} events", batch.size());
-                }
             } else {
-                logger.warn("Failed to send batch of {} events", batch.size());
+                // Do NOT commit; records remain for retry. For memory mode, commit is required to remove.
+                logger.warn("Failed to send batch of {} events (will retry)", drained.events.size());
             }
-            
         } catch (Exception e) {
             logger.error("Error flushing batch", e);
         }
+    }
+
+    private boolean acceptTagEvent(TagEvent te, String source) {
+        if (te == null) {
+            return true;
+        }
+
+        // When store-and-forward is enabled and we're paused, reject new events rather than drop later.
+        buffer.refreshBackpressure();
+        if (buffer.isDiskBacked() && buffer.isPaused()) {
+            totalEventsDropped.incrementAndGet();
+            return false;
+        }
+
+        OTEvent evt = mapper.map(te);
+        boolean ok = buffer.offer(evt);
+        if (ok) {
+            totalEventsReceived.incrementAndGet();
+            if (config.isDebugLogging()) {
+                logger.debug("Accepted tag event ({}) -> {}", source, te.getTagPath());
+            }
+        } else {
+            totalEventsDropped.incrementAndGet();
+            logger.warn("Buffer full, dropped event ({}) -> {}", source, te.getTagPath());
+        }
+        return ok;
     }
     
     /**
@@ -417,12 +467,20 @@ public class TagSubscriptionService {
         sb.append("=== Event Processing Service Diagnostics ===\n");
         sb.append("Running: ").append(running.get()).append("\n");
         sb.append("Mode: Event-driven (Gateway subscriptions + optional REST ingest)\n");
-        sb.append("Queue Size: ").append(eventQueue.size())
-            .append("/").append(config.getMaxQueueSize()).append("\n");
+        if (buffer.isDiskBacked()) {
+            sb.append("Buffer: disk store-and-forward\n");
+            sb.append("Spool Backlog: ").append(buffer.backlogBytes()).append(" bytes\n");
+            sb.append("Backpressure Paused: ").append(buffer.isPaused()).append("\n");
+        } else {
+            sb.append("Buffer: in-memory\n");
+            sb.append("Queue Size: ").append(buffer.backlogBytes())
+                .append("/").append(config.getMaxQueueSize()).append("\n");
+        }
         sb.append("Total Events Received: ").append(totalEventsReceived.get()).append("\n");
         sb.append("Total Events Dropped: ").append(totalEventsDropped.get()).append("\n");
         sb.append("Total Batches Flushed: ").append(totalBatchesFlushed.get()).append("\n");
         sb.append("Direct Subscriptions: ").append(subscribedListeners.size()).append(" tags\n");
+        sb.append("Auto-Paused Direct Subscriptions: ").append(autoPausedDirectSubscriptions).append("\n");
         
         if (lastFlushTime > 0) {
             long secondsAgo = (System.currentTimeMillis() - lastFlushTime) / 1000;
@@ -454,19 +512,7 @@ public class TagSubscriptionService {
             }
             // Convert payload to TagEvent
             TagEvent event = convertPayloadToEvent(payload);
-            
-            // Try to add to queue
-            boolean accepted = eventQueue.offer(event);
-            
-            if (accepted) {
-                totalEventsReceived.incrementAndGet();
-                logger.debug("Event accepted from Event Stream: {}", payload.getTagPath());
-            } else {
-                totalEventsDropped.incrementAndGet();
-                logger.warn("Event queue full, dropped event from: {}", payload.getTagPath());
-            }
-            
-            return accepted;
+            return acceptTagEvent(event, "http");
             
         } catch (Exception e) {
             logger.error("Error ingesting event from Event Streams", e);
@@ -496,13 +542,8 @@ public class TagSubscriptionService {
                     continue;
                 }
                 TagEvent event = convertPayloadToEvent(payload);
-                
-                if (eventQueue.offer(event)) {
+                if (acceptTagEvent(event, "http-batch")) {
                     accepted++;
-                    totalEventsReceived.incrementAndGet();
-                } else {
-                    totalEventsDropped.incrementAndGet();
-                    logger.warn("Event queue full, dropped event from batch: {}", payload.getTagPath());
                 }
                 
             } catch (Exception e) {

@@ -1,6 +1,8 @@
 package com.example.ignition.zerobus;
 
 import java.io.Serializable;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -84,6 +86,29 @@ public class ConfigModel implements Serializable {
     
     /** Maximum events per second (rate limiting) */
     private int maxEventsPerSecond = 1000;
+
+    // === Store-and-Forward (disk spool) ===
+
+    /**
+     * When enabled, events are buffered to disk when the sink is unavailable (OT-style store-and-forward).
+     * This allows surviving transient network / auth outages without data loss (at-least-once).
+     */
+    private boolean enableStoreAndForward = false;
+
+    /** Spool directory (absolute or relative to Ignition install dir). */
+    private String spoolDirectory = "data/zerobus-spool";
+
+    /** Maximum spool backlog size in bytes before rejecting new events. */
+    private long spoolMaxBytes = 1024L * 1024 * 1024; // 1 GiB default
+
+    /** High watermark percentage (0-1). If backlog exceeds this, apply backpressure (pause subscriptions). */
+    private double spoolHighWatermarkPct = 0.85;
+
+    /** Low watermark percentage (0-1). If backlog drops below this, resume subscriptions. */
+    private double spoolLowWatermarkPct = 0.70;
+
+    /** Maximum bytes to read from spool per flush attempt (safety cap). */
+    private long spoolReadMaxBytes = 2L * 1024 * 1024; // 2 MiB
     
     // === Reliability Settings ===
     
@@ -261,6 +286,54 @@ public class ConfigModel implements Serializable {
     public void setMaxEventsPerSecond(int maxEventsPerSecond) {
         this.maxEventsPerSecond = maxEventsPerSecond;
     }
+
+    public boolean isEnableStoreAndForward() {
+        return enableStoreAndForward;
+    }
+
+    public void setEnableStoreAndForward(boolean enableStoreAndForward) {
+        this.enableStoreAndForward = enableStoreAndForward;
+    }
+
+    public String getSpoolDirectory() {
+        return spoolDirectory;
+    }
+
+    public void setSpoolDirectory(String spoolDirectory) {
+        this.spoolDirectory = spoolDirectory;
+    }
+
+    public long getSpoolMaxBytes() {
+        return spoolMaxBytes;
+    }
+
+    public void setSpoolMaxBytes(long spoolMaxBytes) {
+        this.spoolMaxBytes = spoolMaxBytes;
+    }
+
+    public double getSpoolHighWatermarkPct() {
+        return spoolHighWatermarkPct;
+    }
+
+    public void setSpoolHighWatermarkPct(double spoolHighWatermarkPct) {
+        this.spoolHighWatermarkPct = spoolHighWatermarkPct;
+    }
+
+    public double getSpoolLowWatermarkPct() {
+        return spoolLowWatermarkPct;
+    }
+
+    public void setSpoolLowWatermarkPct(double spoolLowWatermarkPct) {
+        this.spoolLowWatermarkPct = spoolLowWatermarkPct;
+    }
+
+    public long getSpoolReadMaxBytes() {
+        return spoolReadMaxBytes;
+    }
+
+    public void setSpoolReadMaxBytes(long spoolReadMaxBytes) {
+        this.spoolReadMaxBytes = spoolReadMaxBytes;
+    }
     
     public int getMaxRetries() {
         return maxRetries;
@@ -425,6 +498,42 @@ public class ConfigModel implements Serializable {
         if (batchFlushIntervalMs < 100 || batchFlushIntervalMs > 60000) {
             errors.add("Batch flush interval must be between 100ms and 60000ms");
         }
+
+        if (enableStoreAndForward) {
+            if (spoolMaxBytes < (10L * 1024 * 1024)) {
+                errors.add("Spool max bytes must be at least 10MB when store-and-forward is enabled");
+            }
+            if (spoolHighWatermarkPct <= 0.0 || spoolHighWatermarkPct >= 1.0) {
+                errors.add("Spool high watermark must be between 0 and 1");
+            }
+            if (spoolLowWatermarkPct <= 0.0 || spoolLowWatermarkPct >= 1.0) {
+                errors.add("Spool low watermark must be between 0 and 1");
+            }
+            if (spoolLowWatermarkPct >= spoolHighWatermarkPct) {
+                errors.add("Spool low watermark must be less than high watermark");
+            }
+
+            // Validate spool directory is usable (no silent runtime fallback).
+            try {
+                if (spoolDirectory == null || spoolDirectory.isBlank()) {
+                    errors.add("Spool directory is required when store-and-forward is enabled");
+                } else {
+                    // Same resolution logic as DiskSpool: absolute path or relative to working dir.
+                    Path p = Path.of(spoolDirectory);
+                    if (!p.isAbsolute()) {
+                        p = new java.io.File(spoolDirectory).toPath().toAbsolutePath().normalize();
+                    }
+                    Files.createDirectories(p);
+                    if (!Files.isDirectory(p)) {
+                        errors.add("Spool directory path is not a directory: " + p);
+                    } else if (!Files.isWritable(p)) {
+                        errors.add("Spool directory is not writable: " + p);
+                    }
+                }
+            } catch (Exception e) {
+                errors.add("Spool directory is not usable: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            }
+        }
         
         return errors;
     }
@@ -451,6 +560,12 @@ public class ConfigModel implements Serializable {
             || this.batchFlushIntervalMs != newConfig.batchFlushIntervalMs
             || this.maxQueueSize != newConfig.maxQueueSize
             || this.maxEventsPerSecond != newConfig.maxEventsPerSecond
+            || this.enableStoreAndForward != newConfig.enableStoreAndForward
+            || !Objects.equals(this.spoolDirectory, newConfig.spoolDirectory)
+            || this.spoolMaxBytes != newConfig.spoolMaxBytes
+            || Double.compare(this.spoolHighWatermarkPct, newConfig.spoolHighWatermarkPct) != 0
+            || Double.compare(this.spoolLowWatermarkPct, newConfig.spoolLowWatermarkPct) != 0
+            || this.spoolReadMaxBytes != newConfig.spoolReadMaxBytes
             || this.maxRetries != newConfig.maxRetries
             || this.retryBackoffMs != newConfig.retryBackoffMs
             || this.connectionTimeoutMs != newConfig.connectionTimeoutMs
@@ -483,6 +598,12 @@ public class ConfigModel implements Serializable {
         this.batchFlushIntervalMs = other.batchFlushIntervalMs;
         this.maxQueueSize = other.maxQueueSize;
         this.maxEventsPerSecond = other.maxEventsPerSecond;
+        this.enableStoreAndForward = other.enableStoreAndForward;
+        this.spoolDirectory = other.spoolDirectory;
+        this.spoolMaxBytes = other.spoolMaxBytes;
+        this.spoolHighWatermarkPct = other.spoolHighWatermarkPct;
+        this.spoolLowWatermarkPct = other.spoolLowWatermarkPct;
+        this.spoolReadMaxBytes = other.spoolReadMaxBytes;
         this.maxRetries = other.maxRetries;
         this.retryBackoffMs = other.retryBackoffMs;
         this.connectionTimeoutMs = other.connectionTimeoutMs;

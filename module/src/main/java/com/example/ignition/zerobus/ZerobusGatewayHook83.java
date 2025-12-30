@@ -4,6 +4,7 @@ import com.example.ignition.zerobus.web.ZerobusConfigResourceHolder;
 import com.example.ignition.zerobus.web.ZerobusConfigServlet;
 import com.example.ignition.zerobus.web.TagEventPayload;
 import com.example.ignition.zerobus.web.ZerobusConfigResource;
+import com.example.ignition.zerobus.pipeline.ZerobusPipelineFactory;
 import com.inductiveautomation.ignition.common.licensing.LicenseState;
 import com.inductiveautomation.ignition.gateway.model.AbstractGatewayModuleHook;
 import com.inductiveautomation.ignition.gateway.model.GatewayContext;
@@ -149,12 +150,20 @@ public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements Z
         if (zerobusClientManager == null) {
             zerobusClientManager = new ZerobusClientManager(configModel);
         }
-        zerobusClientManager.initialize();
 
+        // Always start buffering/ingest service first so "sink down" does not prevent ingestion.
         if (tagSubscriptionService == null) {
-            tagSubscriptionService = new TagSubscriptionService(gatewayContext, zerobusClientManager, configModel);
+            ZerobusPipelineFactory.PipelineComponents comps = ZerobusPipelineFactory.create(configModel, zerobusClientManager);
+            tagSubscriptionService = new TagSubscriptionService(gatewayContext, configModel, comps.mapper, comps.buffer, comps.sink);
         }
         tagSubscriptionService.start();
+
+        // Best-effort: try to connect the sink. Failures should not stop ingestion; events will buffer.
+        try {
+            zerobusClientManager.initialize();
+        } catch (Exception e) {
+            logger.error("Zerobus sink is unavailable during startup (8.3). Ingestion will continue and buffer until the sink recovers.", e);
+        }
     }
 
     private void loadConfiguration() {
@@ -236,7 +245,18 @@ public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements Z
                     logger.error("Failed to restart services with new configuration; services will remain stopped.", e);
                 }
             } else if (!needsRestart) {
-                logger.info("Configuration updated, no service restart required (8.3)");
+                // Even when a restart isn't required, if the module is enabled and services are down,
+                // start them to avoid requiring the operator to manually restart the gateway.
+                if (configModel.isEnabled() && (tagSubscriptionService == null || !tagSubscriptionService.isRunning())) {
+                    try {
+                        startServices();
+                        logger.info("Configuration updated; services started (8.3)");
+                    } catch (Exception e) {
+                        logger.error("Configuration updated but services could not be started (8.3)", e);
+                    }
+                } else {
+                    logger.info("Configuration updated, no service restart required (8.3)");
+                }
             } else {
                 logger.info("Configuration saved, services not started (module disabled) (8.3)");
             }

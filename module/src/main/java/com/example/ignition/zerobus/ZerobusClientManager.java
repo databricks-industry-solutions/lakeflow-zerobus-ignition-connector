@@ -8,14 +8,18 @@ import com.databricks.zerobus.IngestRecordResponse;
 import com.databricks.zerobus.ZerobusException;
 import com.databricks.zerobus.NonRetriableException;
 import com.example.ignition.zerobus.proto.OTEvent;
+import com.example.ignition.zerobus.pipeline.OtEventMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Locale;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -43,6 +47,20 @@ public class ZerobusClientManager {
     private volatile long lastSuccessfulSendTime = 0;
     private volatile long lastAckedOffset = 0;
     private volatile String lastError = null;
+
+    // Error classification / backoff state
+    private enum ErrorClass {
+        NONE,
+        AUTH,
+        TRANSIENT,
+        NON_RETRIABLE
+    }
+
+    private volatile ErrorClass lastErrorClass = ErrorClass.NONE;
+    private volatile long lastErrorAtMs = 0L;
+    private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
+    private final AtomicLong nextRetryAtMs = new AtomicLong(0L);
+    private final AtomicLong lastAuthFailureMs = new AtomicLong(0L);
     
     // Zerobus SDK objects
     private ZerobusSdk zerobusSdk;
@@ -53,6 +71,121 @@ public class ZerobusClientManager {
     // Reconnect throttling to avoid hot-looping when the remote service is down.
     private final AtomicLong lastReconnectAttemptMs = new AtomicLong(0);
     private final Object reconnectLock = new Object();
+
+    private void recordSuccess() {
+        consecutiveFailures.set(0);
+        lastErrorClass = ErrorClass.NONE;
+        nextRetryAtMs.set(0L);
+        // Keep lastError/lastErrorAtMs as historical breadcrumbs.
+    }
+
+    private void recordFailure(Throwable t) {
+        long now = System.currentTimeMillis();
+        ErrorClass cls = classify(t);
+        lastErrorClass = cls;
+        lastErrorAtMs = now;
+        lastError = t != null ? t.getClass().getSimpleName() + ": " + safeMsg(t) : "Unknown failure";
+
+        int fails = consecutiveFailures.incrementAndGet();
+        if (cls == ErrorClass.AUTH) {
+            lastAuthFailureMs.set(now);
+        }
+        long backoffMs = computeBackoffMs(cls, fails);
+        nextRetryAtMs.set(now + backoffMs);
+    }
+
+    private static String safeMsg(Throwable t) {
+        String m = t.getMessage();
+        return m != null ? m : "";
+    }
+
+    private static ErrorClass classify(Throwable t) {
+        if (t == null) return ErrorClass.TRANSIENT;
+
+        // Unwrap common wrapper exceptions
+        Throwable root = t;
+        while (root instanceof java.util.concurrent.ExecutionException
+                || root instanceof java.util.concurrent.CompletionException) {
+            Throwable c = root.getCause();
+            if (c == null) break;
+            root = c;
+        }
+
+        // Auth/token detection by message is allowed for any exception type (SDKs sometimes throw "retriable"
+        // exception types for auth failures, but we still want to avoid hot-looping).
+        //
+        // IMPORTANT: Some SDKs put the important auth hint only in a nested cause message, so scan the cause chain.
+        String msg = "";
+        Throwable scan = root;
+        int depth = 0;
+        while (scan != null && depth < 8) {
+            String m = safeMsg(scan);
+            if (m != null && !m.isEmpty()) {
+                msg = (msg + "\n" + m).toLowerCase(Locale.ROOT);
+            }
+            scan = scan.getCause();
+            depth++;
+        }
+        if (msg.contains("unauthorized") || msg.contains("forbidden") || msg.contains("401") || msg.contains("403")
+                || msg.contains("oauth") || msg.contains("token") || msg.contains("client secret")
+                || msg.contains("invalid_client") || msg.contains("invalid grant") || msg.contains("invalid_grant")) {
+            return ErrorClass.AUTH;
+        }
+
+        // NonRetriableException from the SDK generally means "operator action required" (bad table, schema, etc).
+        if (root instanceof NonRetriableException) {
+            return ErrorClass.NON_RETRIABLE;
+        }
+
+        // ZerobusException is treated as transient by default (SDK indicates retriable).
+        if (root instanceof ZerobusException) {
+            return ErrorClass.TRANSIENT;
+        }
+
+        // Network-ish failures (timeouts, IO, etc) should back off and retry.
+        Throwable cur = root;
+        while (cur != null) {
+            String n = cur.getClass().getName();
+            if (cur instanceof java.io.IOException
+                    || cur instanceof java.net.SocketTimeoutException
+                    || cur instanceof java.net.ConnectException
+                    || n.contains("Timeout")
+                    || n.contains("SSL")
+                    || n.contains("UnknownHost")
+                    || n.contains("Socket")) {
+                return ErrorClass.TRANSIENT;
+            }
+            cur = cur.getCause();
+        }
+
+        // Default: unexpected, but we still treat as transient to avoid losing data; operator can inspect diagnostics.
+        return ErrorClass.TRANSIENT;
+    }
+
+    private long computeBackoffMs(ErrorClass cls, int failures) {
+        // Exponential backoff with jitter, capped. Config retryBackoffMs serves as the transient base.
+        long base = Math.max(250L, config.getRetryBackoffMs());
+        long max = 60_000L; // cap transient backoff at 60s
+        long jitter = ThreadLocalRandom.current().nextLong(0, 250L);
+
+        switch (cls) {
+            case AUTH: {
+                // Avoid hot loops on auth: start at 30s, cap at 10m
+                long authBase = Math.max(30_000L, base);
+                long exp = authBase * (1L << Math.min(10, Math.max(0, failures - 1))); // up to ~512x
+                return Math.min(exp, 10L * 60_000L) + jitter;
+            }
+            case NON_RETRIABLE: {
+                // Operator action required; don't keep pounding. Retry rarely just in case it was transient.
+                return (5L * 60_000L) + jitter; // 5 minutes
+            }
+            case TRANSIENT:
+            default: {
+                long exp = base * (1L << Math.min(6, Math.max(0, failures - 1))); // up to 64x
+                return Math.min(exp, max) + jitter;
+            }
+        }
+    }
     
     /**
      * Constructor.
@@ -179,79 +312,68 @@ public class ZerobusClientManager {
      * @return true if successful, false otherwise
      */
     public boolean sendEvents(List<TagEvent> events) {
-        if (!ensureConnected()) {
-            logger.warn("Cannot send events - client not initialized or not connected");
-            return false;
-        }
-        
         if (events == null || events.isEmpty()) {
             logger.debug("No events to send");
             return true;
         }
-        
-        logger.debug("Sending batch of {} events to Zerobus", events.size());
-        
+        // Back-compat wrapper: map TagEvent -> OTEvent and send as normalized events.
+        OtEventMapper mapper = new OtEventMapper(config);
+        List<OTEvent> batch = new ArrayList<>(events.size());
+        for (TagEvent te : events) {
+            batch.add(mapper.map(te));
+        }
+        return sendOtEvents(batch);
+    }
+
+    /**
+     * Send a batch of normalized OT events (preferred API).
+     */
+    public boolean sendOtEvents(List<OTEvent> events) {
+        if (!ensureConnected()) {
+            logger.warn("Cannot send events - client not initialized or not connected");
+            return false;
+        }
+        if (events == null || events.isEmpty()) {
+            return true;
+        }
+        logger.debug("Sending batch of {} OT events to Zerobus", events.size());
+
         try {
-            // Convert and ingest all events, collecting futures
             List<CompletableFuture<Void>> futures = new ArrayList<>();
-            
-            for (TagEvent event : events) {
-                OTEvent protoEvent = convertToProtobuf(event);
-                
-                // Ingest record - returns a future that completes when durably written
-                CompletableFuture<Void> ingestFuture = zerobusStream.ingestRecord(protoEvent);
-                futures.add(ingestFuture);
+            for (OTEvent event : events) {
+                futures.add(zerobusStream.ingestRecord(event));
             }
-            
-            // Wait for ALL futures to complete (parallel, not serial!)
-            CompletableFuture<Void> allFutures = CompletableFuture.allOf(
-                futures.toArray(new CompletableFuture[0])
-            );
+            CompletableFuture<Void> allFutures = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
             allFutures.get(config.getRequestTimeoutMs(), TimeUnit.MILLISECONDS);
-            
-            // Flush to ensure all records are sent
             zerobusStream.flush();
-            
-            // Update metrics
+
             totalEventsSent.addAndGet(events.size());
             totalBatchesSent.incrementAndGet();
             lastSuccessfulSendTime = System.currentTimeMillis();
-            
-            if (config.isDebugLogging()) {
-                logger.debug("Batch sent successfully - {} events", events.size());
-            }
-            
+            recordSuccess();
             return true;
-            
         } catch (NonRetriableException e) {
-            // Fatal error - do not retry
-            logger.error("Non-retriable error sending events to Zerobus", e);
-            lastError = "Non-retriable: " + e.getMessage();
+            recordFailure(e);
+            if (lastErrorClass == ErrorClass.AUTH) {
+                logger.error("Auth/token error sending events to Zerobus (will back off)", e);
+            } else {
+                logger.error("Non-retriable error sending events to Zerobus (operator action likely required)", e);
+            }
             totalFailures.incrementAndGet();
             connected.set(false);
-            
             return false;
-            
         } catch (ZerobusException e) {
-            // Retriable error - log and attempt recovery
-            logger.warn("Retriable error sending events to Zerobus", e);
-            lastError = "Retriable: " + e.getMessage();
+            recordFailure(e);
+            logger.warn("Retriable error sending events to Zerobus (will retry with backoff)", e);
             totalFailures.incrementAndGet();
-            
-            // Attempt stream recovery
-            attemptRecovery();
-            
+            // Recovery will be attempted by ensureConnected() after backoff.
             return false;
-            
         } catch (Exception e) {
-            logger.error("Unexpected error sending events to Zerobus", e);
-            lastError = "Unexpected: " + e.getMessage();
+            recordFailure(e);
+            logger.error("Unexpected error sending events to Zerobus (will retry with backoff)", e);
             totalFailures.incrementAndGet();
             connected.set(false);
-
-            // Attempt recovery on unexpected failures as well; some gRPC/transport failures surface here.
-            attemptRecovery();
-            
+            // Recovery will be attempted by ensureConnected() after backoff.
             return false;
         }
     }
@@ -276,8 +398,12 @@ public class ZerobusClientManager {
             }
 
             long now = System.currentTimeMillis();
+            long retryAt = nextRetryAtMs.get();
+            if (retryAt > 0 && now < retryAt) {
+                return false;
+            }
             long last = lastReconnectAttemptMs.get();
-            long minInterval = Math.max(1000L, config.getRetryBackoffMs());
+            long minInterval = 250L; // lightweight guard against tight loops; real backoff is nextRetryAtMs
             if ((now - last) < minInterval) {
                 return false;
             }
@@ -288,6 +414,7 @@ public class ZerobusClientManager {
                 if (initialized.get() && !connected.get() && zerobusStream != null && zerobusSdk != null) {
                     attemptRecovery();
                     if (connected.get()) {
+                        recordSuccess();
                         return true;
                     }
                 }
@@ -299,9 +426,12 @@ public class ZerobusClientManager {
                     // shutdown is best-effort
                 }
                 initialize();
+                if (connected.get()) {
+                    recordSuccess();
+                }
                 return connected.get();
             } catch (Exception e) {
-                lastError = e.getMessage();
+                recordFailure(e);
                 connected.set(false);
                 return false;
             }
@@ -391,7 +521,7 @@ public class ZerobusClientManager {
             
         } catch (Exception e) {
             logger.error("Stream recovery failed", e);
-            lastError = "Recovery failed: " + e.getMessage();
+            recordFailure(e);
             connected.set(false);
         }
     }
@@ -416,70 +546,7 @@ public class ZerobusClientManager {
      * @param event The tag event to convert
      * @return OTEvent protobuf message
      */
-    private OTEvent convertToProtobuf(TagEvent event) {
-        // Generate unique event ID
-        String eventId = java.util.UUID.randomUUID().toString();
-        
-        // Get current time in milliseconds for ingestion timestamp
-        long ingestionTime = System.currentTimeMillis();
-        
-        // Extract tag provider from tag path (e.g., "[default]TagName" -> "default")
-        String tagProvider = "default";
-        String tagPath = event.getTagPath();
-        if (tagPath != null && tagPath.startsWith("[") && tagPath.contains("]")) {
-            int endBracket = tagPath.indexOf("]");
-            tagProvider = tagPath.substring(1, endBracket);
-        }
-        
-        // Determine data type
-        String dataType = "UNKNOWN";
-        if (event.isNumeric()) {
-            dataType = "DOUBLE";
-        } else if (event.isString()) {
-            dataType = "STRING";
-        } else if (event.isBoolean()) {
-            dataType = "BOOLEAN";
-        }
-        
-        // Build the OTEvent
-        // Note: Delta TIMESTAMP expects microseconds (not milliseconds) when using int64
-        long eventTimeMicros = event.getTimestamp().getTime() * 1000;  // Convert millis to micros
-        long ingestionTimeMicros = ingestionTime * 1000;  // Convert millis to micros
-        
-        OTEvent.Builder builder = OTEvent.newBuilder()
-            .setEventId(eventId)
-            .setEventTime(eventTimeMicros)
-            .setTagPath(tagPath != null ? tagPath : "")
-            .setTagProvider(tagProvider)
-            .setQuality(event.getQuality() != null ? event.getQuality() : "UNKNOWN")
-            .setQualityCode(event.isGoodQuality() ? 192 : 0)  // 192 is Ignition's GOOD quality code
-            .setSourceSystem(config.getSourceSystemId())
-            .setIngestionTimestamp(ingestionTimeMicros)
-            .setDataType(dataType)
-            .setAlarmState("")  // Empty if not in alarm
-            .setAlarmPriority(0);  // 0 if no alarm
-        
-        // Set the appropriate value field based on type
-        if (event.isNumeric()) {
-            builder.setNumericValue(event.getValueAsDouble());
-        } else {
-            builder.setNumericValue(0.0);
-        }
-        
-        if (event.isString()) {
-            builder.setStringValue(event.getValueAsString());
-        } else {
-            builder.setStringValue("");
-        }
-        
-        if (event.isBoolean()) {
-            builder.setBooleanValue(event.getValueAsBoolean());
-        } else {
-            builder.setBooleanValue(false);
-        }
-        
-        return builder.build();
-    }
+    // TagEvent -> OTEvent mapping moved to pipeline.OtEventMapper to keep clean adapter->sink separation.
     
     /**
      * Get diagnostics information for monitoring.
@@ -512,6 +579,22 @@ public class ZerobusClientManager {
         if (lastError != null) {
             sb.append("Last Error: ").append(lastError).append("\n");
         }
+
+        sb.append("Last Error Class: ").append(lastErrorClass).append("\n");
+        if (lastErrorAtMs > 0) {
+            long secondsAgo = (System.currentTimeMillis() - lastErrorAtMs) / 1000;
+            sb.append("Last Error At: ").append(secondsAgo).append(" seconds ago\n");
+        }
+        sb.append("Consecutive Failures: ").append(consecutiveFailures.get()).append("\n");
+        long retryAt = nextRetryAtMs.get();
+        if (retryAt > 0) {
+            long ms = retryAt - System.currentTimeMillis();
+            if (ms > 0) {
+                sb.append("Next Retry In: ").append(ms / 1000).append(" seconds\n");
+            } else {
+                sb.append("Next Retry In: now\n");
+            }
+        }
         
         return sb.toString();
     }
@@ -538,6 +621,20 @@ public class ZerobusClientManager {
         return connected.get();
     }
     
+    /**
+     * @return true if the sink is currently ready to send without needing reconnection attempts.
+     */
+    public boolean isReadyToSend() {
+        return initialized.get() && connected.get();
+    }
+
+    /**
+     * Best-effort: attempt to connect/recover subject to backoff state. Safe to call frequently.
+     */
+    public boolean tryEnsureConnected() {
+        return ensureConnected();
+    }
+
     public String getStreamId() {
         return zerobusStream != null ? zerobusStream.getStreamId() : null;
     }

@@ -54,6 +54,14 @@ public class ZerobusSettings83 extends PersistentRecord {
     public static final IntField MaxQueueSize = new IntField(META, "MaxQueueSize");
     public static final IntField MaxEventsPerSecond = new IntField(META, "MaxEventsPerSecond");
 
+    // Store-and-forward (disk spool)
+    public static final BooleanField EnableStoreAndForward = new BooleanField(META, "EnableStoreAndForward");
+    public static final StringField SpoolDirectory = new StringField(META, "SpoolDirectory");
+    public static final LongField SpoolMaxBytes = new LongField(META, "SpoolMaxBytes");
+    public static final DoubleField SpoolHighWatermarkPct = new DoubleField(META, "SpoolHighWatermarkPct");
+    public static final DoubleField SpoolLowWatermarkPct = new DoubleField(META, "SpoolLowWatermarkPct");
+    public static final LongField SpoolReadMaxBytes = new LongField(META, "SpoolReadMaxBytes");
+
     // Reliability
     public static final IntField MaxRetries = new IntField(META, "MaxRetries");
     public static final LongField RetryBackoffMs = new LongField(META, "RetryBackoffMs");
@@ -84,6 +92,12 @@ public class ZerobusSettings83 extends PersistentRecord {
         BatchFlushIntervalMs.setDefault(500L);
         MaxQueueSize.setDefault(10000);
         MaxEventsPerSecond.setDefault(10000);
+        EnableStoreAndForward.setDefault(false);
+        SpoolDirectory.setDefault("data/zerobus-spool");
+        SpoolMaxBytes.setDefault(1024L * 1024 * 1024);
+        SpoolHighWatermarkPct.setDefault(0.85);
+        SpoolLowWatermarkPct.setDefault(0.70);
+        SpoolReadMaxBytes.setDefault(2L * 1024 * 1024);
         MaxRetries.setDefault(3);
         RetryBackoffMs.setDefault(1000L);
         ConnectionTimeoutMs.setDefault(30000L);
@@ -125,6 +139,12 @@ public class ZerobusSettings83 extends PersistentRecord {
         config.setBatchFlushIntervalMs(getLong(BatchFlushIntervalMs));
         config.setMaxQueueSize(getInt(MaxQueueSize));
         config.setMaxEventsPerSecond(getInt(MaxEventsPerSecond));
+        config.setEnableStoreAndForward(getBoolean(EnableStoreAndForward));
+        config.setSpoolDirectory(getString(SpoolDirectory));
+        config.setSpoolMaxBytes(getLong(SpoolMaxBytes));
+        config.setSpoolHighWatermarkPct(getDouble(SpoolHighWatermarkPct));
+        config.setSpoolLowWatermarkPct(getDouble(SpoolLowWatermarkPct));
+        config.setSpoolReadMaxBytes(getLong(SpoolReadMaxBytes));
         config.setMaxRetries(getInt(MaxRetries));
         config.setRetryBackoffMs(getLong(RetryBackoffMs));
         config.setConnectionTimeoutMs(getLong(ConnectionTimeoutMs));
@@ -155,6 +175,12 @@ public class ZerobusSettings83 extends PersistentRecord {
         setLong(BatchFlushIntervalMs, config.getBatchFlushIntervalMs());
         setInt(MaxQueueSize, config.getMaxQueueSize());
         setInt(MaxEventsPerSecond, config.getMaxEventsPerSecond());
+        setBoolean(EnableStoreAndForward, config.isEnableStoreAndForward());
+        setString(SpoolDirectory, config.getSpoolDirectory());
+        setLong(SpoolMaxBytes, config.getSpoolMaxBytes());
+        setDouble(SpoolHighWatermarkPct, config.getSpoolHighWatermarkPct());
+        setDouble(SpoolLowWatermarkPct, config.getSpoolLowWatermarkPct());
+        setLong(SpoolReadMaxBytes, config.getSpoolReadMaxBytes());
         setInt(MaxRetries, config.getMaxRetries());
         setLong(RetryBackoffMs, config.getRetryBackoffMs());
         setLong(ConnectionTimeoutMs, config.getConnectionTimeoutMs());

@@ -79,6 +79,14 @@ public class ZerobusSettings extends PersistentRecord {
 
     public static final IntField MaxEventsPerSecond = new IntField(META, "MaxEventsPerSecond");
 
+    // === Store-and-Forward (disk spool) ===
+    public static final BooleanField EnableStoreAndForward = new BooleanField(META, "EnableStoreAndForward");
+    public static final StringField SpoolDirectory = new StringField(META, "SpoolDirectory");
+    public static final LongField SpoolMaxBytes = new LongField(META, "SpoolMaxBytes");
+    public static final DoubleField SpoolHighWatermarkPct = new DoubleField(META, "SpoolHighWatermarkPct");
+    public static final DoubleField SpoolLowWatermarkPct = new DoubleField(META, "SpoolLowWatermarkPct");
+    public static final LongField SpoolReadMaxBytes = new LongField(META, "SpoolReadMaxBytes");
+
     // === Reliability Settings ===
 
     public static final IntField MaxRetries = new IntField(META, "MaxRetries");
@@ -166,6 +174,26 @@ public class ZerobusSettings extends PersistentRecord {
             .setFieldNameKey("ZerobusSettings.MaxEventsPerSecond.Name")
             .setFieldDescriptionKey("ZerobusSettings.MaxEventsPerSecond.desc");
 
+        // Store-and-forward
+        EnableStoreAndForward.getFormMeta()
+            .setFieldNameKey("ZerobusSettings.EnableStoreAndForward.Name")
+            .setFieldDescriptionKey("ZerobusSettings.EnableStoreAndForward.desc");
+        SpoolDirectory.getFormMeta()
+            .setFieldNameKey("ZerobusSettings.SpoolDirectory.Name")
+            .setFieldDescriptionKey("ZerobusSettings.SpoolDirectory.desc");
+        SpoolMaxBytes.getFormMeta()
+            .setFieldNameKey("ZerobusSettings.SpoolMaxBytes.Name")
+            .setFieldDescriptionKey("ZerobusSettings.SpoolMaxBytes.desc");
+        SpoolHighWatermarkPct.getFormMeta()
+            .setFieldNameKey("ZerobusSettings.SpoolHighWatermarkPct.Name")
+            .setFieldDescriptionKey("ZerobusSettings.SpoolHighWatermarkPct.desc");
+        SpoolLowWatermarkPct.getFormMeta()
+            .setFieldNameKey("ZerobusSettings.SpoolLowWatermarkPct.Name")
+            .setFieldDescriptionKey("ZerobusSettings.SpoolLowWatermarkPct.desc");
+        SpoolReadMaxBytes.getFormMeta()
+            .setFieldNameKey("ZerobusSettings.SpoolReadMaxBytes.Name")
+            .setFieldDescriptionKey("ZerobusSettings.SpoolReadMaxBytes.desc");
+
         // Reliability
         MaxRetries.getFormMeta()
             .setFieldNameKey("ZerobusSettings.MaxRetries.Name")
@@ -218,6 +246,14 @@ public class ZerobusSettings extends PersistentRecord {
         BatchFlushIntervalMs.setDefault(500L);
         MaxQueueSize.setDefault(10000);
         MaxEventsPerSecond.setDefault(10000);
+
+        // Store-and-forward defaults
+        EnableStoreAndForward.setDefault(false);
+        SpoolDirectory.setDefault("data/zerobus-spool");
+        SpoolMaxBytes.setDefault(1024L * 1024 * 1024);
+        SpoolHighWatermarkPct.setDefault(0.85);
+        SpoolLowWatermarkPct.setDefault(0.70);
+        SpoolReadMaxBytes.setDefault(2L * 1024 * 1024);
 
         // Reliability Category
         MaxRetries.setDefault(3);
@@ -282,6 +318,14 @@ public class ZerobusSettings extends PersistentRecord {
         config.setMaxQueueSize(getInt(MaxQueueSize));
         config.setMaxEventsPerSecond(getInt(MaxEventsPerSecond));
 
+        // Store-and-forward
+        config.setEnableStoreAndForward(getBoolean(EnableStoreAndForward));
+        config.setSpoolDirectory(getString(SpoolDirectory));
+        config.setSpoolMaxBytes(getLong(SpoolMaxBytes));
+        config.setSpoolHighWatermarkPct(getDouble(SpoolHighWatermarkPct));
+        config.setSpoolLowWatermarkPct(getDouble(SpoolLowWatermarkPct));
+        config.setSpoolReadMaxBytes(getLong(SpoolReadMaxBytes));
+
         // Reliability
         config.setMaxRetries(getInt(MaxRetries));
         config.setRetryBackoffMs(getLong(RetryBackoffMs));
@@ -332,6 +376,14 @@ public class ZerobusSettings extends PersistentRecord {
         setLong(BatchFlushIntervalMs, config.getBatchFlushIntervalMs());
         setInt(MaxQueueSize, config.getMaxQueueSize());
         setInt(MaxEventsPerSecond, config.getMaxEventsPerSecond());
+
+        // Store-and-forward
+        setBoolean(EnableStoreAndForward, config.isEnableStoreAndForward());
+        setString(SpoolDirectory, config.getSpoolDirectory());
+        setLong(SpoolMaxBytes, config.getSpoolMaxBytes());
+        setDouble(SpoolHighWatermarkPct, config.getSpoolHighWatermarkPct());
+        setDouble(SpoolLowWatermarkPct, config.getSpoolLowWatermarkPct());
+        setLong(SpoolReadMaxBytes, config.getSpoolReadMaxBytes());
 
         // Reliability
         setInt(MaxRetries, config.getMaxRetries());
