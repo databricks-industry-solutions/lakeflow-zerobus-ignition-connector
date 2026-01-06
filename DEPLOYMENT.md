@@ -25,8 +25,8 @@ GRANT MODIFY ON TABLE <catalog>.<schema>.<table> TO `<service_principal_name_or_
 
 ### Choose the correct module artifact
 
-- **Ignition 8.1.x**: use `releases/zerobus-connector-1.0.0.modl`
-- **Ignition 8.3.x**: use `releases/zerobus-connector-1.0.0-ignition-8.3.modl`
+- **Ignition 8.1.x**: use `releases/zerobus-connector-1.0.1.modl`
+- **Ignition 8.3.x**: use `releases/zerobus-connector-1.0.1-ignition-8.3.modl`
 
 ### Install / upgrade
 
@@ -45,8 +45,11 @@ Open the configuration page:
 #### Recommended mode: Direct subscriptions
 
 - **Enable Direct Subscriptions**: ON
-- **Tag Selection Mode**: `explicit`
-- **Explicit Tag Paths**: add the tag paths you want to ingest
+- **Tag Selection Mode**:
+  - `explicit` (exact tag paths)
+  - `folder` (subscribe all atomic tags under one folder root; optional include subfolders)
+  - `pattern` (Java regex over full tag path; useful to subscribe multiple providers for a site)
+- Configure the corresponding selection fields (Explicit Tag Paths / Tag Folder Path / Tag Path Pattern)
 - **Databricks**:
   - Workspace URL
   - Zerobus Endpoint
@@ -102,4 +105,4 @@ ORDER BY rows_last_10m DESC;
 
 ### Ignition 8.3 module won’t install
 
-You likely uploaded the 8.1 artifact. Use `releases/zerobus-connector-1.0.0-ignition-8.3.modl`.
+You likely uploaded the 8.1 artifact. Use `releases/zerobus-connector-1.0.1-ignition-8.3.modl`.

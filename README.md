@@ -82,8 +82,8 @@ Directory structure (high-level):
 ├── README.md
 ├── DEPLOYMENT.md
 ├── releases/                       # canonical .modl artifacts (root)
-│   ├── zerobus-connector-1.0.0.modl
-│   └── zerobus-connector-1.0.0-ignition-8.3.modl
+│   ├── zerobus-connector-1.0.1.modl
+│   └── zerobus-connector-1.0.1-ignition-8.3.modl
 ├── module/                         # Ignition module source + Gradle build
 │   ├── build.gradle
 │   ├── settings.gradle
@@ -93,6 +93,13 @@ Directory structure (high-level):
 │           ├── java/               # gateway hooks, services, servlet layer
 │           ├── resources/          # module.xml, i18n, UI assets (web/, mounted/)
 │           └── proto/              # protobuf schema (ot_event.proto)
+├── examples/                        # end-to-end demo simulations (Ignition tags + timer scripts)
+│   ├── tilt_renewables_site01/
+│   ├── saint_gobain_site01/
+│   └── tilt_sim/
+├── tools/                           # Databricks SQL packs (Bronze→Silver→Gold) + dashboard/genie prompts
+│   ├── databricks_end2end_tilt/
+│   └── databricks_end2end_sg/
 └── onboarding/
     ├── databricks/                 # optional: helper to create/align target table schema
     └── ignition/
