@@ -72,6 +72,10 @@ temp/
 .tooling/
 scripts/__pycache__/
 
+# Stray folders from other repos (Lakeflow community connector work) — keep out of this repo.
+sources/
+tools/notebook_based_deployment/
+
 # Maven (if used)
 target/
 pom.xml.tag
@@ -89,4 +93,12 @@ dependency-reduced-pom.xml
 keystore
 
 my-config.json
+#
+# JSON
+# We ignore JSON by default to reduce the risk of accidentally committing credentials/config dumps.
+# Demo assets (tag exports, notebook presets, dashboard definitions) live under examples/tools/sources,
+# so we explicitly allow JSON in those directories.
 *.json
+!examples/**/*.json
+!tools/**/*.json
+!sources/**/*.json

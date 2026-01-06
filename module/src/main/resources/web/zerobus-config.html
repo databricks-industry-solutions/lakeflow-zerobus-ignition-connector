@@ -576,9 +576,13 @@
                                 <label for="tagSelectionMode">Selection Mode</label>
                                 <select class="form-control" id="tagSelectionMode" name="tagSelectionMode" onchange="updateTagSelectionUI()">
                                     <option value="explicit">Explicit - Specify exact tag paths</option>
-                                    <option value="folder">Folder - Select all tags in a folder</option>
-                                    <option value="pattern">Pattern - Use regex pattern</option>
+                                    <option value="folder">Folder - Select all atomic tags in a folder</option>
+                                    <option value="pattern">Pattern - Use regex over full tag path</option>
                                 </select>
+                                <small class="form-help">
+                                    Folder mode accepts <b>one</b> folder root. If you need multiple providers/folders (e.g., <code>[sg]</code> + <code>[sg_grid]</code>),
+                                    use Pattern mode.
+                                </small>
                             </div>
                             <div class="form-group">
                                 <div class="checkbox-group">
@@ -602,15 +606,26 @@
                         <div id="folderPathSection" class="form-group full-width" style="display: none;">
                             <label for="tagFolderPath">Tag Folder Path</label>
                             <input type="text" class="form-control" id="tagFolderPath" name="tagFolderPath"
-                                   placeholder="[default]MyFolder">
-                            <small class="form-help">Folder path for folder mode (e.g., [default]MyFolder)</small>
+                                   placeholder="[sg]SG/Site01  (one folder root)">
+                            <small class="form-help">
+                                Folder root for folder mode (subfolders optional). Examples:
+                                <br> - Saint-Gobain plant: <code>[sg]SG/Site01</code>
+                                <br> - Saint-Gobain grid: <code>[sg_grid]SG/Site01</code>
+                                <br> - Tilt plant: <code>[tilt]Tilt/Site01</code>
+                                <br> - Tilt grid: <code>[grid]Tilt/Site01</code>
+                            </small>
                         </div>
 
                         <div id="patternSection" class="form-group full-width" style="display: none;">
                             <label for="tagPathPattern">Tag Path Pattern</label>
                             <input type="text" class="form-control" id="tagPathPattern" name="tagPathPattern"
-                                   placeholder=".*Temperature.*">
-                            <small class="form-help">Regex pattern for pattern mode</small>
+                                   placeholder="^\\[(sg|sg_grid|sg_cmms|sg_forecast)\\]SG/Site01/.*$">
+                            <small class="form-help">
+                                Java regex matched against the <b>full tag path</b> (e.g., <code>[sg]SG/Site01/Furnace/Temperature_Melting_C</code>).
+                                Examples:
+                                <br> - Saint-Gobain all providers: <code>^\\[(sg|sg_grid|sg_cmms|sg_forecast)\\]SG/Site01/.*$</code>
+                                <br> - Tilt all providers: <code>^\\[(tilt|grid|cmms|forecast)\\]Tilt/Site01/.*$</code>
+                            </small>
                         </div>
                     </div>
                 </div>

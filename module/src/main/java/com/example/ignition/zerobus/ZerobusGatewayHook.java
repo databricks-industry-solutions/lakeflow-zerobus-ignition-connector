@@ -435,6 +435,33 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements Zer
             return false;
         }
     }
+
+    @Override
+    public boolean restartServices() {
+        if (configModel == null || !configModel.isEnabled()) {
+            logger.warn("Cannot restart services: module is disabled or config not initialized");
+            return false;
+        }
+        synchronized (this) {
+            try {
+                logger.info("Restarting Zerobus services on request...");
+                if (tagSubscriptionService != null) {
+                    tagSubscriptionService.shutdown();
+                }
+                if (zerobusClientManager != null) {
+                    zerobusClientManager.shutdown();
+                }
+                tagSubscriptionService = null;
+                zerobusClientManager = null;
+                startServices();
+                logger.info("Zerobus services restarted successfully");
+                return true;
+            } catch (Exception e) {
+                logger.error("Failed to restart Zerobus services", e);
+                return false;
+            }
+        }
+    }
     
     /**
      * Get module identifier.

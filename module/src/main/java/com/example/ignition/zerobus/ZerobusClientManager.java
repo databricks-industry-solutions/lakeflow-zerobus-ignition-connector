@@ -126,10 +126,20 @@ public class ZerobusClientManager {
             scan = scan.getCause();
             depth++;
         }
+        // AUTH classification:
+        // Only classify as AUTH when we see explicit authorization/credential signals.
+        // NOTE: Do NOT classify generic "token" failures as AUTH. In practice, transient network issues can surface
+        // as "failed to get token" and we don't want to mislead operators or apply long AUTH backoff.
         if (msg.contains("unauthorized") || msg.contains("forbidden") || msg.contains("401") || msg.contains("403")
-                || msg.contains("oauth") || msg.contains("token") || msg.contains("client secret")
-                || msg.contains("invalid_client") || msg.contains("invalid grant") || msg.contains("invalid_grant")) {
+                || msg.contains("invalid_client") || msg.contains("invalid grant") || msg.contains("invalid_grant")
+                || msg.contains("client secret") || msg.contains("client_secret")) {
             return ErrorClass.AUTH;
+        }
+
+        // Zerobus SDK sometimes throws "Failed to get Zerobus token" without indicating whether it's auth vs network.
+        // Treat it as TRANSIENT unless the message also includes explicit auth signals above.
+        if (msg.contains("failed to get zerobus token")) {
+            return ErrorClass.TRANSIENT;
         }
 
         // NonRetriableException from the SDK generally means "operator action required" (bad table, schema, etc).
@@ -277,32 +287,62 @@ public class ZerobusClientManager {
      * Shutdown the Zerobus client and close the stream.
      */
     public void shutdown() {
+        // IMPORTANT: shutdown must never block Ignition gateway shutdown on network/auth/service health.
+        // Historically, zerobusStream.flush()/close() can block for a long time if the sink is down.
+
         if (!initialized.get()) {
             return;
         }
-        
+
         logger.info("Shutting down Zerobus client...");
-        
-        try {
-            // Flush and close the stream
-            if (zerobusStream != null) {
-                logger.info("Flushing stream...");
-                zerobusStream.flush();
-                
-                logger.info("Closing stream...");
-                zerobusStream.close();
-                zerobusStream = null;
-            }
-            
+
+        // Serialize with reconnect/sends and detach references first.
+        final ZerobusStream<OTEvent> streamToClose;
+        synchronized (reconnectLock) {
+            streamToClose = this.zerobusStream;
+            this.zerobusStream = null;
+            this.zerobusSdk = null;
             connected.set(false);
             initialized.set(false);
-            
-            logger.info("Zerobus client shut down successfully");
-            
-        } catch (Exception e) {
-            logger.error("Error shutting down Zerobus client", e);
-            lastError = e.getMessage();
         }
+
+        if (streamToClose == null) {
+            logger.info("Zerobus client shut down successfully");
+            return;
+        }
+
+        // Bound shutdown time to keep gateway stop/restart responsive even if configured timeouts are large.
+        final long timeoutMs = Math.min(
+                Math.max(250L, config.getRequestTimeoutMs()),
+                5_000L
+        );
+
+        try {
+            // Best-effort close in a bounded-time background thread.
+            Thread t = new Thread(() -> {
+                try {
+                    // Do NOT flush here. Store-and-forward guarantees we can resend after restart.
+                    streamToClose.close();
+                } catch (Throwable closeErr) {
+                    logger.warn("Error while closing Zerobus stream (ignored during shutdown)", closeErr);
+                }
+            }, "Zerobus-Stream-Close");
+            t.setDaemon(true);
+            t.start();
+            t.join(timeoutMs);
+            if (t.isAlive()) {
+                // We can't force-stop safely; allow JVM shutdown to proceed.
+                t.interrupt();
+                logger.warn("Timed out closing Zerobus stream after {}ms; proceeding with gateway shutdown", timeoutMs);
+            }
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while shutting down Zerobus client; proceeding", ie);
+        } catch (Throwable t) {
+            logger.warn("Unexpected error during Zerobus client shutdown; proceeding", t);
+        }
+
+        logger.info("Zerobus client shut down successfully");
     }
     
     /**

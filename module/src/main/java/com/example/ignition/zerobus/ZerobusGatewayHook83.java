@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Ignition 8.3+ gateway hook.
@@ -34,6 +35,7 @@ public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements Z
     private TagSubscriptionService tagSubscriptionService;
     private ConfigModel configModel;
     private ZerobusConfigResource restResource;
+    private final AtomicBoolean restartInProgress = new AtomicBoolean(false);
 
     // 8.3 web-ui module registration
     private static final String MOUNT_ALIAS = "zerobus";
@@ -278,6 +280,43 @@ public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements Z
             logger.error("Connection test failed (8.3)", e);
             return false;
         }
+    }
+
+    @Override
+    public boolean restartServices() {
+        if (configModel == null || !configModel.isEnabled()) {
+            logger.warn("Cannot restart services: module is disabled or config not initialized (8.3)");
+            return false;
+        }
+        // IMPORTANT: Do not block the servlet thread.
+        // Restarting can involve network calls / timeouts (e.g. stream creation), so we run it async and return
+        // immediately to avoid wedging the gateway webserver under poor network conditions.
+        if (!restartInProgress.compareAndSet(false, true)) {
+            logger.warn("Restart requested while a restart is already in progress (8.3)");
+            return true; // accepted; already running
+        }
+
+        Thread t = new Thread(() -> {
+            try {
+                synchronized (ZerobusGatewayHook83.this) {
+                    logger.info("Restarting Zerobus services on request (8.3)...");
+                    if (tagSubscriptionService != null) tagSubscriptionService.shutdown();
+                    if (zerobusClientManager != null) zerobusClientManager.shutdown();
+                    tagSubscriptionService = null;
+                    zerobusClientManager = null;
+                    startServices();
+                    logger.info("Zerobus services restarted successfully (8.3)");
+                }
+            } catch (Exception e) {
+                logger.error("Failed to restart Zerobus services (8.3)", e);
+            } finally {
+                restartInProgress.set(false);
+            }
+        }, "Zerobus-RestartServices");
+        t.setDaemon(true);
+        t.start();
+
+        return true;
     }
 
     @Override

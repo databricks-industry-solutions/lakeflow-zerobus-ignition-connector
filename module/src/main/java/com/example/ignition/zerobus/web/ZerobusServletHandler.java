@@ -154,6 +154,14 @@ public final class ZerobusServletHandler {
             return Response.json(ok ? 200 : 400, gson.toJson(resp));
         }
 
+        if ("/restart-services".equals(path)) {
+            boolean ok = runtime.restartServices();
+            JsonObject resp = new JsonObject();
+            resp.addProperty("success", ok);
+            resp.addProperty("message", ok ? "Services restarted" : "Services restart failed");
+            return Response.json(ok ? 200 : 500, gson.toJson(resp));
+        }
+
         if ("/ingest".equals(path)) {
             TagEventPayload payload;
             try {

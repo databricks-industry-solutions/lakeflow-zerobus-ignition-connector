@@ -9,15 +9,21 @@ import com.example.ignition.zerobus.proto.OTEvent;
 import com.inductiveautomation.ignition.gateway.model.GatewayContext;
 import com.inductiveautomation.ignition.gateway.tags.model.GatewayTagManager;
 import com.inductiveautomation.ignition.common.model.values.QualifiedValue;
+import com.inductiveautomation.ignition.common.tags.browsing.NodeDescription;
+import com.inductiveautomation.ignition.common.tags.config.types.TagObjectType;
 import com.inductiveautomation.ignition.common.tags.model.TagPath;
 import com.inductiveautomation.ignition.common.tags.paths.parser.TagPathParser;
 import com.inductiveautomation.ignition.common.tags.model.event.TagChangeEvent;
 import com.inductiveautomation.ignition.common.tags.model.event.TagChangeListener;
 import com.inductiveautomation.ignition.common.tags.model.event.InvalidListenerException;
+import com.inductiveautomation.ignition.common.browsing.BrowseFilter;
+import com.inductiveautomation.ignition.common.browsing.Results;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import java.util.concurrent.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -168,8 +174,12 @@ public class TagSubscriptionService {
             // Unsubscribe tags first (stop incoming events)
             unsubscribeAll();
 
-            // Flush any remaining events
-            flushBatch();
+            // IMPORTANT:
+            // - In disk SAF mode, events are already persisted; do NOT block shutdown on network/auth recovery.
+            // - In memory mode, we can do a best-effort flush, but we must NOT attempt reconnect during shutdown.
+            if (!buffer.isDiskBacked()) {
+                flushBatch(false);
+            }
             
             // Shutdown executors
             if (scheduledExecutor != null) {
@@ -208,38 +218,21 @@ public class TagSubscriptionService {
                 return;
             }
 
-            // Only implement explicit mode for now; it's the safest and most deterministic.
-            String mode = config.getTagSelectionMode();
-            if (!"explicit".equals(mode)) {
-                logger.warn("Direct tag subscriptions currently support tagSelectionMode='explicit' only. Current mode='{}'. " +
-                        "You can still ingest via REST endpoints (/system/zerobus/ingest).", mode);
-                return;
-            }
-
-            List<String> paths = config.getExplicitTagPaths();
-            if (paths == null || paths.isEmpty()) {
-                logger.warn("No explicitTagPaths configured; nothing to subscribe to");
-                return;
-            }
-
             this.tagManager = (GatewayTagManager) gatewayContext.getTagManager();
 
             List<TagPath> tagPaths = new ArrayList<>();
             List<TagChangeListener> listeners = new ArrayList<>();
 
-            for (String pathStr : paths) {
-                if (pathStr == null || pathStr.trim().isEmpty()) {
+            // Resolve which tag paths to subscribe to (explicit, folder, or pattern).
+            List<TagPath> resolved = resolveConfiguredTagPaths();
+            for (TagPath tagPath : resolved) {
+                if (tagPath == null) {
                     continue;
                 }
-                try {
-                    TagPath tagPath = TagPathParser.parse(pathStr.trim());
-                    TagChangeListener listener = new DirectTagChangeListener();
-                    tagPaths.add(tagPath);
-                    listeners.add(listener);
-                    subscribedListeners.put(tagPath, listener);
-                } catch (Exception parseErr) {
-                    logger.warn("Invalid tag path '{}': {}", pathStr, parseErr.getMessage());
-                }
+                TagChangeListener listener = new DirectTagChangeListener();
+                tagPaths.add(tagPath);
+                listeners.add(listener);
+                subscribedListeners.put(tagPath, listener);
             }
 
             if (tagPaths.isEmpty()) {
@@ -264,6 +257,174 @@ public class TagSubscriptionService {
         } catch (Throwable t) {
             logger.error("Error starting direct tag subscriptions", t);
         }
+    }
+
+    private List<TagPath> resolveConfiguredTagPaths() {
+        String mode = config.getTagSelectionMode() != null ? config.getTagSelectionMode().trim() : "explicit";
+
+        if ("explicit".equalsIgnoreCase(mode)) {
+            return resolveExplicitTagPaths();
+        }
+        if ("folder".equalsIgnoreCase(mode)) {
+            return resolveFolderTagPaths();
+        }
+        if ("pattern".equalsIgnoreCase(mode)) {
+            return resolvePatternTagPaths();
+        }
+
+        logger.warn("Unknown tagSelectionMode='{}'. Falling back to explicit.", mode);
+        return resolveExplicitTagPaths();
+    }
+
+    private List<TagPath> resolveExplicitTagPaths() {
+        List<String> paths = config.getExplicitTagPaths();
+        if (paths == null || paths.isEmpty()) {
+            logger.warn("No explicitTagPaths configured; nothing to subscribe to");
+            return List.of();
+        }
+        List<TagPath> out = new ArrayList<>();
+        for (String pathStr : paths) {
+            if (pathStr == null || pathStr.trim().isEmpty()) {
+                continue;
+            }
+            try {
+                out.add(TagPathParser.parse(pathStr.trim()));
+            } catch (Exception parseErr) {
+                logger.warn("Invalid tag path '{}': {}", pathStr, parseErr.getMessage());
+            }
+        }
+        return out;
+    }
+
+    private List<TagPath> resolveFolderTagPaths() {
+        String folder = config.getTagFolderPath();
+        if (folder == null || folder.trim().isEmpty()) {
+            logger.warn("Tag folder path is empty; nothing to subscribe to");
+            return List.of();
+        }
+
+        TagPath root;
+        try {
+            root = TagPathParser.parse(folder.trim());
+        } catch (Exception e) {
+            logger.warn("Invalid folder tag path '{}': {}", folder, e.getMessage());
+            return List.of();
+        }
+
+        boolean recursive = config.isIncludeSubfolders();
+        List<TagPath> out = browseLeafAtomicTags(root, recursive);
+        logger.info("Folder selection resolved {} tag(s) from root={} (includeSubfolders={})",
+                out.size(), folder.trim(), recursive);
+        return out;
+    }
+
+    private List<TagPath> resolvePatternTagPaths() {
+        String patternStr = config.getTagPathPattern();
+        if (patternStr == null || patternStr.trim().isEmpty()) {
+            logger.warn("Tag path pattern is empty; nothing to subscribe to");
+            return List.of();
+        }
+
+        Pattern p;
+        try {
+            p = Pattern.compile(patternStr);
+        } catch (PatternSyntaxException e) {
+            logger.warn("Invalid regex tagPathPattern='{}': {}", patternStr, e.getDescription());
+            return List.of();
+        }
+
+        // Pattern mode is evaluated over the FULL tag path string (e.g., "[tilt]Tilt/Site01/MetMast01/WindSpeed_mps").
+        // We must browse across providers to discover candidate tags.
+        List<String> providers;
+        try {
+            providers = tagManager.getTagProviderNames();
+        } catch (Exception e) {
+            logger.warn("Unable to list tag providers for pattern mode: {}", e.getMessage());
+            return List.of();
+        }
+
+        // Safety cap to avoid accidental "subscribe to entire gateway" explosions.
+        final int MAX_MATCHES = 50_000;
+        List<TagPath> out = new ArrayList<>();
+
+        for (String provider : providers) {
+            if (provider == null || provider.isBlank()) {
+                continue;
+            }
+            TagPath providerRoot;
+            try {
+                providerRoot = TagPathParser.parse("[" + provider + "]");
+            } catch (Exception ignored) {
+                continue;
+            }
+
+            List<TagPath> leafs = browseLeafAtomicTags(providerRoot, true);
+            for (TagPath tp : leafs) {
+                if (tp == null) continue;
+                String s = tp.toString();
+                if (p.matcher(s).matches()) {
+                    out.add(tp);
+                    if (out.size() >= MAX_MATCHES) {
+                        logger.warn("Pattern selection reached safety cap ({} matches). Stopping early. pattern={}",
+                                MAX_MATCHES, patternStr.trim());
+                        return out;
+                    }
+                }
+            }
+        }
+
+        logger.info("Pattern selection resolved {} tag(s) for pattern='{}'", out.size(), patternStr.trim());
+        return out;
+    }
+
+    private List<TagPath> browseLeafAtomicTags(TagPath root, boolean recursive) {
+        if (root == null) {
+            return List.of();
+        }
+
+        final int PAGE_SIZE = 5000;
+        final int MAX_TOTAL = 100_000;
+        List<TagPath> out = new ArrayList<>();
+
+        String continuation = null;
+        int totalSeen = 0;
+
+        do {
+            BrowseFilter filter = new BrowseFilter()
+                    .setRecursive(recursive)
+                    .setMaxResults(PAGE_SIZE)
+                    .setContinuationPoint(continuation);
+
+            CompletableFuture<Results<NodeDescription>> fut = tagManager.browseAsync(root, filter);
+            Results<NodeDescription> res;
+            try {
+                // Browsing is local; use requestTimeout as a reasonable ceiling.
+                res = fut.get(Math.max(250L, config.getRequestTimeoutMs()), TimeUnit.MILLISECONDS);
+            } catch (Exception e) {
+                logger.warn("Browse failed for root={} (recursive={}): {}", root.toString(), recursive, e.getMessage());
+                return out;
+            }
+
+            Collection<NodeDescription> nodes = res != null ? res.getResults() : null;
+            if (nodes != null) {
+                for (NodeDescription nd : nodes) {
+                    totalSeen++;
+                    if (totalSeen >= MAX_TOTAL) {
+                        logger.warn("Browse reached safety cap ({} nodes) for root={}; stopping early", MAX_TOTAL, root.toString());
+                        return out;
+                    }
+                    if (nd == null) continue;
+                    if (nd.getObjectType() != TagObjectType.AtomicTag) continue;
+                    TagPath fp = nd.getFullPath();
+                    if (fp == null) continue;
+                    out.add(fp);
+                }
+            }
+
+            continuation = (res != null) ? res.getContinuationPoint() : null;
+        } while (continuation != null && !continuation.isBlank());
+
+        return out;
     }
 
     private void unsubscribeAll() {
@@ -332,15 +493,6 @@ public class TagSubscriptionService {
             Date ts = (qv != null && qv.getTimestamp() != null) ? qv.getTimestamp() : new Date();
             String quality = (qv != null && qv.getQuality() != null) ? qv.getQuality().toString() : "UNKNOWN";
 
-            // optional filtering: onlyOnChange + numeric deadband
-            if (config.isOnlyOnChange()) {
-                Object last = lastSentValueByTag.get(tagPathStr);
-                if (!hasMeaningfulChange(last, value)) {
-                    return;
-                }
-                lastSentValueByTag.put(tagPathStr, value);
-            }
-
             acceptTagEvent(new TagEvent(tagPathStr, value, quality, ts), "direct");
         }
     }
@@ -368,6 +520,16 @@ public class TagSubscriptionService {
      * Multiple threads can call this concurrently without blocking each other.
      */
     private void flushBatch() {
+        flushBatch(true);
+    }
+
+    /**
+     * Flush a batch of events.
+     *
+     * @param allowReconnect if false, do not attempt to reconnect. This is used during shutdown so the gateway
+     *                       is not held hostage by connectionTimeoutMs/auth recovery.
+     */
+    private void flushBatch(boolean allowReconnect) {
         try {
             // Update backpressure + pause/resume subscriptions when disk-backed
             buffer.refreshBackpressure();
@@ -386,7 +548,9 @@ public class TagSubscriptionService {
             // Sink-down behavior: do NOT drain (especially disk spool) unless the sink is connected/ready.
             // This avoids repeatedly reading/parsing the same records when disconnected.
             if (!sink.isReady()) {
-                sink.tryEnsureReady();
+                if (allowReconnect) {
+                    sink.tryEnsureReady();
+                }
                 if (!sink.isReady()) {
                     return;
                 }
@@ -424,9 +588,26 @@ public class TagSubscriptionService {
             return false;
         }
 
+        // Optional filtering: onlyOnChange + numeric deadband.
+        // Apply consistently for BOTH direct subscriptions and HTTP ingest.
+        if (config.isOnlyOnChange()) {
+            String tagPathStr = te.getTagPath() != null ? te.getTagPath() : "";
+            Object last = lastSentValueByTag.get(tagPathStr);
+            if (!hasMeaningfulChange(last, te.getValue())) {
+                if (config.isDebugLogging()) {
+                    logger.debug("Skipped tag event (onlyOnChange) ({}) -> {}", source, tagPathStr);
+                }
+                return true; // not an error; just filtered out
+            }
+        }
+
         OTEvent evt = mapper.map(te);
         boolean ok = buffer.offer(evt);
         if (ok) {
+            if (config.isOnlyOnChange()) {
+                String tagPathStr = te.getTagPath() != null ? te.getTagPath() : "";
+                lastSentValueByTag.put(tagPathStr, te.getValue());
+            }
             totalEventsReceived.incrementAndGet();
             if (config.isDebugLogging()) {
                 logger.debug("Accepted tag event ({}) -> {}", source, te.getTagPath());

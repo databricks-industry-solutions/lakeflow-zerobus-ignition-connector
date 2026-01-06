@@ -8,6 +8,12 @@ plugins {
 group = 'com.example.ignition'
 version = '1.0.1'
 
+// Module ID:
+// - Default is the current internal/dev module id.
+// - For Module Showcase publishing, pass: -PmoduleId=com.databricks.ignition.zerobus (or similar)
+// IMPORTANT: Changing module ID means Ignition will treat it as a different module (no in-place upgrade).
+def moduleId = project.hasProperty('moduleId') ? project.getProperty('moduleId') : 'com.example.ignition.zerobus'
+
 // Some local builds were previously run with sudo, which can leave the default ./build directory
 // owned by root and therefore unwritable. To keep builds reliable, always use a user-writable build dir.
 // Also, keep 8.1 and 8.3 builds from stepping on each other by using distinct build dirs.
@@ -222,15 +228,23 @@ jar {
         attributes(
             'Implementation-Title': 'Ignition Zerobus Connector',
             'Implementation-Version': version,
-            'Module-Id': 'com.example.ignition.zerobus',
+            'Module-Id': moduleId,
             'Module-Name': 'Zerobus Connector',
             'Module-Version': version
         )
     }
     
-    // Include module.xml and simplemodule.properties explicitly (avoid walking src/main/resources/ which may
-    // contain unreadable directories like web/ in some environments).
-    from('src/main/resources/module.xml')
+    // Include a module.xml inside the jar for visibility/debugging; we keep it aligned with the build target
+    // (8.1 vs 8.3) and apply moduleId override if provided.
+    def jarModuleDescriptor = buildForIgnitionVersion.startsWith('8.3')
+            ? 'src/main/resources/module-8.3.xml'
+            : 'src/main/resources/module.xml'
+    from(jarModuleDescriptor) {
+        rename { 'module.xml' }
+        filter { line ->
+            line.replace('<id>com.example.ignition.zerobus</id>', "<id>${moduleId}</id>")
+        }
+    }
     from('src/main/resources/simplemodule.properties')
 }
 
@@ -266,6 +280,10 @@ task buildModule(type: Zip, dependsOn: [jar, verifyIgnitionSdkJars]) {
     def moduleDescriptor = buildForIgnitionVersion.startsWith('8.3') ? 'src/main/resources/module-8.3.xml' : 'src/main/resources/module.xml'
     from(moduleDescriptor) {
         rename { 'module.xml' }
+        // Allow override of the module ID at build time (e.g., Module Showcase publishing).
+        filter { line ->
+            line.replace('<id>com.example.ignition.zerobus</id>', "<id>${moduleId}</id>")
+        }
     }
     
     doLast {
@@ -362,6 +380,8 @@ tasks.register('buildModule81', GradleBuild) {
     startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition8.1')
     startParameter.projectProperties.put('buildForIgnitionVersion', '8.1.50')
     startParameter.projectProperties.put('minIgnitionVersion', '8.1.0')
+    // Propagate moduleId override into the nested build (if provided to the outer build).
+    startParameter.projectProperties.put('moduleId', moduleId)
 }
 
 tasks.register('buildModule83', GradleBuild) {
@@ -371,6 +391,146 @@ tasks.register('buildModule83', GradleBuild) {
     startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition')
     startParameter.projectProperties.put('buildForIgnitionVersion', '8.3.2')
     startParameter.projectProperties.put('minIgnitionVersion', '8.3.0')
+    // Propagate moduleId override into the nested build (if provided to the outer build).
+    startParameter.projectProperties.put('moduleId', moduleId)
+}
+
+// -----------------------------------------------------------------------------
+// Module signing (optional)
+//
+// Ignition requires third-party modules to be signed for distribution.
+// This project intentionally does NOT hardcode any signing secrets or paths.
+//
+// Provide signing configuration via Gradle properties or environment variables:
+// -PmoduleSignerJar=/path/to/module-signer.jar   (or env MODULE_SIGNER_JAR)
+// -PsigningKeystore=/path/to/keystore.jks       (or env SIGNING_KEYSTORE)
+// -PsigningKeystorePassword=...                 (or env SIGNING_STOREPASS)
+// -PsigningAlias=...                            (or env SIGNING_ALIAS)
+// -PsigningAliasPassword=...                    (or env SIGNING_KEYPASS)
+// Optional:
+// -PsigningChain=/path/to/chain.p7b             (or env SIGNING_CHAIN)
+//
+// The signer produces a new file next to the unsigned module with "-signed" suffix.
+// -----------------------------------------------------------------------------
+def moduleSignerJar = project.hasProperty('moduleSignerJar')
+        ? project.getProperty('moduleSignerJar')
+        : (System.getenv('MODULE_SIGNER_JAR') ?: '')
+
+def signingKeystore = project.hasProperty('signingKeystore')
+        ? project.getProperty('signingKeystore')
+        : (System.getenv('SIGNING_KEYSTORE') ?: '')
+
+def signingKeystorePassword = project.hasProperty('signingKeystorePassword')
+        ? project.getProperty('signingKeystorePassword')
+        : (System.getenv('SIGNING_STOREPASS') ?: '')
+
+def signingAlias = project.hasProperty('signingAlias')
+        ? project.getProperty('signingAlias')
+        : (System.getenv('SIGNING_ALIAS') ?: '')
+
+def signingAliasPassword = project.hasProperty('signingAliasPassword')
+        ? project.getProperty('signingAliasPassword')
+        : (System.getenv('SIGNING_KEYPASS') ?: '')
+
+def signingChain = project.hasProperty('signingChain')
+        ? project.getProperty('signingChain')
+        : (System.getenv('SIGNING_CHAIN') ?: '')
+
+tasks.register('signModule', JavaExec) {
+    group = 'build'
+    description = 'Signs the built .modl using Inductive Automation module-signer.jar (requires signing properties).'
+    dependsOn buildModule
+
+    doFirst {
+        def missing = []
+        if (!moduleSignerJar) missing << "moduleSignerJar (or env MODULE_SIGNER_JAR)"
+        if (!signingKeystore) missing << "signingKeystore (or env SIGNING_KEYSTORE)"
+        if (!signingKeystorePassword) missing << "signingKeystorePassword (or env SIGNING_STOREPASS)"
+        if (!signingAlias) missing << "signingAlias (or env SIGNING_ALIAS)"
+        if (!signingAliasPassword) missing << "signingAliasPassword (or env SIGNING_KEYPASS)"
+
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                    "Missing signing configuration:\n- " + missing.join("\n- ") + "\n\n" +
+                            "Download module-signer.jar per IA docs and then run, for example:\n" +
+                            "  ./gradlew signModule -PmoduleSignerJar=/path/to/module-signer.jar \\\n" +
+                            "    -PsigningKeystore=/path/to/keystore.jks -PsigningKeystorePassword=... \\\n" +
+                            "    -PsigningAlias=... -PsigningAliasPassword=...\n"
+            )
+        }
+        if (!file(moduleSignerJar).exists()) {
+            throw new GradleException("moduleSignerJar not found: ${moduleSignerJar}")
+        }
+        if (!file(signingKeystore).exists()) {
+            throw new GradleException("signingKeystore not found: ${signingKeystore}")
+        }
+        if (signingChain && !file(signingChain).exists()) {
+            throw new GradleException("signingChain not found: ${signingChain}")
+        }
+    }
+
+    // Run module-signer.jar as a tool; use the Gradle JVM (JDK 17 toolchain is fine for the signer tool).
+    mainClass = '-jar'
+    classpath = files()
+
+    doFirst {
+        def inFile = buildModule.archiveFile.get().asFile
+        def outFileName = inFile.name.replaceFirst(/\\.modl$/, '') + "-signed.modl"
+        def outFile = new File(inFile.parentFile, outFileName)
+
+        def argsList = [
+                file(moduleSignerJar).absolutePath,
+                "-keystore=${file(signingKeystore).absolutePath}",
+                "-keystore-pwd=${signingKeystorePassword}",
+                "-alias=${signingAlias}",
+                "-alias-pwd=${signingAliasPassword}"
+        ]
+        if (signingChain) {
+            argsList << "-chain=${file(signingChain).absolutePath}"
+        }
+        argsList << "-module-in=${inFile.absolutePath}"
+        argsList << "-module-out=${outFile.absolutePath}"
+
+        args = argsList
+        println "Signing module:\n  in : ${inFile}\n  out: ${outFile}"
+    }
+}
+
+// Convenience wrappers to build+sign 8.1 and 8.3 artifacts via nested builds.
+tasks.register('signModule81', GradleBuild) {
+    group = 'build'
+    description = 'Builds and signs the Ignition 8.1.x .modl artifact (requires signing properties).'
+    tasks = ['clean', 'buildModule', 'signModule']
+    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition8.1')
+    startParameter.projectProperties.put('buildForIgnitionVersion', '8.1.50')
+    startParameter.projectProperties.put('minIgnitionVersion', '8.1.0')
+    startParameter.projectProperties.put('moduleId', moduleId)
+
+    // Propagate signing configuration into the nested build.
+    if (moduleSignerJar) startParameter.projectProperties.put('moduleSignerJar', moduleSignerJar)
+    if (signingKeystore) startParameter.projectProperties.put('signingKeystore', signingKeystore)
+    if (signingKeystorePassword) startParameter.projectProperties.put('signingKeystorePassword', signingKeystorePassword)
+    if (signingAlias) startParameter.projectProperties.put('signingAlias', signingAlias)
+    if (signingAliasPassword) startParameter.projectProperties.put('signingAliasPassword', signingAliasPassword)
+    if (signingChain) startParameter.projectProperties.put('signingChain', signingChain)
+}
+
+tasks.register('signModule83', GradleBuild) {
+    group = 'build'
+    description = 'Builds and signs the Ignition 8.3.x .modl artifact (requires signing properties).'
+    tasks = ['clean', 'buildModule', 'signModule']
+    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition')
+    startParameter.projectProperties.put('buildForIgnitionVersion', '8.3.2')
+    startParameter.projectProperties.put('minIgnitionVersion', '8.3.0')
+    startParameter.projectProperties.put('moduleId', moduleId)
+
+    // Propagate signing configuration into the nested build.
+    if (moduleSignerJar) startParameter.projectProperties.put('moduleSignerJar', moduleSignerJar)
+    if (signingKeystore) startParameter.projectProperties.put('signingKeystore', signingKeystore)
+    if (signingKeystorePassword) startParameter.projectProperties.put('signingKeystorePassword', signingKeystorePassword)
+    if (signingAlias) startParameter.projectProperties.put('signingAlias', signingAlias)
+    if (signingAliasPassword) startParameter.projectProperties.put('signingAliasPassword', signingAliasPassword)
+    if (signingChain) startParameter.projectProperties.put('signingChain', signingChain)
 }
 
 // // Make processResources depend on frontend build

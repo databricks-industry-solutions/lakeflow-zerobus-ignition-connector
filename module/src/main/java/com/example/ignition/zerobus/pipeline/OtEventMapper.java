@@ -43,13 +43,16 @@ public final class OtEventMapper {
             dataType = "BOOLEAN";
         }
 
+        String quality = (config.isIncludeQuality() && event.getQuality() != null) ? event.getQuality() : "";
+        int qualityCode = (config.isIncludeQuality() && event.isGoodQuality()) ? 192 : 0;
+
         OTEvent.Builder builder = OTEvent.newBuilder()
             .setEventId(eventId)
             .setEventTime(eventTimeMicros)
             .setTagPath(tagPath != null ? tagPath : "")
             .setTagProvider(tagProvider)
-            .setQuality(event.getQuality() != null ? event.getQuality() : "UNKNOWN")
-            .setQualityCode(event.isGoodQuality() ? 192 : 0)
+            .setQuality(quality)
+            .setQualityCode(qualityCode)
             .setSourceSystem(config.getSourceSystemId())
             .setIngestionTimestamp(ingestionTimeMicros)
             .setDataType(dataType)
