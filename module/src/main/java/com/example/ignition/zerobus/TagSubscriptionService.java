@@ -218,7 +218,16 @@ public class TagSubscriptionService {
                 return;
             }
 
-            this.tagManager = (GatewayTagManager) gatewayContext.getTagManager();
+            try {
+                this.tagManager = (GatewayTagManager) gatewayContext.getTagManager();
+            } catch (Throwable t) {
+                logger.error("Unable to acquire GatewayTagManager; direct subscriptions will be disabled", t);
+                this.tagManager = null;
+            }
+            if (this.tagManager == null) {
+                logger.error("GatewayTagManager is null; cannot start direct tag subscriptions");
+                return;
+            }
 
             List<TagPath> tagPaths = new ArrayList<>();
             List<TagChangeListener> listeners = new ArrayList<>();
@@ -379,6 +388,10 @@ public class TagSubscriptionService {
 
     private List<TagPath> browseLeafAtomicTags(TagPath root, boolean recursive) {
         if (root == null) {
+            return List.of();
+        }
+        if (tagManager == null) {
+            logger.warn("Cannot browse tags because GatewayTagManager is not initialized (root={})", root.toString());
             return List.of();
         }
 
