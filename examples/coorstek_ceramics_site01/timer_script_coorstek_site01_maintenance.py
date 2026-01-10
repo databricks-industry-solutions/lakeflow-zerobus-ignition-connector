@@ -56,11 +56,21 @@ def read_int(path, default):
 def safe_write_diag(status, msg):
 	try:
 		ts = now_iso()
-		system.tag.writeBlocking([DIAG + "/LastRun", DIAG + "/LastStatus", DIAG + "/LastError"], [ts, status, msg or ""])
+		r = system.tag.writeBlocking([DIAG + "/LastRun", DIAG + "/LastStatus", DIAG + "/LastError"], [ts, status, msg or ""])
+		try:
+			if any(str(x) != "Good" for x in r):
+				log.error("WRITE_FAIL diag fields: %r" % ([str(x) for x in r],))
+		except:
+			pass
 		try:
 			cur = system.tag.readBlocking([DIAG + "/TickCount"])[0].value
 			cur = int(cur or 0)
-			system.tag.writeBlocking([DIAG + "/TickCount"], [cur + 1])
+			r2 = system.tag.writeBlocking([DIAG + "/TickCount"], [cur + 1])
+			try:
+				if any(str(x) != "Good" for x in r2):
+					log.error("WRITE_FAIL diag TickCount: %r" % ([str(x) for x in r2],))
+			except:
+				pass
 		except:
 			pass
 	except:

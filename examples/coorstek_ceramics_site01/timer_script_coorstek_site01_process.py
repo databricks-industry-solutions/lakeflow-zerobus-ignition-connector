@@ -36,17 +36,39 @@ def read_float(path, default):
 
 
 def write_pairs(pairs):
-	system.tag.writeBlocking([p for (p, _) in pairs], [v for (_, v) in pairs])
+	paths = [p for (p, _) in pairs]
+	vals = [v for (_, v) in pairs]
+	results = system.tag.writeBlocking(paths, vals)
+	# Log only failures (common case: Comm Read-Only / write permissions)
+	try:
+		bad = []
+		for i in range(len(results)):
+			if str(results[i]) != "Good":
+				bad.append((paths[i], str(results[i])))
+		if bad:
+			log.error("WRITE_FAIL (first 10): %r" % bad[:10])
+	except:
+		pass
 
 
 def safe_write_diag(status, msg):
 	try:
 		ts = now_iso()
-		system.tag.writeBlocking([DIAG + "/LastRun", DIAG + "/LastStatus", DIAG + "/LastError"], [ts, status, msg or ""])
+		r = system.tag.writeBlocking([DIAG + "/LastRun", DIAG + "/LastStatus", DIAG + "/LastError"], [ts, status, msg or ""])
+		try:
+			if any(str(x) != "Good" for x in r):
+				log.error("WRITE_FAIL diag fields: %r" % ([str(x) for x in r],))
+		except:
+			pass
 		try:
 			cur = system.tag.readBlocking([DIAG + "/TickCount"])[0].value
 			cur = int(cur or 0)
-			system.tag.writeBlocking([DIAG + "/TickCount"], [cur + 1])
+			r2 = system.tag.writeBlocking([DIAG + "/TickCount"], [cur + 1])
+			try:
+				if any(str(x) != "Good" for x in r2):
+					log.error("WRITE_FAIL diag TickCount: %r" % ([str(x) for x in r2],))
+			except:
+				pass
 		except:
 			pass
 	except:
