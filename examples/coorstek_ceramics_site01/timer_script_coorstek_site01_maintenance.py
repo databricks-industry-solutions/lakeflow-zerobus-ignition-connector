@@ -8,6 +8,7 @@ import random
 BASE_MA = "[coorstek_maintenance]CoorsTek/Site01"
 BASE_P = "[coorstek]CoorsTek/Site01"
 DIAG = BASE_MA + "/Diagnostics"
+log = system.util.getLogger("coorstek_site01.maintenance")
 
 
 def now_iso():
@@ -68,6 +69,17 @@ def safe_write_diag(status, msg):
 
 try:
 	safe_write_diag("START", "")
+	# Low-noise heartbeat: once per minute in wrapper.log so you can prove execution.
+	g_hb = system.util.getGlobals()
+	last_hb = float(g_hb.get("coorstek_site01_maint_last_hb", 0.0) or 0.0)
+	now_hb = system.date.now()
+	try:
+		now_s = float(system.date.toMillis(now_hb)) / 1000.0
+		if (now_s - last_hb) >= 60.0:
+			g_hb["coorstek_site01_maint_last_hb"] = now_s
+			log.info("tick (heartbeat): maintenance timer executing")
+	except:
+		pass
 
 	if not bool(read(BASE_MA + "/Config/SimEnabled")):
 		safe_write_diag("SKIP", "Sim disabled")
@@ -151,6 +163,10 @@ try:
 		safe_write_diag("OK", "WO active=%d high=%d kilnDev=%.1fC" % (active, high, kiln_dev))
 
 except Exception as e:
+	try:
+		log.error("timer failed", e)
+	except:
+		pass
 	safe_write_diag("ERROR", str(e))
 
 
