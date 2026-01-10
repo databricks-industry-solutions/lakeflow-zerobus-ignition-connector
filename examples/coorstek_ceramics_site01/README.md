@@ -34,6 +34,30 @@ Gateway Timer Scripts (create 4 timers):
 
 Each provider includes `Diagnostics/*` tags: `TickCount`, `LastRun`, `LastStatus`, `LastError`.
 
+## Sanity check (if “numbers aren’t changing”)
+
+### 1) Confirm the tag paths match what the scripts write
+
+The scripts assume the tags exist at these exact paths:
+
+- Process provider: `[coorstek]CoorsTek/Site01/Diagnostics/TickCount`
+- QC provider: `[coorstek_qc]CoorsTek/Site01/Diagnostics/TickCount`
+- MES provider: `[coorstek_mes]CoorsTek/Site01/Diagnostics/TickCount`
+- Maintenance provider: `[coorstek_maintenance]CoorsTek/Site01/Diagnostics/TickCount`
+
+If you imported the JSON **under an extra folder** (e.g. `[coorstek]Demo/CoorsTek/Site01/...`), the scripts won’t find the tags and nothing will update. Import at the **provider root**.
+
+### 2) Confirm the Gateway Timer Events are enabled
+
+Designer → **Scripting → Gateway Events → Timer**
+
+- Ensure each event is **Enabled**
+- After saving, watch `Diagnostics/LastRun` update.
+
+### 3) Check `Diagnostics/LastError`
+
+If a script is running but failing, `Diagnostics/LastError` will contain the message.
+
 ## Suggested Zerobus subscriptions (examples)
 
 - `[coorstek]CoorsTek/Site01/Kiln01/Zones/Zone3_Temp_C`
