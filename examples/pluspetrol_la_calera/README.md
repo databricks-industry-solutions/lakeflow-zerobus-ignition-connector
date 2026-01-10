@@ -143,6 +143,21 @@ Then verify:
 - `GET /system/zerobus/diagnostics` shows `Direct Subscriptions: <N> tags`
 - Your target table receives rows with `tag_provider = 'pluspetrol'`
 
+### Option: use Folder mode (recommended for customer demos / isolation)
+
+If you don’t want to hand-pick explicit tags—and you want to avoid accidentally selecting other customers’ namespaces—use **Folder** selection mode and subscribe only to the customer’s root folders.
+
+Recommended roots (select the folder and set **Include subfolders = true**):
+
+- **SCADA / process** (provider `pluspetrol`):
+  - `[pluspetrol]Pluspetrol/Argentina/LaCalera`
+- **Safety** (provider `pluspetrol_safety`):
+  - `[pluspetrol_safety]Pluspetrol/Argentina/LaCalera`
+- **Integrity** (provider `pluspetrol_integrity`):
+  - `[pluspetrol_integrity]Pluspetrol/Argentina/LaCalera`
+
+This keeps the connector scoped to only Pluspetrol’s demo tags (no explicit paths list needed).
+
 ### 4) Add the Gateway Timer Script (simulator)
 
 In the Designer:
