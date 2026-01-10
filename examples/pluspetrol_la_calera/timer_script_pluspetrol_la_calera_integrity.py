@@ -1,81 +1,79 @@
-def handleTimerEvent():
-	"""
-	Ignition Gateway Timer Script (Jython) — Ignition 8.1 compatible
-	Pluspetrol demo: Asset integrity signals (corrosion, pigging interval, leak suspected)
+# Ignition Gateway Timer Script (Jython) - Pluspetrol Integrity (TOP-LEVEL)
+# Provider: pluspetrol_integrity
+# Writes:   [pluspetrol_integrity]Pluspetrol/Argentina/LaCalera/Integrity/...
 
-	Recommended timer delay: 10000ms (Fixed Delay)
-	Tag provider must be named: pluspetrol_integrity
-	"""
+import random
 
-	import random
+BASE = "[pluspetrol_integrity]Pluspetrol/Argentina/LaCalera"
+DIAG = BASE + "/Diagnostics"
 
-	BASE = "[pluspetrol_integrity]Pluspetrol/Argentina/LaCalera"
 
-	def now_iso():
-		return system.date.format(system.date.now(), "yyyy-MM-dd HH:mm:ss")
+def now_iso():
+	return system.date.format(system.date.now(), "yyyy-MM-dd HH:mm:ss")
 
-	def clamp(x, lo, hi):
-		return max(lo, min(hi, x))
 
-	def read(path):
-		return system.tag.readBlocking([path])[0].value
+def clamp(x, lo, hi):
+	return max(lo, min(hi, x))
 
-	def write(pairs):
-		paths = [p for (p, _) in pairs]
-		vals = [v for (_, v) in pairs]
-		system.tag.writeBlocking(paths, vals)
 
+def read(path):
+	return system.tag.readBlocking([path])[0].value
+
+
+def safe_write_diag(status, msg):
 	try:
-		if not bool(read(BASE + "/Config/SimEnabled")):
-			write([
-				(BASE + "/Diagnostics/LastRun", now_iso()),
-				(BASE + "/Diagnostics/LastStatus", "Sim disabled"),
-				(BASE + "/Diagnostics/LastError", "")
-			])
-			return
+		ts = now_iso()
+		system.tag.writeBlocking([DIAG + "/LastRun", DIAG + "/LastStatus", DIAG + "/LastError"], [ts, status, msg or ""])
+		try:
+			cur = system.tag.readBlocking([DIAG + "/TickCount"])[0].value
+			cur = int(cur or 0)
+			system.tag.writeBlocking([DIAG + "/TickCount"], [cur + 1])
+		except:
+			pass
+	except:
+		pass
 
-		tick = int(read(BASE + "/Diagnostics/TickCount")) + 1
+
+try:
+	safe_write_diag("START", "")
+
+	if not bool(read(BASE + "/Config/SimEnabled")):
+		safe_write_diag("SKIP", "Sim disabled")
+	else:
+		# NOTE: we don't treat TickCount as real days; this is just to make the demo lively.
+		tick = int(read(DIAG + "/TickCount") or 0) + 1
 
 		corr = float(read(BASE + "/Integrity/CorrosionRate_mm_per_yr"))
 		pig = int(read(BASE + "/Integrity/Pigging_DaysSince"))
 		leak = bool(read(BASE + "/Integrity/LeakSuspected"))
 
-		# corrosion drifts slowly (bounded)
 		corr = clamp(corr + random.gauss(0, 0.002), 0.02, 0.45)
 
-		# pigging counter increments slowly (simulate “days” using ticks)
-		# With a 10s timer: 1 "day" every ~360 ticks (~1 hour) to keep the demo lively.
+		# With a 10s timer: 1 "day" every ~360 ticks (~1 hour)
 		if tick % 360 == 0:
 			pig = pig + 1
 
-		# rare leak-suspected event that clears
 		if (not leak) and random.random() < 0.01:
 			leak = True
 		if leak and random.random() < 0.12:
 			leak = False
 
-		write([
-			(BASE + "/Integrity/CorrosionRate_mm_per_yr", float(corr)),
-			(BASE + "/Integrity/Pigging_DaysSince", int(pig)),
-			(BASE + "/Integrity/LeakSuspected", bool(leak)),
+		system.tag.writeBlocking(
+			[
+				BASE + "/Integrity/CorrosionRate_mm_per_yr",
+				BASE + "/Integrity/Pigging_DaysSince",
+				BASE + "/Integrity/LeakSuspected",
+			],
+			[
+				float(corr),
+				int(pig),
+				bool(leak),
+			],
+		)
 
-			(BASE + "/Diagnostics/TickCount", int(tick)),
-			(BASE + "/Diagnostics/LastRun", now_iso()),
-			(BASE + "/Diagnostics/LastStatus", "Integrity: corr=%.2f pigDays=%d leak=%s" % (corr, pig, leak)),
-			(BASE + "/Diagnostics/LastError", "")
-		])
+		safe_write_diag("OK", "Integrity: corr=%.2f pigDays=%d leak=%s" % (corr, pig, leak))
 
-	except Exception as e:
-		try:
-			write([
-				(BASE + "/Diagnostics/LastRun", now_iso()),
-				(BASE + "/Diagnostics/LastStatus", "ERROR"),
-				(BASE + "/Diagnostics/LastError", repr(e))
-			])
-		except:
-			pass
-
-
-handleTimerEvent()
+except Exception as e:
+	safe_write_diag("ERROR", str(e))
 
 
