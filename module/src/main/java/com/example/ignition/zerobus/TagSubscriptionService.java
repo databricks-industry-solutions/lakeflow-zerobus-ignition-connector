@@ -148,8 +148,27 @@ public class TagSubscriptionService {
             logger.info("  Batch size: {}", config.getBatchSize());
             logger.info("  Flush interval: {}ms", config.getBatchFlushIntervalMs());
 
-            // Direct subscription: subscribe to configured tags
-            subscribeConfiguredTags();
+            // Direct subscription: subscribe to configured tags.
+            //
+            // IMPORTANT:
+            // Do NOT do folder/pattern resolution synchronously on the module startup thread.
+            // Browsing large tag trees (or browsing before the tag system is fully ready) can block
+            // gateway startup and keep /system/* endpoints returning 503.
+            //
+            // Instead, start subscriptions asynchronously.
+            Thread t = new Thread(() -> {
+                try {
+                    // If the service was stopped before this thread ran, exit.
+                    if (!running.get()) {
+                        return;
+                    }
+                    subscribeConfiguredTags();
+                } catch (Throwable err) {
+                    logger.error("Error starting direct tag subscriptions (async)", err);
+                }
+            }, "Zerobus-DirectSubs-Init");
+            t.setDaemon(true);
+            t.start();
             
         } catch (Exception e) {
             logger.error("Failed to start event processing service", e);
