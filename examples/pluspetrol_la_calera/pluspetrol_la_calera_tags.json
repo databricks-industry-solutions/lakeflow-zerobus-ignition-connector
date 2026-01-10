@@ -32,15 +32,7 @@
                 { "name": "LastError", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
               ]
             },
-            {
-              "name": "Safety",
-              "tagType": "Folder",
-              "tags": [
-                { "name": "ESD_Active", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
-                { "name": "FireGas_Alarm", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
-                { "name": "H2S_ppm", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.0 }
-              ]
-            },
+            
             {
               "name": "Wells",
               "tagType": "Folder",
@@ -218,15 +210,7 @@
                 { "name": "SmokelessAssist_On", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false }
               ]
             },
-            {
-              "name": "Integrity",
-              "tagType": "Folder",
-              "tags": [
-                { "name": "CorrosionRate_mm_per_yr", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.12 },
-                { "name": "Pigging_DaysSince", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 9 },
-                { "name": "LeakSuspected", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false }
-              ]
-            }
+            
           ]
         }
       ]

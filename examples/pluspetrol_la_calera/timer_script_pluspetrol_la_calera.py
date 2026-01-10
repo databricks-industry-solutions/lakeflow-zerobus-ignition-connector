@@ -24,6 +24,9 @@ def handleTimerEvent():
 	def read(path):
 		return system.tag.readBlocking([path])[0].value
 
+	def read_safety(path_suffix):
+		return system.tag.readBlocking(["[pluspetrol_safety]Pluspetrol/Argentina/LaCalera/Safety/" + path_suffix])[0].value
+
 	def write(pairs):
 		paths = [p for (p, _) in pairs]
 		vals = [v for (_, v) in pairs]
@@ -82,16 +85,9 @@ def handleTimerEvent():
 		_ = float(read(BASE + "/Config/WaterCut_pct"))
 
 		# ESD drill (rare, short)
-		esd_active = bool(read(BASE + "/Safety/ESD_Active"))
-		if (not esd_active) and (random.random() < 0.0006) and (time.time() - st["last_esd"] > 600):
-			esd_active = True
-			st["last_esd"] = time.time()
-		if esd_active and (time.time() - st["last_esd"] > 20):
-			esd_active = False
-
-		# safety baselines
-		h2s = clamp(2.0 + random.gauss(0, 0.4), 0.0, 25.0)
-		firegas = (random.random() < 0.0002)
+		# Safety tags live in a separate provider: pluspetrol_safety
+		# SCADA/process sim only *reads* ESD and responds by shutting down flows/compressor and increasing flare.
+		esd_active = bool(read_safety("ESD_Active"))
 
 		# wells
 		wells = [
@@ -184,10 +180,6 @@ def handleTimerEvent():
 			leak = False
 
 		writes.extend([
-			(BASE + "/Safety/ESD_Active", bool(esd_active)),
-			(BASE + "/Safety/FireGas_Alarm", bool(firegas)),
-			(BASE + "/Safety/H2S_ppm", float(h2s)),
-
 			(BASE + "/Processing/Separator01/Pressure_bar", float(sep_p)),
 			(BASE + "/Processing/Separator01/Temperature_C", float(sep_t)),
 			(BASE + "/Processing/Separator01/Level_pct", float(level * 100.0)),
@@ -212,10 +204,6 @@ def handleTimerEvent():
 
 			(BASE + "/Flare/FlareRate_kSm3_h", float(flare)),
 			(BASE + "/Flare/SmokelessAssist_On", bool(smoke_assist)),
-
-			(BASE + "/Integrity/CorrosionRate_mm_per_yr", float(corr)),
-			(BASE + "/Integrity/Pigging_DaysSince", int(pig_days)),
-			(BASE + "/Integrity/LeakSuspected", bool(leak)),
 
 			(BASE + "/Diagnostics/TickCount", int(tick)),
 			(BASE + "/Diagnostics/LastRun", now_iso()),

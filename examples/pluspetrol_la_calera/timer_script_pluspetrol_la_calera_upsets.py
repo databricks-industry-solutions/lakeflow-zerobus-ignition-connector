@@ -14,7 +14,8 @@ def handleTimerEvent():
 	import random
 	import time
 
-	BASE = "[pluspetrol]Pluspetrol/Argentina/LaCalera"
+	BASE_P = "[pluspetrol]Pluspetrol/Argentina/LaCalera"
+	BASE_S = "[pluspetrol_safety]Pluspetrol/Argentina/LaCalera"
 
 	def now_iso():
 		return system.date.format(system.date.now(), "yyyy-MM-dd HH:mm:ss")
@@ -48,11 +49,11 @@ def handleTimerEvent():
 		return g["pluspetrol_upsets_state"]
 
 	try:
-		if not bool(read(BASE + "/Config/SimEnabled")):
+		if not bool(read(BASE_P + "/Config/SimEnabled")):
 			write([
-				(BASE + "/Diagnostics/LastRun", now_iso()),
-				(BASE + "/Diagnostics/LastStatus", "Upsets script: Sim disabled"),
-				(BASE + "/Diagnostics/LastError", "")
+				(BASE_P + "/Diagnostics/LastRun", now_iso()),
+				(BASE_P + "/Diagnostics/LastStatus", "Upsets script: Sim disabled"),
+				(BASE_P + "/Diagnostics/LastError", "")
 			])
 			return
 
@@ -72,9 +73,9 @@ def handleTimerEvent():
 		trip_active = (now <= s["trip_until"])
 		if trip_active:
 			events.extend([
-				(BASE + "/Processing/Compressor01/Running", False),
-				(BASE + "/Processing/Compressor01/Vibration_mm_s", float(clamp(8.0 + random.random() * 2.0, 0.0, 12.0))),
-				(BASE + "/Processing/Compressor01/BearingTemp_C", float(clamp(95.0 + random.random() * 8.0, 20.0, 120.0))),
+				(BASE_P + "/Processing/Compressor01/Running", False),
+				(BASE_P + "/Processing/Compressor01/Vibration_mm_s", float(clamp(8.0 + random.random() * 2.0, 0.0, 12.0))),
+				(BASE_P + "/Processing/Compressor01/BearingTemp_C", float(clamp(95.0 + random.random() * 8.0, 20.0, 120.0))),
 			])
 
 		# --- ESD drill ---
@@ -86,13 +87,13 @@ def handleTimerEvent():
 		esd_active = (now <= s["esd_until"])
 		if esd_active:
 			events.extend([
-				(BASE + "/Safety/ESD_Active", True),
-				(BASE + "/Processing/Compressor01/Running", False),
-				(BASE + "/Flare/FlareRate_kSm3_h", float(clamp(6.0 + random.random() * 3.0, 0.0, 12.0))),
+				(BASE_S + "/Safety/ESD_Active", True),
+				(BASE_P + "/Processing/Compressor01/Running", False),
+				(BASE_P + "/Flare/FlareRate_kSm3_h", float(clamp(6.0 + random.random() * 3.0, 0.0, 12.0))),
 			])
 		else:
 			# don't fight the base sim too much; just ensure ESD releases back to false
-			events.append((BASE + "/Safety/ESD_Active", False))
+			events.append((BASE_S + "/Safety/ESD_Active", False))
 
 		# --- H2S spike ---
 		if (now > s["h2s_until"]) and (now - s["last_h2s"] > 1200) and (random.random() < 0.05):
@@ -103,7 +104,7 @@ def handleTimerEvent():
 		h2s_active = (now <= s["h2s_until"])
 		if h2s_active:
 			events.extend([
-				(BASE + "/Safety/H2S_ppm", float(clamp(18.0 + random.random() * 35.0, 0.0, 80.0))),
+				(BASE_S + "/Safety/H2S_ppm", float(clamp(18.0 + random.random() * 35.0, 0.0, 80.0))),
 			])
 
 		# --- Fire & Gas alarm (short) ---
@@ -115,10 +116,10 @@ def handleTimerEvent():
 		fg_active = (now <= s["fg_until"])
 		if fg_active:
 			events.extend([
-				(BASE + "/Safety/FireGas_Alarm", True),
+				(BASE_S + "/Safety/FireGas_Alarm", True),
 			])
 		else:
-			events.append((BASE + "/Safety/FireGas_Alarm", False))
+			events.append((BASE_S + "/Safety/FireGas_Alarm", False))
 
 		# --- Tank high-high scenario (e.g., offtake delayed) ---
 		if (now > s["tank_hh_until"]) and (now - s["last_tank_hh"] > 1500) and (random.random() < 0.04):
@@ -130,22 +131,22 @@ def handleTimerEvent():
 		if tank_hh_active:
 			# push Tank01 up near 90–98% and force flare assist on
 			events.extend([
-				(BASE + "/Tanks/Tank01/Level_pct", float(clamp(90.0 + random.random() * 8.0, 0.0, 100.0))),
-				(BASE + "/Flare/SmokelessAssist_On", True),
+				(BASE_P + "/Tanks/Tank01/Level_pct", float(clamp(90.0 + random.random() * 8.0, 0.0, 100.0))),
+				(BASE_P + "/Flare/SmokelessAssist_On", True),
 			])
 
 		# Only write actual tag updates (ignore the tuple markers above)
 		writes = []
 		for e in events:
-			if isinstance(e, tuple) and isinstance(e[0], basestring) and e[0].startswith(BASE):
+			if isinstance(e, tuple) and isinstance(e[0], basestring) and (e[0].startswith(BASE_P) or e[0].startswith(BASE_S)):
 				writes.append(e)
 
 		# Always update diagnostics
 		writes.extend([
-			(BASE + "/Diagnostics/LastRun", now_iso()),
-			(BASE + "/Diagnostics/LastStatus",
+			(BASE_P + "/Diagnostics/LastRun", now_iso()),
+			(BASE_P + "/Diagnostics/LastStatus",
 			 "Upsets: trip=%s esd=%s h2s=%s fg=%s tankHH=%s" % (trip_active, esd_active, h2s_active, fg_active, tank_hh_active)),
-			(BASE + "/Diagnostics/LastError", "")
+			(BASE_P + "/Diagnostics/LastError", "")
 		])
 
 		write(writes)
