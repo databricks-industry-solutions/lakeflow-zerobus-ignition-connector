@@ -19,7 +19,29 @@ def clamp(x, lo, hi):
 
 
 def read(path):
-	return system.tag.readBlocking([path])[0].value
+	qv = system.tag.readBlocking([path])[0]
+	try:
+		if qv.quality is not None and (not qv.quality.isGood()):
+			return None
+	except:
+		pass
+	return qv.value
+
+
+def read_float(path, default):
+	try:
+		v = read(path)
+		return default if v is None else float(v)
+	except:
+		return default
+
+
+def read_bool(path, default):
+	try:
+		v = read(path)
+		return default if v is None else bool(v)
+	except:
+		return default
 
 
 def safe_write_diag(status, msg):
@@ -44,11 +66,11 @@ try:
 	else:
 		tick = int(read(DIAG + "/TickCount") or 0) + 1
 
-		z3 = float(read(BASE_P + "/Kiln01/Zones/Zone3_Temp_C"))
-		z3_tgt = float(read(BASE_P + "/Config/KilnProfile_TargetZone3_C"))
-		moist = float(read(BASE_P + "/SprayDryer01/PowderMoisture_pct"))
-		press_alarm = bool(read(BASE_P + "/Pressing/Press01/AlarmActive"))
-		tool = float(read(BASE_P + "/Grinding/Grinder01/ToolWear_Index"))
+		z3 = read_float(BASE_P + "/Kiln01/Zones/Zone3_Temp_C", 1590.0)
+		z3_tgt = read_float(BASE_P + "/Config/KilnProfile_TargetZone3_C", 1600.0)
+		moist = read_float(BASE_P + "/SprayDryer01/PowderMoisture_pct", 0.8)
+		press_alarm = read_bool(BASE_P + "/Pressing/Press01/AlarmActive", False)
+		tool = read_float(BASE_P + "/Grinding/Grinder01/ToolWear_Index", 0.15)
 
 		kiln_dev = z3 - z3_tgt
 
@@ -68,13 +90,13 @@ try:
 		elif tool > 0.7:
 			top_defect = "Surface finish (tool wear)"
 
-		target_rho = float(read(BASE_Q + "/Config/Target_Density_g_cm3"))
+		target_rho = read_float(BASE_Q + "/Config/Target_Density_g_cm3", 3.85)
 		rho = clamp(target_rho - 0.0009 * abs(kiln_dev) - 0.006 * max(0.0, moist - 1.0) + random.gauss(0, 0.004), target_rho - 0.08, target_rho + 0.03)
 		por = clamp(1.1 + 0.015 * abs(kiln_dev) + 0.4 * max(0.0, moist - 1.0) + abs(random.gauss(0, 0.05)), 0.3, 6.0)
 		hard = clamp(1450.0 - 2.0 * abs(kiln_dev) + random.gauss(0, 8.0), 1200.0, 1600.0)
 		flex = clamp(360.0 - 0.8 * abs(kiln_dev) - 8.0 * max(0.0, moist - 1.0) + random.gauss(0, 3.0), 250.0, 420.0)
 
-		target_d = float(read(BASE_Q + "/Config/Target_Diameter_mm"))
+		target_d = read_float(BASE_Q + "/Config/Target_Diameter_mm", 10.0)
 		sigma = clamp(0.004 + 0.006 * max(0.0, moist - 0.9) + (0.003 if press_alarm else 0.0) + 0.001 * max(0.0, tool - 0.6), 0.003, 0.03)
 		mean = clamp(target_d + 0.00003 * kiln_dev + random.gauss(0, sigma / 2.5), target_d - 0.03, target_d + 0.03)
 

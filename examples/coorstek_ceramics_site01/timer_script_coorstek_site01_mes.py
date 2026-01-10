@@ -20,7 +20,37 @@ def clamp(x, lo, hi):
 
 
 def read(path):
-	return system.tag.readBlocking([path])[0].value
+	qv = system.tag.readBlocking([path])[0]
+	try:
+		if qv.quality is not None and (not qv.quality.isGood()):
+			return None
+	except:
+		pass
+	return qv.value
+
+
+def read_float(path, default):
+	try:
+		v = read(path)
+		return default if v is None else float(v)
+	except:
+		return default
+
+
+def read_bool(path, default):
+	try:
+		v = read(path)
+		return default if v is None else bool(v)
+	except:
+		return default
+
+
+def read_int(path, default):
+	try:
+		v = read(path)
+		return default if v is None else int(v)
+	except:
+		return default
 
 
 def safe_write_diag(status, msg):
@@ -53,17 +83,17 @@ try:
 		dt = max(1.0, now_s - float(st.get("last_ts", now_s)))
 		st["last_ts"] = now_s
 
-		target = int(read(BASE_M + "/MES/Orders/TargetQty"))
-		good = int(read(BASE_M + "/MES/Orders/GoodCount"))
-		rej = int(read(BASE_M + "/MES/Orders/RejectCount"))
-		wip = int(read(BASE_M + "/MES/Orders/WIPCount"))
+		target = read_int(BASE_M + "/MES/Orders/TargetQty", 25000)
+		good = read_int(BASE_M + "/MES/Orders/GoodCount", 0)
+		rej = read_int(BASE_M + "/MES/Orders/RejectCount", 0)
+		wip = read_int(BASE_M + "/MES/Orders/WIPCount", 0)
 		status = str(read(BASE_M + "/MES/Orders/Status") or "RUNNING")
 
-		press_running = bool(read(BASE_P + "/Pressing/Press01/Running"))
-		thru = float(read(BASE_P + "/Pressing/Press01/PartRate_parts_per_min"))
-		yield_pct = float(read(BASE_Q + "/QC/Inspection/Vision01/Yield_pct"))
+		press_running = read_bool(BASE_P + "/Pressing/Press01/Running", True)
+		thru = read_float(BASE_P + "/Pressing/Press01/PartRate_parts_per_min", 14.0)
+		yield_pct = read_float(BASE_Q + "/QC/Inspection/Vision01/Yield_pct", 98.0)
 
-		downtime = bool(read(BASE_M + "/MES/Production/DowntimeActive"))
+		downtime = read_bool(BASE_M + "/MES/Production/DowntimeActive", False)
 		reason = str(read(BASE_M + "/MES/Production/DowntimeReason") or "")
 
 		if (not downtime) and (random.random() < 0.04):

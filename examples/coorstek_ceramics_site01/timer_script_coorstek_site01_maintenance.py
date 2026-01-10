@@ -19,7 +19,37 @@ def clamp(x, lo, hi):
 
 
 def read(path):
-	return system.tag.readBlocking([path])[0].value
+	qv = system.tag.readBlocking([path])[0]
+	try:
+		if qv.quality is not None and (not qv.quality.isGood()):
+			return None
+	except:
+		pass
+	return qv.value
+
+
+def read_float(path, default):
+	try:
+		v = read(path)
+		return default if v is None else float(v)
+	except:
+		return default
+
+
+def read_bool(path, default):
+	try:
+		v = read(path)
+		return default if v is None else bool(v)
+	except:
+		return default
+
+
+def read_int(path, default):
+	try:
+		v = read(path)
+		return default if v is None else int(v)
+	except:
+		return default
 
 
 def safe_write_diag(status, msg):
@@ -42,19 +72,20 @@ try:
 	if not bool(read(BASE_MA + "/Config/SimEnabled")):
 		safe_write_diag("SKIP", "Sim disabled")
 	else:
-		z3 = float(read(BASE_P + "/Kiln01/Zones/Zone3_Temp_C"))
-		z3_tgt = float(read(BASE_P + "/Config/KilnProfile_TargetZone3_C"))
+		# These come from the process provider. If process tags aren't imported yet, default safely.
+		z3 = read_float(BASE_P + "/Kiln01/Zones/Zone3_Temp_C", 1590.0)
+		z3_tgt = read_float(BASE_P + "/Config/KilnProfile_TargetZone3_C", 1600.0)
 		kiln_dev = z3 - z3_tgt
-		press_alarm = bool(read(BASE_P + "/Pressing/Press01/AlarmActive"))
-		tool = float(read(BASE_P + "/Grinding/Grinder01/ToolWear_Index"))
+		press_alarm = read_bool(BASE_P + "/Pressing/Press01/AlarmActive", False)
+		tool = read_float(BASE_P + "/Grinding/Grinder01/ToolWear_Index", 0.15)
 
 		tc_drift = clamp(abs(kiln_dev) * 0.06 + abs(random.gauss(0, 0.3)), 0.0, 25.0)
 		kiln_vib = clamp(1.7 + 0.03 * abs(kiln_dev) + abs(random.gauss(0, 0.2)), 0.6, 8.0)
 		press_vib = clamp(2.2 + (1.2 if press_alarm else 0.0) + abs(random.gauss(0, 0.2)), 0.8, 9.0)
 		gr_vib = clamp(1.3 + 2.8 * max(0.0, tool - 0.5) + abs(random.gauss(0, 0.2)), 0.5, 9.0)
 
-		active = int(read(BASE_MA + "/Maintenance/WorkOrders/ActiveCount"))
-		high = int(read(BASE_MA + "/Maintenance/WorkOrders/HighPriorityCount"))
+		active = read_int(BASE_MA + "/Maintenance/WorkOrders/ActiveCount", 4)
+		high = read_int(BASE_MA + "/Maintenance/WorkOrders/HighPriorityCount", 1)
 		last_id = str(read(BASE_MA + "/Maintenance/WorkOrders/LastWorkOrderId") or "")
 		last_sum = str(read(BASE_MA + "/Maintenance/WorkOrders/LastWorkOrderSummary") or "")
 
@@ -77,9 +108,9 @@ try:
 			if high > 0 and random.random() < 0.35:
 				high = max(0, high - 1)
 
-		press_seals = int(read(BASE_MA + "/Maintenance/Spares/Press01_SealKit_Stock"))
-		tc_stock = int(read(BASE_MA + "/Maintenance/Spares/Kiln01_Thermocouple_Stock"))
-		gr_bear = int(read(BASE_MA + "/Maintenance/Spares/Grinder01_Bearing_Stock"))
+		press_seals = read_int(BASE_MA + "/Maintenance/Spares/Press01_SealKit_Stock", 6)
+		tc_stock = read_int(BASE_MA + "/Maintenance/Spares/Kiln01_Thermocouple_Stock", 12)
+		gr_bear = read_int(BASE_MA + "/Maintenance/Spares/Grinder01_Bearing_Stock", 4)
 
 		if press_alarm and random.random() < 0.2:
 			press_seals = max(0, press_seals - 1)

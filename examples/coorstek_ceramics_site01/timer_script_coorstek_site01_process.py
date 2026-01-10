@@ -17,7 +17,21 @@ def clamp(x, lo, hi):
 
 
 def read(path):
-	return system.tag.readBlocking([path])[0].value
+	qv = system.tag.readBlocking([path])[0]
+	try:
+		if qv.quality is not None and (not qv.quality.isGood()):
+			return None
+	except:
+		pass
+	return qv.value
+
+
+def read_float(path, default):
+	try:
+		v = read(path)
+		return default if v is None else float(v)
+	except:
+		return default
 
 
 def write_pairs(pairs):
@@ -58,9 +72,9 @@ try:
 		tick = int(read(DIAG + "/TickCount") or 0) + 1
 
 		# --- Raw materials slowly deplete/replenish ---
-		al_lvl = float(read(BASE + "/RawMaterials/AluminaHopper_Level_pct"))
-		bi_lvl = float(read(BASE + "/RawMaterials/BinderTank_Level_pct"))
-		di_lvl = float(read(BASE + "/RawMaterials/DispersantTank_Level_pct"))
+		al_lvl = read_float(BASE + "/RawMaterials/AluminaHopper_Level_pct", 72.0)
+		bi_lvl = read_float(BASE + "/RawMaterials/BinderTank_Level_pct", 55.0)
+		di_lvl = read_float(BASE + "/RawMaterials/DispersantTank_Level_pct", 61.0)
 
 		al_lvl = clamp(al_lvl - 0.004 + random.gauss(0, 0.002), 15.0, 95.0)
 		bi_lvl = clamp(bi_lvl - 0.003 + random.gauss(0, 0.002), 10.0, 90.0)
@@ -71,11 +85,11 @@ try:
 			bi_lvl = clamp(bi_lvl + 12.0, 0.0, 100.0)
 
 		# --- Mixing ---
-		solids = float(read(BASE + "/Mixing/SlurryTank01/Solids_pct"))
-		visc = float(read(BASE + "/Mixing/SlurryTank01/Viscosity_cP"))
-		ph = float(read(BASE + "/Mixing/SlurryTank01/pH"))
-		temp = float(read(BASE + "/Mixing/SlurryTank01/Temperature_C"))
-		agit = float(read(BASE + "/Mixing/SlurryTank01/Agitator_RPM"))
+		solids = read_float(BASE + "/Mixing/SlurryTank01/Solids_pct", 62.0)
+		visc = read_float(BASE + "/Mixing/SlurryTank01/Viscosity_cP", 850.0)
+		ph = read_float(BASE + "/Mixing/SlurryTank01/pH", 9.2)
+		temp = read_float(BASE + "/Mixing/SlurryTank01/Temperature_C", 28.0)
+		agit = read_float(BASE + "/Mixing/SlurryTank01/Agitator_RPM", 240.0)
 
 		solids = clamp(solids + random.gauss(0, 0.05), 58.0, 66.0)
 		temp = clamp(temp + random.gauss(0, 0.08), 24.0, 33.0)
@@ -97,8 +111,8 @@ try:
 		dp = clamp(2.1 + 1.8 * st["dryer_fouling"] + abs(random.gauss(0, 0.05)), 1.2, 6.5)
 
 		# --- Pressing ---
-		press_run = bool(read(BASE + "/Pressing/Press01/Running"))
-		alarm = bool(read(BASE + "/Pressing/Press01/AlarmActive"))
+		press_run = bool(read(BASE + "/Pressing/Press01/Running") if read(BASE + "/Pressing/Press01/Running") is not None else True)
+		alarm = bool(read(BASE + "/Pressing/Press01/AlarmActive") if read(BASE + "/Pressing/Press01/AlarmActive") is not None else False)
 		last_alarm = str(read(BASE + "/Pressing/Press01/LastAlarm") or "")
 
 		now_s = time.time()
@@ -121,13 +135,13 @@ try:
 		rate = clamp(rate + random.gauss(0, 0.4), 0.0, 18.0)
 
 		# --- Kiln ---
-		z1_tgt = float(read(BASE + "/Config/KilnProfile_TargetZone1_C"))
-		z2_tgt = float(read(BASE + "/Config/KilnProfile_TargetZone2_C"))
-		z3_tgt = float(read(BASE + "/Config/KilnProfile_TargetZone3_C"))
+		z1_tgt = read_float(BASE + "/Config/KilnProfile_TargetZone1_C", 850.0)
+		z2_tgt = read_float(BASE + "/Config/KilnProfile_TargetZone2_C", 1350.0)
+		z3_tgt = read_float(BASE + "/Config/KilnProfile_TargetZone3_C", 1600.0)
 
-		z1 = float(read(BASE + "/Kiln01/Zones/Zone1_Temp_C"))
-		z2 = float(read(BASE + "/Kiln01/Zones/Zone2_Temp_C"))
-		z3 = float(read(BASE + "/Kiln01/Zones/Zone3_Temp_C"))
+		z1 = read_float(BASE + "/Kiln01/Zones/Zone1_Temp_C", z1_tgt - 5.0)
+		z2 = read_float(BASE + "/Kiln01/Zones/Zone2_Temp_C", z2_tgt - 5.0)
+		z3 = read_float(BASE + "/Kiln01/Zones/Zone3_Temp_C", z3_tgt - 8.0)
 
 		if random.random() < 0.0008:
 			st["kiln_bias3"] = clamp(st["kiln_bias3"] + random.choice([-1.0, 1.0]) * (0.8 + 0.6 * random.random()), -18.0, 18.0)
@@ -137,13 +151,13 @@ try:
 		z2 = clamp(0.96 * z2 + 0.04 * (z2_tgt + random.gauss(0, 3.0)), z2_tgt - 35.0, z2_tgt + 35.0)
 		z3 = clamp(0.96 * z3 + 0.04 * (z3_tgt + st["kiln_bias3"] + random.gauss(0, 4.0)), z3_tgt - 60.0, z3_tgt + 60.0)
 
-		belt = clamp(float(read(BASE + "/Kiln01/BeltSpeed_mm_s")) + random.gauss(0, 0.05), 14.0, 26.0)
+		belt = clamp(read_float(BASE + "/Kiln01/BeltSpeed_mm_s", 18.0) + random.gauss(0, 0.05), 14.0, 26.0)
 		o2 = clamp(1.8 + random.gauss(0, 0.12) + 0.001 * max(0.0, st["kiln_bias3"]), 0.6, 4.0)
 		dew = clamp(-18.0 + random.gauss(0, 0.8) + 0.02 * max(0.0, st["kiln_bias3"]), -35.0, 5.0)
 		exh = clamp(255.0 + 0.04 * (z3 - z3_tgt) + random.gauss(0, 1.0), 220.0, 320.0)
 
 		# --- Grinding ---
-		tool = float(read(BASE + "/Grinding/Grinder01/ToolWear_Index"))
+		tool = read_float(BASE + "/Grinding/Grinder01/ToolWear_Index", 0.15)
 		tool = clamp(tool + 0.00002 + abs(random.gauss(0, 0.00003)) + 0.00001 * max(0.0, moist - 0.9), 0.05, 0.95)
 		if tick % 7200 == 0:
 			tool = clamp(tool - 0.35, 0.05, 0.95)
