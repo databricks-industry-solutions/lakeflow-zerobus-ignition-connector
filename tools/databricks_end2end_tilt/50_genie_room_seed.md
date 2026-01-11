@@ -38,3 +38,4 @@ Use these key views:
 - “For each turbine (T01/T02/T03), show power trend and forced_outage flag over the last day.”
 
 
+

@@ -102,3 +102,9 @@ my-config.json
 !examples/**/*.json
 !tools/**/*.json
 !sources/**/*.json
+
+# Local-only Ignition backups (do not commit)
+onboarding/ignition/**/backup_ignition81/
+
+# Local generated/backup config files (do not commit)
+module/src/main/resources/zerobus.properties*

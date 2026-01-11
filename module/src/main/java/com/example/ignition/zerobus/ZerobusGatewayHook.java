@@ -67,6 +67,29 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements Zer
     private TagSubscriptionService tagSubscriptionService;
     private ConfigModel configModel;
     private ZerobusConfigResource restResource;
+
+    /**
+     * (Re)create service objects if they are missing. This can happen after config apply/restart operations.
+     * Must be called while holding this instance monitor if concurrent restarts are possible.
+     */
+    private void ensureServicesInitialized() {
+        if (gatewayContext == null) {
+            throw new IllegalStateException("GatewayContext is not initialized");
+        }
+        if (configModel == null) {
+            configModel = new ConfigModel();
+        }
+
+        // Pipeline wiring depends on ZerobusClientManager; recreate as a unit if anything is missing.
+        if (zerobusClientManager == null || tagSubscriptionService == null) {
+            zerobusClientManager = new ZerobusClientManager(configModel);
+            ZerobusPipelineFactory.PipelineComponents comps =
+                    ZerobusPipelineFactory.create(configModel, zerobusClientManager);
+            tagSubscriptionService = new TagSubscriptionService(
+                    gatewayContext, configModel, comps.mapper, comps.buffer, comps.sink
+            );
+        }
+    }
     
     /**
      * Setup - called first during module initialization.
@@ -224,6 +247,9 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements Zer
      */
     private void startServices() throws Exception {
         logger.info("Starting Zerobus services...");
+
+        // Defensive: restart paths can null these out.
+        ensureServicesInitialized();
 
         // Always start buffering/ingest service first so "sink down" does not prevent ingestion.
         tagSubscriptionService.start();
@@ -453,7 +479,7 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements Zer
                 }
                 tagSubscriptionService = null;
                 zerobusClientManager = null;
-                startServices();
+                startServices(); // will recreate services via ensureServicesInitialized()
                 logger.info("Zerobus services restarted successfully");
                 return true;
             } catch (Exception e) {
@@ -517,16 +543,24 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements Zer
     public String getDiagnosticsInfo() {
         StringBuilder info = new StringBuilder();
         info.append("=== Zerobus Module Diagnostics ===\n");
-        info.append("Module Enabled: ").append(configModel.isEnabled()).append("\n");
-        
-        if (zerobusClientManager != null) {
-            info.append("\n").append(zerobusClientManager.getDiagnostics());
+        try {
+            info.append("Module Enabled: ").append(configModel != null && configModel.isEnabled()).append("\n");
+
+            if (zerobusClientManager != null) {
+                info.append("\n").append(zerobusClientManager.getDiagnostics());
+            } else {
+                info.append("\nInitialized: false\nConnected: false\n");
+            }
+
+            if (tagSubscriptionService != null) {
+                info.append("\n").append(tagSubscriptionService.getDiagnostics());
+            } else {
+                info.append("\nRunning: false\nDirect Subscriptions: 0 tags\n");
+            }
+        } catch (Exception e) {
+            // Never let diagnostics break the HTTP endpoint; return best-effort output.
+            info.append("\nDiagnostics Error: ").append(e.getClass().getSimpleName()).append(": ").append(e.getMessage()).append("\n");
         }
-        
-        if (tagSubscriptionService != null) {
-            info.append("\n").append(tagSubscriptionService.getDiagnostics());
-        }
-        
         return info.toString();
     }
     
