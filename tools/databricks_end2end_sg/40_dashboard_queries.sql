@@ -45,3 +45,4 @@ WHERE hr >= now() - INTERVAL 7 DAYS
 ORDER BY hr;
 
 
+

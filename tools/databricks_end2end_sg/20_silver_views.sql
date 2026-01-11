@@ -55,3 +55,4 @@ WHERE source_domain = 'cmms'
 GROUP BY ts_1m, asset_id;
 
 
+

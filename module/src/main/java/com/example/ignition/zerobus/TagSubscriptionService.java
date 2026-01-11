@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+import java.util.Arrays;
 import java.util.concurrent.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -237,13 +238,16 @@ public class TagSubscriptionService {
                 return;
             }
 
+            GatewayTagManager tm;
             try {
-                this.tagManager = (GatewayTagManager) gatewayContext.getTagManager();
+                tm = (GatewayTagManager) gatewayContext.getTagManager();
+                this.tagManager = tm;
             } catch (Throwable t) {
                 logger.error("Unable to acquire GatewayTagManager; direct subscriptions will be disabled", t);
                 this.tagManager = null;
+                tm = null;
             }
-            if (this.tagManager == null) {
+            if (tm == null) {
                 logger.error("GatewayTagManager is null; cannot start direct tag subscriptions");
                 return;
             }
@@ -252,7 +256,9 @@ public class TagSubscriptionService {
             List<TagChangeListener> listeners = new ArrayList<>();
 
             // Resolve which tag paths to subscribe to (explicit, folder, or pattern).
-            List<TagPath> resolved = resolveConfiguredTagPaths();
+            // IMPORTANT: use the local `tm` reference for all browse/subscribe operations.
+            // This prevents a race where shutdown/unsubscribe can null out the field reference mid-browse.
+            List<TagPath> resolved = resolveConfiguredTagPaths(tm);
             for (TagPath tagPath : resolved) {
                 if (tagPath == null) {
                     continue;
@@ -268,7 +274,7 @@ public class TagSubscriptionService {
                 return;
             }
 
-            tagManager.subscribeAsync(tagPaths, listeners)
+            tm.subscribeAsync(tagPaths, listeners)
                     .whenComplete((ok, err) -> {
                         if (err != null) {
                             logger.error("Failed to subscribe to {} tags", tagPaths.size(), err);
@@ -287,17 +293,17 @@ public class TagSubscriptionService {
         }
     }
 
-    private List<TagPath> resolveConfiguredTagPaths() {
+    private List<TagPath> resolveConfiguredTagPaths(GatewayTagManager tm) {
         String mode = config.getTagSelectionMode() != null ? config.getTagSelectionMode().trim() : "explicit";
 
         if ("explicit".equalsIgnoreCase(mode)) {
             return resolveExplicitTagPaths();
         }
         if ("folder".equalsIgnoreCase(mode)) {
-            return resolveFolderTagPaths();
+            return resolveFolderTagPaths(tm);
         }
         if ("pattern".equalsIgnoreCase(mode)) {
-            return resolvePatternTagPaths();
+            return resolvePatternTagPaths(tm);
         }
 
         logger.warn("Unknown tagSelectionMode='{}'. Falling back to explicit.", mode);
@@ -324,7 +330,7 @@ public class TagSubscriptionService {
         return out;
     }
 
-    private List<TagPath> resolveFolderTagPaths() {
+    private List<TagPath> resolveFolderTagPaths(GatewayTagManager tm) {
         String folder = config.getTagFolderPath();
         if (folder == null || folder.trim().isEmpty()) {
             logger.warn("Tag folder path is empty; nothing to subscribe to");
@@ -340,13 +346,13 @@ public class TagSubscriptionService {
         }
 
         boolean recursive = config.isIncludeSubfolders();
-        List<TagPath> out = browseLeafAtomicTags(root, recursive);
+        List<TagPath> out = browseLeafAtomicTags(tm, root, recursive);
         logger.info("Folder selection resolved {} tag(s) from root={} (includeSubfolders={})",
                 out.size(), folder.trim(), recursive);
         return out;
     }
 
-    private List<TagPath> resolvePatternTagPaths() {
+    private List<TagPath> resolvePatternTagPaths(GatewayTagManager tm) {
         String patternStr = config.getTagPathPattern();
         if (patternStr == null || patternStr.trim().isEmpty()) {
             logger.warn("Tag path pattern is empty; nothing to subscribe to");
@@ -362,13 +368,23 @@ public class TagSubscriptionService {
         }
 
         // Pattern mode is evaluated over the FULL tag path string (e.g., "[tilt]Tilt/Site01/MetMast01/WindSpeed_mps").
-        // We must browse across providers to discover candidate tags.
-        List<String> providers;
-        try {
-            providers = tagManager.getTagProviderNames();
-        } catch (Exception e) {
-            logger.warn("Unable to list tag providers for pattern mode: {}", e.getMessage());
-            return List.of();
+        //
+        // IMPORTANT:
+        // Naively browsing ALL providers can be slow (or effectively "hang") on gateways with large tag trees.
+        // If the pattern clearly restricts provider(s) at the start (e.g. "^\[(a|b)\]..."), we can browse
+        // only those providers for a big performance win.
+        List<String> providers = tryExtractProviderFilter(patternStr);
+        if (providers == null || providers.isEmpty()) {
+            try {
+                providers = tm.getTagProviderNames();
+            } catch (Exception e) {
+                logger.warn("Unable to list tag providers for pattern mode: {}", e.getMessage());
+                return List.of();
+            }
+            logger.info("Pattern selection browsing ALL providers ({}). pattern='{}'", providers.size(), patternStr.trim());
+        } else {
+            logger.info("Pattern selection browsing filtered providers ({}): {}. pattern='{}'",
+                    providers.size(), providers, patternStr.trim());
         }
 
         // Safety cap to avoid accidental "subscribe to entire gateway" explosions.
@@ -386,7 +402,12 @@ public class TagSubscriptionService {
                 continue;
             }
 
-            List<TagPath> leafs = browseLeafAtomicTags(providerRoot, true);
+            long t0 = System.currentTimeMillis();
+            List<TagPath> leafs = browseLeafAtomicTags(tm, providerRoot, true);
+            long t1 = System.currentTimeMillis();
+            if (config.isDebugLogging()) {
+                logger.info("Pattern browse provider='{}': leafAtomicTags={} ({}ms)", provider, leafs.size(), (t1 - t0));
+            }
             for (TagPath tp : leafs) {
                 if (tp == null) continue;
                 String s = tp.toString();
@@ -399,17 +420,60 @@ public class TagSubscriptionService {
                     }
                 }
             }
+            if (config.isDebugLogging()) {
+                logger.info("Pattern match progress after provider='{}': totalMatches={}", provider, out.size());
+            }
         }
 
         logger.info("Pattern selection resolved {} tag(s) for pattern='{}'", out.size(), patternStr.trim());
         return out;
     }
 
-    private List<TagPath> browseLeafAtomicTags(TagPath root, boolean recursive) {
+    /**
+     * Best-effort: if the regex begins with a provider constraint like:
+     *   ^\[(a|b|c)\]...
+     *   ^\[a\]...
+     *
+     * then return ["a","b","c"] so we only browse those providers.
+     *
+     * If the pattern doesn't match this shape (or uses complex regex), return null.
+     */
+    private static List<String> tryExtractProviderFilter(String patternStr) {
+        if (patternStr == null) {
+            return null;
+        }
+        String s = patternStr.trim();
+        if (s.startsWith("^")) {
+            s = s.substring(1);
+        }
+        if (!s.startsWith("\\[")) {
+            return null;
+        }
+        int end = s.indexOf("\\]");
+        if (end < 0) {
+            return null;
+        }
+        String inside = s.substring(2, end); // between \[ and \]
+        if (inside.startsWith("(") && inside.endsWith(")") && inside.length() >= 2) {
+            inside = inside.substring(1, inside.length() - 1);
+        }
+        // Only accept a simple alternation of "provider-ish" tokens.
+        // If it contains other regex metacharacters, we can't safely infer providers.
+        if (!inside.matches("[A-Za-z0-9_\\-\\|]+")) {
+            return null;
+        }
+        String[] parts = inside.split("\\|");
+        if (parts.length == 0) {
+            return null;
+        }
+        return Arrays.asList(parts);
+    }
+
+    private List<TagPath> browseLeafAtomicTags(GatewayTagManager tm, TagPath root, boolean recursive) {
         if (root == null) {
             return List.of();
         }
-        if (tagManager == null) {
+        if (tm == null) {
             logger.warn("Cannot browse tags because GatewayTagManager is not initialized (root={})", root.toString());
             return List.of();
         }
@@ -419,15 +483,19 @@ public class TagSubscriptionService {
         List<TagPath> out = new ArrayList<>();
 
         String continuation = null;
+        String lastContinuation = null;
         int totalSeen = 0;
+        int page = 0;
+        long startMs = System.currentTimeMillis();
 
         do {
+            page++;
             BrowseFilter filter = new BrowseFilter()
                     .setRecursive(recursive)
                     .setMaxResults(PAGE_SIZE)
                     .setContinuationPoint(continuation);
 
-            CompletableFuture<Results<NodeDescription>> fut = tagManager.browseAsync(root, filter);
+            CompletableFuture<Results<NodeDescription>> fut = tm.browseAsync(root, filter);
             Results<NodeDescription> res;
             try {
                 // Browsing is local; use requestTimeout as a reasonable ceiling.
@@ -438,6 +506,7 @@ public class TagSubscriptionService {
             }
 
             Collection<NodeDescription> nodes = res != null ? res.getResults() : null;
+            int nodeCount = nodes == null ? 0 : nodes.size();
             if (nodes != null) {
                 for (NodeDescription nd : nodes) {
                     totalSeen++;
@@ -453,7 +522,31 @@ public class TagSubscriptionService {
                 }
             }
 
+            lastContinuation = continuation;
             continuation = (res != null) ? res.getContinuationPoint() : null;
+
+            // Guardrails:
+            // Some providers can return empty pages but keep returning continuation points indefinitely.
+            // Stop early to avoid infinite loops / runaway browsing.
+            if (nodeCount == 0 && continuation != null && !continuation.isBlank()) {
+                if (lastContinuation != null && continuation.equals(lastContinuation)) {
+                    logger.warn("Browse returned 0 nodes and repeated continuationPoint for root={}; stopping to avoid infinite loop", root.toString());
+                    break;
+                }
+                logger.warn("Browse returned 0 nodes but continuationPoint is set for root={}; stopping to avoid runaway browse", root.toString());
+                break;
+            }
+            if (continuation != null && lastContinuation != null && continuation.equals(lastContinuation)) {
+                logger.warn("Browse returned repeated continuationPoint for root={}; stopping to avoid infinite loop", root.toString());
+                break;
+            }
+            if (config.isDebugLogging()) {
+                long elapsed = System.currentTimeMillis() - startMs;
+                logger.info("Browse progress root={} page={} nodes={} atomic={} totalSeen={} cont={} elapsedMs={}",
+                        root.toString(), page, nodeCount, out.size(), totalSeen,
+                        (continuation == null ? "null" : (continuation.isBlank() ? "<blank>" : "<set>")),
+                        elapsed);
+            }
         } while (continuation != null && !continuation.isBlank());
 
         return out;
@@ -461,7 +554,8 @@ public class TagSubscriptionService {
 
     private void unsubscribeAll() {
         try {
-            if (tagManager == null || subscribedListeners.isEmpty()) {
+            GatewayTagManager tm = this.tagManager;
+            if (tm == null || subscribedListeners.isEmpty()) {
                 return;
             }
             List<TagPath> paths = new ArrayList<>(subscribedListeners.keySet());
@@ -481,7 +575,7 @@ public class TagSubscriptionService {
                 return;
             }
 
-            tagManager.unsubscribeAsync(paths, listeners)
+            tm.unsubscribeAsync(paths, listeners)
                     .whenComplete((ok, err) -> {
                         if (err != null) {
                             logger.warn("Error unsubscribing from tags", err);
@@ -491,8 +585,6 @@ public class TagSubscriptionService {
                     });
         } catch (Throwable t) {
             logger.warn("Error while unsubscribing tags", t);
-        } finally {
-            tagManager = null;
         }
     }
 

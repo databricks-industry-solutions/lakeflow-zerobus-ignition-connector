@@ -34,6 +34,27 @@ Gateway Timer Scripts (create 4 timers):
 
 Each provider includes `Diagnostics/*` tags: `TickCount`, `LastRun`, `LastStatus`, `LastError`.
 
+## Important note about timer script style (Ignition 8.1)
+
+On some Ignition 8.1 setups, **Gateway Timer Scripts** can behave like this:
+- `system` is available at the **top-level** of the script, but
+- top-level variables and `system` may **not** be visible inside `def` functions.
+
+This can cause confusing errors like:
+`NameError: global name 'system' is not defined`
+
+### Recommended: use the write-only "NO FUNCTIONS" timers
+
+These scripts are written as **top-level code only (no defs)** and use `system.*` directly.
+They are the most reliable “plumbing validation” scripts:
+
+- Process: `timer_script_coorstek_site01_process_write_only.py` (1000ms)
+- QC: `timer_script_coorstek_site01_qc_write_only.py` (2000ms)
+- MES: `timer_script_coorstek_site01_mes_write_only.py` (5000ms)
+- Maintenance: `timer_script_coorstek_site01_maintenance_write_only.py` (10000ms)
+
+Once everything is flowing, you can switch back to the richer model scripts if desired.
+
 ## Sanity check (if “numbers aren’t changing”)
 
 ### 1) Confirm the tag paths match what the scripts write

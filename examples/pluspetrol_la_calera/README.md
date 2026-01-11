@@ -39,6 +39,19 @@ Gateway Timer Scripts:
 - `timer_script_pluspetrol_la_calera_integrity.py` (integrity baseline, 10000ms)
 - `timer_script_pluspetrol_la_calera_upsets.py` (optional upsets, 5000–10000ms)
 
+## Recommended "write-only / no-functions" timers (Ignition 8.1)
+
+On some Ignition 8.1 timer-script contexts, `system` and other top-level names can be
+inconsistent inside `def` functions, causing errors like:
+`NameError: global name 'system' is not defined`.
+
+These **write-only** scripts are intentionally written as **top-level code only**
+(no defs) and use `system.*` directly, plus SG-style “tick ok …” logs:
+
+- `timer_script_pluspetrol_la_calera_write_only.py` (process, 1000ms)
+- `timer_script_pluspetrol_la_calera_safety_write_only.py` (safety, 2000ms)
+- `timer_script_pluspetrol_la_calera_integrity_write_only.py` (integrity, 10000ms)
+
 ## What data is modeled (and why it’s relevant)
 
 ### Wells / pads (production + well health)
@@ -157,6 +170,23 @@ Recommended roots (select the folder and set **Include subfolders = true**):
   - `[pluspetrol_integrity]Pluspetrol/Argentina/LaCalera`
 
 This keeps the connector scoped to only Pluspetrol’s demo tags (no explicit paths list needed).
+
+### Option: use Pattern mode (single regex, multiple providers)
+
+If you prefer a single **regex** (instead of a single folder root), set Zerobus config:
+
+- **Selection Mode**: `pattern`
+- **Tag Path Pattern**: (Java regex; matches the **full tag path string**, including the provider in brackets)
+
+Recommended regex for **Pluspetrol Process + Safety + Integrity**:
+
+```
+^\[(pluspetrol|pluspetrol_safety|pluspetrol_integrity)\]Pluspetrol/Argentina/LaCalera(/.*)?$
+```
+
+Notes:
+- This uses Java `Pattern.matcher(fullPath).matches()` semantics (full-string match), so include `^` and `$`.
+- The provider brackets are **literal** `[` and `]` in the tag path, so the regex must escape them as `\[` and `\]`.
 
 ### 4) Add the Gateway Timer Script (simulator)
 

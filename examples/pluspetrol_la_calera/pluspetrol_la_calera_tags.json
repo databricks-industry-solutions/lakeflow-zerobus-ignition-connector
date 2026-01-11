@@ -209,7 +209,7 @@
                 { "name": "FlareRate_kSm3_h", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.3 },
                 { "name": "SmokelessAssist_On", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false }
               ]
-            },
+            }
             
           ]
         }

@@ -8,6 +8,9 @@ BASE = "[coorstek]CoorsTek/Site01"
 DIAG = BASE + "/Diagnostics"
 log = system.util.getLogger("coorstek_site01.process")
 
+DEBUG_WINDOW_S = 60.0   # after script reload, emit extra debug for this many seconds
+DEBUG_EVERY_S = 5.0     # emit debug at most this often
+
 
 def now_iso():
 	return system.date.format(system.date.now(), "yyyy-MM-dd HH:mm:ss")
@@ -39,16 +42,36 @@ def write_pairs(pairs):
 	paths = [p for (p, _) in pairs]
 	vals = [v for (_, v) in pairs]
 	results = system.tag.writeBlocking(paths, vals)
-	# Log only failures (common case: Comm Read-Only / write permissions)
+	# Return + log write qualities so failures can't be silent.
 	try:
+		# Summarize qualities
+		qstr = [str(x) for x in results]
 		bad = []
 		for i in range(len(results)):
-			if str(results[i]) != "Good":
-				bad.append((paths[i], str(results[i])))
+			qi = results[i]
+			try:
+				is_good = qi is not None and qi.isGood()
+			except:
+				is_good = (str(qi) == "Good")
+			if not is_good:
+				bad.append((paths[i], str(qi)))
+
+		# Log qualities periodically (or always on failure)
+		try:
+			g = system.util.getGlobals()
+			last = float(g.get("coorstek_site01_process_last_writeq", 0.0) or 0.0)
+			now = time.time()
+			if bad or (now - last) >= 60.0:
+				g["coorstek_site01_process_last_writeq"] = now
+				log.info("write qualities: %r" % qstr)
+		except:
+			pass
+
 		if bad:
 			log.error("WRITE_FAIL (first 10): %r" % bad[:10])
 	except:
 		pass
+	return results
 
 
 def safe_write_diag(status, msg):
@@ -85,8 +108,21 @@ try:
 		g_hb["coorstek_site01_process_last_hb"] = now_hb
 		log.info("tick (heartbeat): process timer executing")
 
-	if not bool(read(BASE + "/Config/SimEnabled")):
-		safe_write_diag("SKIP", "Sim disabled")
+	# Short debug window right after a script restart so we can quickly diagnose "runs but no changes".
+	try:
+		dbg_until = g_hb.get("coorstek_site01_process_dbg_until")
+		dbg_until = float(dbg_until) if dbg_until is not None else 0.0
+		if dbg_until <= now_hb:
+			g_hb["coorstek_site01_process_dbg_until"] = now_hb + DEBUG_WINDOW_S
+			g_hb["coorstek_site01_process_dbg_last"] = 0.0
+	except:
+		pass
+
+	# IMPORTANT: If Config/SimEnabled is missing (e.g. tags not imported yet),
+	# don't silently skip forever. Only skip when it's explicitly present AND false.
+	sim_enabled = read(BASE + "/Config/SimEnabled")
+	if (sim_enabled is not None) and (not bool(sim_enabled)):
+		safe_write_diag("SKIP", "Sim disabled (Config/SimEnabled=false)")
 	else:
 		g = system.util.getGlobals()
 		st = g.get("coorstek_process_state")
@@ -100,6 +136,16 @@ try:
 			g["coorstek_process_state"] = st
 
 		tick = int(read(DIAG + "/TickCount") or 0) + 1
+
+		# Emit a small debug line every few seconds during the debug window.
+		try:
+			dbg_until = float(g_hb.get("coorstek_site01_process_dbg_until", 0.0) or 0.0)
+			dbg_last = float(g_hb.get("coorstek_site01_process_dbg_last", 0.0) or 0.0)
+			if (now_hb <= dbg_until) and ((now_hb - dbg_last) >= DEBUG_EVERY_S):
+				g_hb["coorstek_site01_process_dbg_last"] = now_hb
+				log.info("debug: tick=%d simEnabled=%r base=%s" % (tick, sim_enabled, BASE))
+		except:
+			pass
 
 		# --- Raw materials slowly deplete/replenish ---
 		al_lvl = read_float(BASE + "/RawMaterials/AluminaHopper_Level_pct", 72.0)
@@ -205,7 +251,7 @@ try:
 		elif press_run is False:
 			status = "Press stopped"
 
-		write_pairs([
+		results = write_pairs([
 			(BASE + "/RawMaterials/AluminaHopper_Level_pct", float(al_lvl)),
 			(BASE + "/RawMaterials/BinderTank_Level_pct", float(bi_lvl)),
 			(BASE + "/RawMaterials/DispersantTank_Level_pct", float(di_lvl)),
@@ -245,7 +291,16 @@ try:
 			(BASE + "/Grinding/Grinder01/ToolWear_Index", float(tool)),
 		])
 
-		safe_write_diag("OK", status)
+		# If any write failed, make it visible in Diagnostics (so it can’t “look stuck” quietly).
+		try:
+			bad_count = sum(1 for x in results if str(x) != "Good")
+		except:
+			bad_count = 0
+
+		if bad_count > 0:
+			safe_write_diag("WRITE_FAILED", "%s (bad=%d)" % (status, bad_count))
+		else:
+			safe_write_diag("OK", status)
 
 except Exception as e:
 	try:
