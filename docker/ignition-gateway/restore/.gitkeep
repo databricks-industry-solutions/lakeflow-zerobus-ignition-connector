@@ -1,0 +1,3 @@
+# Put your gateway backup here as: restore.gwbk
+# This file keeps the folder in git; backups are ignored via repo .gitignore.
+

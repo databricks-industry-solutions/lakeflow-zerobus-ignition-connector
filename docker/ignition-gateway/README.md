@@ -96,6 +96,49 @@ curl -I http://localhost:8097/
 docker logs --tail 50 ignition81
 ```
 
+### Docker Compose (recommended)
+
+This folder includes:
+- `docker-compose.yml` (normal start)
+- `docker-compose.restore.yml` (first-time restore from a `.gwbk`)
+- `env.example` (copy to `.env`)
+
+#### 1) Create your local `.env` (not committed)
+
+```bash
+cp docker/ignition-gateway/env.example docker/ignition-gateway/.env
+```
+
+#### 2) Normal start
+
+```bash
+cd docker/ignition-gateway
+docker compose up -d
+curl -I "http://localhost:${HOST_HTTP_PORT:-8097}/"
+```
+
+#### 3) First-time restore from a working gateway (`.gwbk`)
+
+1) Copy your backup into place:
+
+```bash
+cp /absolute/path/to/your.gwbk docker/ignition-gateway/restore/restore.gwbk
+```
+
+2) Make sure you restore into a **fresh** volume:
+
+```bash
+docker compose down -v
+```
+
+3) Run the restore compose file:
+
+```bash
+cd docker/ignition-gateway
+docker compose -f docker-compose.restore.yml up -d
+docker logs --tail 80 ignition81
+```
+
 ### Toggling “dev” vs “non-dev”
 
 This repo’s module dev flow often needs unsigned modules enabled. Prefer doing this as a **runtime JVM arg**:
@@ -105,5 +148,7 @@ This repo’s module dev flow often needs unsigned modules enabled. Prefer doing
 ```
 
 To run in “non-dev”, omit the JVM arg (and rely on signed modules only).
+
+With docker compose, set `IGNITION_ALLOW_UNSIGNED_MODULES=false` in `.env`.
 
 
