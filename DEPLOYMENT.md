@@ -106,3 +106,9 @@ ORDER BY rows_last_10m DESC;
 ### Ignition 8.3 module won’t install
 
 You likely uploaded the 8.1 artifact. Use `releases/zerobus-connector-1.0.1-ignition-8.3.modl`.
+
+### Running Ignition in Docker (dev/demo)
+
+This deployment guide assumes a “normal” Ignition installation.
+If you want to run an Ignition Gateway in Docker (for demo/dev environments), see:
+- `docker/ignition-gateway/README.md`
