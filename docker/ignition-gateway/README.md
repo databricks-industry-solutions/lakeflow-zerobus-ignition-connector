@@ -56,6 +56,24 @@ So: **you do not recreate credentials on restart** as long as you reuse the same
 
 Instead of commissioning manually, export a `.gwbk` from an existing gateway and restore it into Docker.
 
+#### What is a `.gwbk`?
+
+A **Gateway Backup** (`.gwbk`) is Ignition’s standard backup artifact. It’s the safest way to “clone” an already-working
+gateway into another environment, because it can include:
+- gateway configuration (including users/roles, security settings, etc.)
+- projects
+- tag providers/tags
+- other gateway resources depending on your backup options
+
+**Do not commit** `.gwbk` files to git. This repo ignores `*.gwbk` via `.gitignore`.
+
+#### How do I create a `.gwbk` from an existing gateway?
+
+Two common options:
+
+- **GUI (Gateway Web UI)**: `Config → System → Backup/Restore → Backup`
+- **CLI (no GUI)**: use `gwcmd.sh` on the Ignition machine (works great for repeatable demo setups).
+
 #### 1) Create a `.gwbk` from a local Ignition install (non-GUI)
 
 From a macOS Ignition zip install (example path):
