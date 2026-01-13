@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'com.example.ignition'
-version = '1.0.7'
+version = '1.0.9'
 
 // Module ID:
 // - Default is the current internal/dev module id.
@@ -113,10 +113,10 @@ tasks.register('verifyIgnitionSdkJars') {
         def commonDir = file("${ignitionHome}/lib/core/common")
 
         if (!gatewayDir.exists()) {
-            throw new GradleException("Ignition gateway lib dir not found: ${gatewayDir}. Set -PignitionHome=... or IGNITION_HOME.")
+            throw new RuntimeException("Ignition gateway lib dir not found: ${gatewayDir}. Set -PignitionHome=... or IGNITION_HOME.")
         }
         if (!commonDir.exists()) {
-            throw new GradleException("Ignition common lib dir not found: ${commonDir}. Set -PignitionHome=... or IGNITION_HOME.")
+            throw new RuntimeException("Ignition common lib dir not found: ${commonDir}. Set -PignitionHome=... or IGNITION_HOME.")
         }
 
         def required = [
@@ -127,7 +127,7 @@ tasks.register('verifyIgnitionSdkJars') {
 
         def missing = required.findAll { !(file(it).exists()) }
         if (!missing.isEmpty()) {
-            throw new GradleException("Missing required Ignition SDK jars:\n- " + missing.join("\n- ") +
+            throw new RuntimeException("Missing required Ignition SDK jars:\n- " + missing.join("\n- ") +
                     "\n\nYou likely pointed at the wrong install. Example for 8.1 SDK:\n" +
                     "  export IGNITION_HOME=/usr/local/ignition8.1\n" +
                     "  ./gradlew clean buildModule -PbuildForIgnitionVersion=8.1.50")
@@ -222,6 +222,9 @@ test {
 jar {
     archiveBaseName = 'zerobus-connector'
     archiveVersion = version
+    // IMPORTANT: module.xml references a stable jar name under lib/.
+    // If the jar filename includes the version, Ignition will fault the module when module.xml and lib/ disagree.
+    archiveFileName = 'zerobus-connector.jar'
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     
     manifest {
@@ -450,7 +453,7 @@ tasks.register('signModule', JavaExec) {
         if (!signingAliasPassword) missing << "signingAliasPassword (or env SIGNING_KEYPASS)"
 
         if (!missing.isEmpty()) {
-            throw new GradleException(
+            throw new RuntimeException(
                     "Missing signing configuration:\n- " + missing.join("\n- ") + "\n\n" +
                             "Download module-signer.jar per IA docs and then run, for example:\n" +
                             "  ./gradlew signModule -PmoduleSignerJar=/path/to/module-signer.jar \\\n" +
@@ -459,13 +462,13 @@ tasks.register('signModule', JavaExec) {
             )
         }
         if (!file(moduleSignerJar).exists()) {
-            throw new GradleException("moduleSignerJar not found: ${moduleSignerJar}")
+            throw new RuntimeException("moduleSignerJar not found: ${moduleSignerJar}")
         }
         if (!file(signingKeystore).exists()) {
-            throw new GradleException("signingKeystore not found: ${signingKeystore}")
+            throw new RuntimeException("signingKeystore not found: ${signingKeystore}")
         }
         if (signingChain && !file(signingChain).exists()) {
-            throw new GradleException("signingChain not found: ${signingChain}")
+            throw new RuntimeException("signingChain not found: ${signingChain}")
         }
     }
 

@@ -1,0 +1,23 @@
+services:
+  ignition83:
+    image: "inductiveautomation/ignition:${IGNITION83_TAG:-8.3.2}"
+    container_name: ignition83_7088
+    ports:
+      - "${HOST_HTTP_PORT_83:-7088}:8088"
+      - "${HOST_HTTPS_PORT_83:-7044}:8043"
+    environment:
+      ACCEPT_IGNITION_EULA: "${ACCEPT_IGNITION_EULA:-Y}"
+    volumes:
+      - ignition83-data:/usr/local/bin/ignition/data
+      # Place your 8.3 gateway backup at docker/ignition-gateway/restore83/restore.gwbk
+      - ./restore83/restore.gwbk:/restore.gwbk:ro
+    command:
+      - "-r"
+      - "/restore.gwbk"
+      - "--"
+      - "-Dignition.allowunsignedmodules=${IGNITION_ALLOW_UNSIGNED_MODULES:-false}"
+
+volumes:
+  ignition83-data:
+
+
