@@ -113,5 +113,10 @@ onboarding/ignition/**/backup_ignition81/
 *.env
 !.env.example
 
+# Tools cloned/built locally (do not commit)
+tools/module-signer/
+
+# Docker-based build outputs (do not commit)
+docker-out/
 # Local generated/backup config files (do not commit)
 module/src/main/resources/zerobus.properties*

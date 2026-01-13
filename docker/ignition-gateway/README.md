@@ -52,6 +52,18 @@ In the official `inductiveautomation/ignition` image:
 
 So: **you do not recreate credentials on restart** as long as you reuse the same data volume.
 
+### Self-signed module signing: how to avoid “trust this cert” prompts on every new container
+
+If you sign your module with a **self-signed** code-signing certificate, Ignition will prompt you to **trust/accept** that
+signer certificate the first time you install/upgrade the module on a *new* gateway.
+
+To make this repeatable for Docker/Colima without extra clicks:
+
+- Install the **signed** module once via the Gateway UI and **accept/trust** the signer certificate.
+- Create a new **`.gwbk` backup** from that gateway.
+- Restore future containers from that `.gwbk`.
+
+Because the trust decision is stored in the gateway state, **restores inherit it**.
 ### Recommended: bootstrap from an existing working gateway (.gwbk restore)
 
 Instead of commissioning manually, export a `.gwbk` from an existing gateway and restore it into Docker.
@@ -114,6 +126,26 @@ curl -I http://localhost:8097/
 docker logs --tail 50 ignition81
 ```
 
+### 8.3 example (backup local 8.3 on 8088, restore into Docker on 7088)
+
+Backup from the local 8.3 install (example path `/usr/local/ignition`):
+
+```bash
+mkdir -p ~/colima/gwbk
+/usr/local/ignition/gwcmd.sh -i
+/usr/local/ignition/gwcmd.sh -b ~/colima/gwbk/ignition83.gwbk -z 900 -y
+```
+
+Restore into Docker on host port **7088**:
+
+```bash
+cd docker/ignition-gateway
+cp ~/colima/gwbk/ignition83.gwbk restore83/restore.gwbk
+docker volume rm ignition83-data 2>/dev/null || true
+docker volume create ignition83-data >/dev/null
+docker compose -f docker-compose.83.restore.yml up -d   # or: docker-compose -f docker-compose.83.restore.yml up -d
+curl -I http://localhost:7088/
+```
 ### Docker Compose (recommended)
 
 This folder includes:
@@ -121,6 +153,8 @@ This folder includes:
 - `docker-compose.restore.yml` (first-time restore from a `.gwbk`)
 - `env.example` (copy to `.env`)
 
+> Note: Some environments have the legacy `docker-compose` binary instead of the newer `docker compose` plugin.
+> Use whichever exists on your machine.
 #### 1) Create your local `.env` (not committed)
 
 ```bash
@@ -131,7 +165,7 @@ cp docker/ignition-gateway/env.example docker/ignition-gateway/.env
 
 ```bash
 cd docker/ignition-gateway
-docker compose up -d
+docker compose up -d   # or: docker-compose up -d
 curl -I "http://localhost:${HOST_HTTP_PORT:-8097}/"
 ```
 
@@ -153,7 +187,7 @@ docker compose down -v
 
 ```bash
 cd docker/ignition-gateway
-docker compose -f docker-compose.restore.yml up -d
+docker compose -f docker-compose.restore.yml up -d   # or: docker-compose -f docker-compose.restore.yml up -d
 docker logs --tail 80 ignition81
 ```
 
