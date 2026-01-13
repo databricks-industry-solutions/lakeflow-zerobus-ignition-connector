@@ -303,6 +303,9 @@ If you don’t want to install Ignition locally just to access SDK jars, you can
 - the official `inductiveautomation/ignition` image (source of Ignition SDK/runtime jars)
 - an official Java 17 JDK image (`eclipse-temurin:17-jdk`) for the Gradle build
 
+If you want to run a full **Ignition Gateway** in Docker (for demos, without installing Ignition on your laptop),
+see `docker/ignition-gateway/README.md` (Colima on macOS).
+
 This uses BuildKit `--output` to write the `.modl` to a local folder:
 
 **Ignition 8.3.x**

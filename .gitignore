@@ -106,5 +106,12 @@ my-config.json
 # Local-only Ignition backups (do not commit)
 onboarding/ignition/**/backup_ignition81/
 
+# Gateway backups (do not commit)
+*.gwbk
+
+# Local docker/colima env files (may contain credentials)
+*.env
+!.env.example
+
 # Local generated/backup config files (do not commit)
 module/src/main/resources/zerobus.properties*
