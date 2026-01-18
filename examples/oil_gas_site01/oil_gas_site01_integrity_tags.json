@@ -1,0 +1,48 @@
+{
+  "name": "OilGas",
+  "tagType": "Folder",
+  "tags": [
+    {
+      "name": "Region",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "name": "Site01",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "Config",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "SimEnabled", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                { "name": "UpdateEveryMs", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 10000 },
+                { "name": "AssetIntegrityProfile", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "Site01 - demo integrity signals" }
+              ]
+            },
+            {
+              "name": "Diagnostics",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "TickCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+                { "name": "LastRun", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                { "name": "LastStatus", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                { "name": "LastError", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+              ]
+            },
+            {
+              "name": "Integrity",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "CorrosionRate_mm_per_yr", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.12 },
+                { "name": "Pigging_DaysSince", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 9 },
+                { "name": "LeakSuspected", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+

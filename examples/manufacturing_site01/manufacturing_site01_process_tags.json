@@ -1,0 +1,130 @@
+{
+  "name": "Manufacturing",
+  "tagType": "Folder",
+  "tags": [
+    {
+      "name": "Site01",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "name": "Diagnostics",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "TickCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+            { "name": "LastRun", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastStatus", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastError", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+          ]
+        },
+        {
+          "name": "Config",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "SimEnabled", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+            { "name": "UpdateEveryMs", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 1000 },
+            { "name": "PlantName", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "Manufacturing Ceramics Plant - Site01 (Demo)" },
+            { "name": "ProductFamily", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "Technical ceramics (alumina/zirconia)" },
+            { "name": "KilnProfile_TargetZone1_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 850.0 },
+            { "name": "KilnProfile_TargetZone2_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1350.0 },
+            { "name": "KilnProfile_TargetZone3_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1600.0 }
+          ]
+        },
+        {
+          "name": "RawMaterials",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "AluminaHopper_Level_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 72.0 },
+            { "name": "BinderTank_Level_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 55.0 },
+            { "name": "DispersantTank_Level_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 61.0 }
+          ]
+        },
+        {
+          "name": "Mixing",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "SlurryTank01",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "Solids_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 62.0 },
+                { "name": "Viscosity_cP", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 850.0 },
+                { "name": "pH", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 9.2 },
+                { "name": "Temperature_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 28.0 },
+                { "name": "Agitator_RPM", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 240.0 }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "SprayDryer01",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "InletTemp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 210.0 },
+            { "name": "OutletTemp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 92.0 },
+            { "name": "Atomizer_RPM", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 12500.0 },
+            { "name": "PowderMoisture_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.8 },
+            { "name": "CycloneDP_kPa", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.2 }
+          ]
+        },
+        {
+          "name": "Pressing",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "Press01",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "Running", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                { "name": "PressForce_kN", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1200.0 },
+                { "name": "CycleTime_s", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 4.2 },
+                { "name": "PartRate_parts_per_min", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 14.0 },
+                { "name": "HydraulicPressure_bar", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 165.0 },
+                { "name": "DieTemp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 42.0 },
+                { "name": "AlarmActive", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+                { "name": "LastAlarm", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Kiln01",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "Zones",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "Zone1_Temp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 845.0 },
+                { "name": "Zone2_Temp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1346.0 },
+                { "name": "Zone3_Temp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1592.0 }
+              ]
+            },
+            { "name": "BeltSpeed_mm_s", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 18.0 },
+            { "name": "Atmosphere_O2_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1.8 },
+            { "name": "Dewpoint_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": -18.0 },
+            { "name": "ExhaustTemp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 260.0 }
+          ]
+        },
+        {
+          "name": "Grinding",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "Grinder01",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "Running", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                { "name": "SpindleCurrent_A", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 22.0 },
+                { "name": "FeedRate_mm_s", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 6.5 },
+                { "name": "CoolantFlow_L_min", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 18.0 },
+                { "name": "ToolWear_Index", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.15 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+

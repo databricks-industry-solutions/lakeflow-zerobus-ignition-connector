@@ -1,0 +1,67 @@
+{
+  "name": "Manufacturing",
+  "tagType": "Folder",
+  "tags": [
+    {
+      "name": "Site01",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "name": "Diagnostics",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "TickCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+            { "name": "LastRun", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastStatus", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastError", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+          ]
+        },
+        {
+          "name": "Config",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "SimEnabled", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+            { "name": "UpdateEveryMs", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 10000 }
+          ]
+        },
+        {
+          "name": "Maintenance",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "WorkOrders",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "ActiveCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 4 },
+                { "name": "HighPriorityCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 1 },
+                { "name": "LastWorkOrderId", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "WO-77821" },
+                { "name": "LastWorkOrderSummary", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "Inspect kiln zone 3 thermocouple drift" }
+              ]
+            },
+            {
+              "name": "Condition",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "Kiln01_ThermocoupleDrift_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1.5 },
+                { "name": "Kiln01_BlowerVibration_mm_s", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.1 },
+                { "name": "Press01_PumpVibration_mm_s", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.4 },
+                { "name": "Grinder01_SpindleVibration_mm_s", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1.7 }
+              ]
+            },
+            {
+              "name": "Spares",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "Press01_SealKit_Stock", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 6 },
+                { "name": "Kiln01_Thermocouple_Stock", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 12 },
+                { "name": "Grinder01_Bearing_Stock", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 4 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+

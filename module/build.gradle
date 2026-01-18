@@ -1,0 +1,565 @@
+plugins {
+    id 'java'
+    id 'com.google.protobuf' version '0.9.4'
+    // UI build can be added later
+    // id 'com.github.node-gradle.node' version '7.0.1'
+}
+
+group = 'com.example.ignition'
+version = '1.0.0'
+
+// Module ID:
+// - Default is the current internal/dev module id.
+// - For Module Showcase publishing, pass: -PmoduleId=com.databricks.ignition.zerobus (or similar)
+// IMPORTANT: Changing module ID means Ignition will treat it as a different module (no in-place upgrade).
+def moduleId = project.hasProperty('moduleId') ? project.getProperty('moduleId') : 'com.example.ignition.zerobus'
+
+// Some local builds were previously run with sudo, which can leave the default ./build directory
+// owned by root and therefore unwritable. To keep builds reliable, always use a user-writable build dir.
+// Also, keep 8.1 and 8.3 builds from stepping on each other by using distinct build dirs.
+def buildFlavor = (project.hasProperty('buildForIgnitionVersion') ? project.getProperty('buildForIgnitionVersion') : '8.1.5').startsWith('8.3') ? '8.3' : '8.1'
+buildDir = file("$projectDir/build-user-${buildFlavor}")
+
+// Cross-version compatibility:
+// - Many Ignition 8.1-era gateways run on Java 11 (class version 55).
+// - Ignition 8.3+ runs on Java 17 (class version 61).
+//
+// IMPORTANT: On this machine, the Ignition SDK jars under /usr/local/ignition8.1 are themselves Java 17 bytecode,
+// so the compiler must be JDK 17+ to even *read* those jars. We still *emit* Java 11 bytecode for runtime
+// compatibility by using `--release 11` for 8.1 builds.
+//
+// For Ignition 8.3 builds, we emit Java 17 bytecode to match the platform runtime.
+def isIgnition83Build = (project.hasProperty('buildForIgnitionVersion')
+        ? project.getProperty('buildForIgnitionVersion')
+        : '8.1.5').startsWith('8.3')
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    sourceCompatibility = isIgnition83Build ? JavaVersion.VERSION_17 : JavaVersion.VERSION_11
+    targetCompatibility = isIgnition83Build ? JavaVersion.VERSION_17 : JavaVersion.VERSION_11
+}
+
+repositories {
+    mavenCentral()
+    
+    // Inductive Automation Repository
+    maven {
+        url = "https://nexus.inductiveautomation.com/repository/public"
+    }
+}
+
+ext {
+    // Build version - what Ignition version to compile against
+    // Build against the lowest supported version for best compatibility.
+    // Override with: -PbuildForIgnitionVersion=8.1.5
+    buildForIgnitionVersion = project.hasProperty('buildForIgnitionVersion') ? project.getProperty('buildForIgnitionVersion') : '8.1.5'
+
+    // Ignition installation home (used to locate SDK jars). Override with:
+    // -PignitionHome=/path/to/ignition OR env IGNITION_HOME
+    ignitionHome = project.hasProperty('ignitionHome') ? project.getProperty('ignitionHome') : (System.getenv('IGNITION_HOME') ?: '/usr/local/ignition')
+    
+    // Minimum version - what the module will declare as minimum requirement
+    minIgnitionVersion = project.hasProperty('minIgnitionVersion') ? project.getProperty('minIgnitionVersion') : '8.1.0'
+    
+    slf4jVersion = '1.7.36'
+    protobufVersion = '3.21.12'
+}
+
+dependencies {
+    // Ignition SDK from local installation (compileOnly - provided by Ignition at runtime)
+    compileOnly files("${ignitionHome}/lib/core/gateway/gateway-api-${buildForIgnitionVersion}.jar")
+    compileOnly files("${ignitionHome}/lib/core/gateway/gateway-api-web-${buildForIgnitionVersion}.jar")
+    compileOnly files("${ignitionHome}/lib/core/gateway/gateway-web-${buildForIgnitionVersion}.jar")
+    compileOnly files("${ignitionHome}/lib/core/gateway/gateway-${buildForIgnitionVersion}.jar")
+    compileOnly files("${ignitionHome}/lib/core/gateway/simple-orm-${buildForIgnitionVersion}.jar")
+
+    // Apache Wicket - for Gateway web UI components
+    compileOnly fileTree(dir: "${ignitionHome}/lib/core/gateway", include: 'wicket-*.jar')
+
+    // Common libraries from Ignition installation
+    compileOnly fileTree(dir: "${ignitionHome}/lib/core/common", include: '*.jar')
+    
+    // JAX-RS API for REST endpoints
+    // NOTE: Avoid JAX-RS dependency for Ignition 8.1/8.2 compatibility.
+    
+    // Servlet API (provided by Ignition at runtime - Ignition 8.3.2 uses jakarta!)
+    compileOnly 'jakarta.servlet:jakarta.servlet-api:6.0.0'
+    // For Ignition 8.1/8.2 compatibility (servlet namespace is javax.*)
+    compileOnly 'javax.servlet:javax.servlet-api:4.0.1'
+    
+    // Logging (provided by Ignition at runtime)
+    compileOnly "org.slf4j:slf4j-api:${slf4jVersion}"
+    
+    // Protobuf - required for Zerobus SDK
+    implementation "com.google.protobuf:protobuf-java:${protobufVersion}"
+    
+    // Databricks Zerobus Ingest SDK - Use shaded JAR with all dependencies bundled
+    implementation 'com.databricks:zerobus-ingest-sdk:0.1.0:jar-with-dependencies'
+    
+    // Testing
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.9.2'
+    testImplementation 'org.mockito:mockito-core:5.1.1'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// Fail fast if the Ignition SDK jars we intend to compile against aren't present.
+tasks.register('verifyIgnitionSdkJars') {
+    group = 'verification'
+    description = 'Verifies Ignition SDK jar paths exist for the configured ignitionHome/buildForIgnitionVersion.'
+
+    doLast {
+        def gatewayDir = file("${ignitionHome}/lib/core/gateway")
+        def commonDir = file("${ignitionHome}/lib/core/common")
+
+        if (!gatewayDir.exists()) {
+            throw new RuntimeException("Ignition gateway lib dir not found: ${gatewayDir}. Set -PignitionHome=... or IGNITION_HOME.")
+        }
+        if (!commonDir.exists()) {
+            throw new RuntimeException("Ignition common lib dir not found: ${commonDir}. Set -PignitionHome=... or IGNITION_HOME.")
+        }
+
+        def required = [
+                "${gatewayDir}/gateway-api-${buildForIgnitionVersion}.jar",
+                "${gatewayDir}/gateway-api-web-${buildForIgnitionVersion}.jar",
+                "${gatewayDir}/gateway-web-${buildForIgnitionVersion}.jar"
+        ]
+
+        def missing = required.findAll { !(file(it).exists()) }
+        if (!missing.isEmpty()) {
+            throw new RuntimeException("Missing required Ignition SDK jars:\n- " + missing.join("\n- ") +
+                    "\n\nYou likely pointed at the wrong install. Example for 8.1 SDK:\n" +
+                    "  export IGNITION_HOME=/usr/local/ignition8.1\n" +
+                    "  ./gradlew clean buildModule -PbuildForIgnitionVersion=8.1.50")
+        }
+    }
+}
+
+// Protobuf configuration
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:${protobufVersion}"
+    }
+    
+    generateProtoTasks {
+        all().each { task ->
+            task.builtins {
+                java {}
+            }
+        }
+    }
+}
+
+// Configure source sets for protobuf
+sourceSets {
+    main {
+        java {
+            srcDirs 'build/generated/source/proto/main/java'
+            // Exclude 8.1 Wicket/PersistentRecord UI classes when building for 8.3+
+            if (buildForIgnitionVersion.startsWith('8.3')) {
+                // 8.1-only gateway hook (uses Wicket config tabs)
+                exclude '**/ZerobusGatewayHook.java'
+                exclude '**/ZerobusGatewayHookHolder.java'
+                exclude '**/ZerobusSettings.java'
+                exclude '**/ZerobusSettingsPage.java'
+                exclude '**/MaskedPasswordEditorSource.java'
+                exclude '**/RedirectConfigPanel.java'
+                exclude '**/ZerobusConfigureRedirectPanel.java'
+                exclude '**/ZerobusDiagnosticsRedirectPanel.java'
+                exclude '**/ConfigPanel.java'
+            } else {
+                // 8.3-only hook + record
+                exclude '**/ZerobusGatewayHook83.java'
+                exclude '**/ZerobusSettings83.java'
+            }
+        }
+        proto {
+            srcDirs 'src/main/proto'
+        }
+        // Resources differ by target Ignition version:
+        // - 8.1 build: include com/** + web/** (UI is served at /system/zerobus/configure).
+        // - 8.3 build: include full resources (web/ + mounted/) to support the 8.3 navigation entry + UI.
+        resources {
+            if (buildForIgnitionVersion.startsWith('8.3')) {
+                srcDirs = ['src/main/resources']
+            } else {
+                // IMPORTANT: keep folder structure so the servlet can load /web/zerobus-config.html
+                // (i.e., src/main/resources must be the root).
+                srcDirs = ['src/main/resources']
+            }
+        }
+    }
+}
+
+// Ensure the configured resources srcDirs actually take effect (and avoid unreadable src/main/resources/web
+// during 8.1 builds). Some Gradle DSL forms can be ignored depending on plugin ordering; this is explicit.
+if (!buildForIgnitionVersion.startsWith('8.3')) {
+    sourceSets.main.resources.setSrcDirs(['src/main/resources'])
+} else {
+    sourceSets.main.resources.setSrcDirs(['src/main/resources'])
+}
+
+// Compile options
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+    // Emit bytecode appropriate to the Ignition target version:
+    // - 8.1.x: Java 11
+    // - 8.3.x: Java 17
+    options.release = isIgnition83Build ? 17 : 11
+    options.compilerArgs << '-Xlint:unchecked' << '-Xlint:deprecation'
+}
+
+// Test configuration
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat "full"
+    }
+}
+
+// JAR configuration
+jar {
+    archiveBaseName = 'zerobus-connector'
+    archiveVersion = version
+    // IMPORTANT: module.xml references a stable jar name under lib/.
+    // If the jar filename includes the version, Ignition will fault the module when module.xml and lib/ disagree.
+    archiveFileName = 'zerobus-connector.jar'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    
+    manifest {
+        attributes(
+            'Implementation-Title': 'Ignition Zerobus Connector',
+            'Implementation-Version': version,
+            'Module-Id': moduleId,
+            'Module-Name': 'Zerobus Connector',
+            'Module-Version': version
+        )
+    }
+    
+    // Include a module.xml inside the jar for visibility/debugging; we keep it aligned with the build target
+    // (8.1 vs 8.3) and apply moduleId override if provided.
+    def jarModuleDescriptor = buildForIgnitionVersion.startsWith('8.3')
+            ? 'src/main/resources/module-8.3.xml'
+            : 'src/main/resources/module.xml'
+    from(jarModuleDescriptor) {
+        rename { 'module.xml' }
+        filter { line ->
+            line.replace('<id>com.example.ignition.zerobus</id>', "<id>${moduleId}</id>")
+        }
+    }
+    from('src/main/resources/simplemodule.properties')
+}
+
+// Task to build the Ignition module (.modl file)
+task buildModule(type: Zip, dependsOn: [jar, verifyIgnitionSdkJars]) {
+    group = 'build'
+    description = 'Builds the Ignition module (.modl) file'
+    
+    archiveBaseName = 'zerobus-connector'
+    archiveVersion = "${version}"
+    archiveExtension = 'modl'
+    destinationDirectory = file("${buildDir}/modules")
+
+    // Avoid confusing/overwriting artifacts between 8.1 and 8.3 builds.
+    // 8.3 build produces: zerobus-connector-<ver>-ignition-8.3.modl
+    // 8.1 build produces: zerobus-connector-<ver>.modl
+    if (buildForIgnitionVersion.startsWith('8.3')) {
+        archiveFileName = "zerobus-connector-${version}-ignition-8.3.modl"
+    }
+    
+    from(jar.archiveFile) {
+        into 'lib'
+    }
+    
+    // Include dependencies (if any runtime dependencies exist)
+    from(configurations.runtimeClasspath) {
+        into 'lib'
+        exclude 'ignition-*.jar'  // Exclude Ignition SDK JARs
+        exclude 'slf4j-*.jar'     // Exclude provided JARs
+    }
+    
+    // Include module descriptor (8.1 vs 8.3 have different hook + requiredIgnitionVersion)
+    def moduleDescriptor = buildForIgnitionVersion.startsWith('8.3') ? 'src/main/resources/module-8.3.xml' : 'src/main/resources/module.xml'
+    from(moduleDescriptor) {
+        rename { 'module.xml' }
+        // Allow override of the module ID at build time (e.g., Module Showcase publishing).
+        filter { line ->
+            line.replace('<id>com.example.ignition.zerobus</id>', "<id>${moduleId}</id>")
+        }
+    }
+    
+    doLast {
+        // Copy to repo-level releases folder (repoRoot/release/).
+        // This Gradle project lives in repoRoot/module, so the repo root is one level up.
+        def releasesDir = file("${project.projectDir}/../releases")
+        releasesDir.mkdirs()
+        def targetFile = new File(releasesDir, archiveFileName.get())
+        copy {
+            from archiveFile.get()
+            into releasesDir
+        }
+
+        println "\n" + "="*70
+        println "✅ Module built successfully!"
+        println "   File: ${archiveFile.get()}"
+        println "   Copied to: ${targetFile}"
+        println "   Built against: Ignition ${buildForIgnitionVersion}"
+        println "   Minimum version: Ignition ${minIgnitionVersion}+"
+        println "="*70
+    }
+}
+
+// Clean task
+clean {
+    delete 'build'
+}
+
+// // Node.js configuration for React frontend build
+// node {
+//     version = '18.17.1'
+//     npmVersion = '9.6.7'
+//     download = true
+//     nodeProjectDir = file("${project.projectDir}/src/main/javascript")
+// }
+// 
+// // Task to install npm dependencies
+// tasks.register('npmInstall', com.github.gradle.node.npm.task.NpmTask) {
+//     group = 'build'
+//     description = 'Install React dependencies'
+//     args = ['install']
+//     inputs.file('src/main/javascript/package.json')
+//     inputs.file('src/main/javascript/package-lock.json').optional(true)
+//     outputs.dir('src/main/javascript/node_modules')
+// }
+// 
+// // Task to build React frontend
+// tasks.register('buildFrontend', com.github.gradle.node.npm.task.NpmTask) {
+//     dependsOn npmInstall
+//     group = 'build'
+//     description = 'Build React frontend'
+//     args = ['run', 'build']
+//     inputs.dir('src/main/javascript/src')
+//     inputs.file('src/main/javascript/package.json')
+//     outputs.dir('src/main/javascript/build')
+// }
+// 
+// // Task to copy React build to resources
+// tasks.register('copyFrontendToResources', Copy) {
+//     dependsOn buildFrontend
+//     group = 'build'
+//     description = 'Copy React build to Java resources'
+//     from 'src/main/javascript/build'
+//     into 'src/main/resources/web'
+// }
+// 
+// Handle duplicate files in processResources
+processResources {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    // Exclusions are configured below via tasks.named('processResources') as well.
+}
+
+// Some environments have src/main/resources/web owned by root (unreadable). Gradle 8+ fails state
+// tracking when a Copy/ProcessResources task has unreadable inputs, so we explicitly disable
+// state tracking and exclude that directory for non-8.3 builds (8.1 config UI doesn't need it).
+tasks.named('processResources') {
+    if (!buildForIgnitionVersion.startsWith('8.3')) {
+        // Historically, some environments had src/main/resources/web owned by root (unreadable).
+        // If web/ is unreadable, exclude it to avoid Gradle state tracking failures.
+        def webDir = file('src/main/resources/web')
+        if (!webDir.exists() || !webDir.canRead()) {
+            doNotTrackState("Avoid unreadable src/main/resources/web during 8.1 module builds.")
+            exclude('web/**')
+        }
+    }
+}
+
+// Convenience wrappers so users can build both artifacts without memorizing flags.
+// These run as separate nested builds, keeping 8.1 and 8.3 outputs isolated.
+tasks.register('buildModule81', GradleBuild) {
+    group = 'build'
+    description = 'Build the Ignition 8.1.x .modl artifact (zerobus-connector-<ver>.modl).'
+    tasks = ['clean', 'buildModule']
+    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition81')
+    startParameter.projectProperties.put('buildForIgnitionVersion', '8.1.51')
+    startParameter.projectProperties.put('minIgnitionVersion', '8.1.0')
+    // Propagate moduleId override into the nested build (if provided to the outer build).
+    startParameter.projectProperties.put('moduleId', moduleId)
+}
+
+tasks.register('buildModule83', GradleBuild) {
+    group = 'build'
+    description = 'Build the Ignition 8.3.x .modl artifact (zerobus-connector-<ver>-ignition-8.3.modl).'
+    tasks = ['clean', 'buildModule']
+    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition')
+    startParameter.projectProperties.put('buildForIgnitionVersion', '8.3.2')
+    startParameter.projectProperties.put('minIgnitionVersion', '8.3.0')
+    // Propagate moduleId override into the nested build (if provided to the outer build).
+    startParameter.projectProperties.put('moduleId', moduleId)
+}
+
+// -----------------------------------------------------------------------------
+// Module signing (optional)
+//
+// Ignition requires third-party modules to be signed for distribution.
+// This project intentionally does NOT hardcode any signing secrets or paths.
+//
+// Provide signing configuration via Gradle properties or environment variables:
+// -PmoduleSignerJar=/path/to/module-signer.jar   (or env MODULE_SIGNER_JAR)
+// -PsigningKeystore=/path/to/keystore.jks       (or env SIGNING_KEYSTORE)
+// -PsigningKeystorePassword=...                 (or env SIGNING_STOREPASS)
+// -PsigningAlias=...                            (or env SIGNING_ALIAS)
+// -PsigningAliasPassword=...                    (or env SIGNING_KEYPASS)
+// Optional:
+// -PsigningChain=/path/to/chain.p7b             (or env SIGNING_CHAIN)
+//
+// The signer produces a new file next to the unsigned module with "-signed" suffix.
+// -----------------------------------------------------------------------------
+def moduleSignerJar = project.hasProperty('moduleSignerJar')
+        ? project.getProperty('moduleSignerJar')
+        : (System.getenv('MODULE_SIGNER_JAR') ?: '')
+
+def signingKeystore = project.hasProperty('signingKeystore')
+        ? project.getProperty('signingKeystore')
+        : (System.getenv('SIGNING_KEYSTORE') ?: '')
+
+def signingKeystorePassword = project.hasProperty('signingKeystorePassword')
+        ? project.getProperty('signingKeystorePassword')
+        : (System.getenv('SIGNING_STOREPASS') ?: '')
+
+def signingAlias = project.hasProperty('signingAlias')
+        ? project.getProperty('signingAlias')
+        : (System.getenv('SIGNING_ALIAS') ?: '')
+
+def signingAliasPassword = project.hasProperty('signingAliasPassword')
+        ? project.getProperty('signingAliasPassword')
+        : (System.getenv('SIGNING_KEYPASS') ?: '')
+
+def signingChain = project.hasProperty('signingChain')
+        ? project.getProperty('signingChain')
+        : (System.getenv('SIGNING_CHAIN') ?: '')
+
+tasks.register('signModule', JavaExec) {
+    group = 'build'
+    description = 'Signs the built .modl using Inductive Automation module-signer.jar (requires signing properties).'
+    dependsOn buildModule
+
+    // Run module-signer.jar as a tool; use the Gradle JVM (JDK 17 toolchain is fine for the signer tool).
+    mainClass = '-jar'
+    classpath = files()
+
+    doFirst {
+        // Validate signing config FIRST (doFirst actions run in LIFO order, so keep this as the only doFirst).
+        def missing = []
+        if (!moduleSignerJar) missing << "moduleSignerJar (or env MODULE_SIGNER_JAR)"
+        if (!signingKeystore) missing << "signingKeystore (or env SIGNING_KEYSTORE)"
+        if (!signingKeystorePassword) missing << "signingKeystorePassword (or env SIGNING_STOREPASS)"
+        if (!signingAlias) missing << "signingAlias (or env SIGNING_ALIAS)"
+        if (!signingAliasPassword) missing << "signingAliasPassword (or env SIGNING_KEYPASS)"
+
+        if (!missing.isEmpty()) {
+            throw new RuntimeException(
+                    "Missing signing configuration:\n- " + missing.join("\n- ") + "\n\n" +
+                            "Download module-signer.jar per IA docs and then run, for example:\n" +
+                            "  ./gradlew signModule -PmoduleSignerJar=/path/to/module-signer.jar \\\n" +
+                            "    -PsigningKeystore=/path/to/keystore.jks -PsigningKeystorePassword=... \\\n" +
+                            "    -PsigningAlias=... -PsigningAliasPassword=...\n"
+            )
+        }
+        if (!file(moduleSignerJar).exists()) {
+            throw new RuntimeException("moduleSignerJar not found: ${moduleSignerJar}")
+        }
+        if (!file(signingKeystore).exists()) {
+            throw new RuntimeException("signingKeystore not found: ${signingKeystore}")
+        }
+        if (signingChain && !file(signingChain).exists()) {
+            throw new RuntimeException("signingChain not found: ${signingChain}")
+        }
+
+        def inFile = buildModule.archiveFile.get().asFile
+        def outFileName = inFile.name.replaceFirst(/\\.modl$/, '') + "-signed.modl"
+        def outFile = new File(inFile.parentFile, outFileName)
+        // Expose paths so we can copy the signed artifact into repo-level releases/ in doLast.
+        ext.unsignedModlFile = inFile
+        ext.signedModlFile = outFile
+
+        def argsList = [
+                file(moduleSignerJar).absolutePath,
+                "-keystore=${file(signingKeystore).absolutePath}",
+                "-keystore-pwd=${signingKeystorePassword}",
+                "-alias=${signingAlias}",
+                "-alias-pwd=${signingAliasPassword}"
+        ]
+        if (signingChain) {
+            argsList << "-chain=${file(signingChain).absolutePath}"
+        }
+        argsList << "-module-in=${inFile.absolutePath}"
+        argsList << "-module-out=${outFile.absolutePath}"
+
+        args = argsList
+        println "Signing module:\n  in : ${inFile}\n  out: ${outFile}"
+    }
+
+    doLast {
+        def outFile = ext.has('signedModlFile') ? ext.signedModlFile : null
+        if (outFile == null || !outFile.exists()) {
+            throw new RuntimeException("Signed module was not produced (expected at: ${outFile}).")
+        }
+
+        // Copy to repo-level releases folder (repoRoot/release/).
+        def releasesDir = file("${project.projectDir}/../releases")
+        releasesDir.mkdirs()
+        copy {
+            from outFile
+            into releasesDir
+        }
+        println "✅ Signed module copied to: ${new File(releasesDir, outFile.name)}"
+    }
+}
+
+// Convenience wrappers to build+sign 8.1 and 8.3 artifacts via nested builds.
+tasks.register('signModule81', GradleBuild) {
+    group = 'build'
+    description = 'Builds and signs the Ignition 8.1.x .modl artifact (requires signing properties).'
+    tasks = ['clean', 'buildModule', 'signModule']
+    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition81')
+    startParameter.projectProperties.put('buildForIgnitionVersion', '8.1.51')
+    startParameter.projectProperties.put('minIgnitionVersion', '8.1.0')
+    startParameter.projectProperties.put('moduleId', moduleId)
+
+    // Propagate signing configuration into the nested build.
+    if (moduleSignerJar) startParameter.projectProperties.put('moduleSignerJar', moduleSignerJar)
+    if (signingKeystore) startParameter.projectProperties.put('signingKeystore', signingKeystore)
+    if (signingKeystorePassword) startParameter.projectProperties.put('signingKeystorePassword', signingKeystorePassword)
+    if (signingAlias) startParameter.projectProperties.put('signingAlias', signingAlias)
+    if (signingAliasPassword) startParameter.projectProperties.put('signingAliasPassword', signingAliasPassword)
+    if (signingChain) startParameter.projectProperties.put('signingChain', signingChain)
+}
+
+tasks.register('signModule83', GradleBuild) {
+    group = 'build'
+    description = 'Builds and signs the Ignition 8.3.x .modl artifact (requires signing properties).'
+    tasks = ['clean', 'buildModule', 'signModule']
+    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition')
+    startParameter.projectProperties.put('buildForIgnitionVersion', '8.3.2')
+    startParameter.projectProperties.put('minIgnitionVersion', '8.3.0')
+    startParameter.projectProperties.put('moduleId', moduleId)
+
+    // Propagate signing configuration into the nested build.
+    if (moduleSignerJar) startParameter.projectProperties.put('moduleSignerJar', moduleSignerJar)
+    if (signingKeystore) startParameter.projectProperties.put('signingKeystore', signingKeystore)
+    if (signingKeystorePassword) startParameter.projectProperties.put('signingKeystorePassword', signingKeystorePassword)
+    if (signingAlias) startParameter.projectProperties.put('signingAlias', signingAlias)
+    if (signingAliasPassword) startParameter.projectProperties.put('signingAliasPassword', signingAliasPassword)
+    if (signingChain) startParameter.projectProperties.put('signingChain', signingChain)
+}
+
+// // Make processResources depend on frontend build
+// processResources {
+//     dependsOn copyFrontendToResources
+// }
+// 
+// // Default build includes module
+// defaultTasks 'buildModule'
+// 

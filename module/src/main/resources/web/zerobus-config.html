@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zerobus Connector Configuration</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0067a5 0%, #004d7a 100%);
+            color: white;
+            padding: 24px 32px;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 32px;
+        }
+
+        .status-bar {
+            padding: 16px 32px;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #e1e4e8;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #6c757d;
+        }
+
+        .status-dot.connected {
+            background-color: #28a745;
+        }
+
+        .section {
+            margin-bottom: 32px;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #0067a5;
+        }
+
+        .section-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #0067a5;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .form-group label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .form-group label.required::after {
+            content: "*";
+            color: #dc3545;
+            margin-left: 2px;
+        }
+
+        .form-help {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 4px;
+        }
+
+        .form-control {
+            padding: 10px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #0067a5;
+            box-shadow: 0 0 0 3px rgba(0, 103, 165, 0.1);
+        }
+
+        .form-control:disabled {
+            background-color: #e9ecef;
+            opacity: 0.6;
+        }
+
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            margin-right: 8px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            padding: 10px 0;
+        }
+
+        .checkbox-group label {
+            margin-bottom: 0;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        select.form-control {
+            cursor: pointer;
+            background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cpath%20d%3D%22M5%206l5%205%205-5%22%20stroke%3D%22%23333%22%20stroke-width%3D%222%22%20fill%3D%22none%22/%3E%3C/svg%3E');
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 35px;
+        }
+
+        textarea.form-control {
+            resize: vertical;
+            min-height: 80px;
+            font-family: inherit;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            padding-top: 24px;
+            border-top: 1px solid #e1e4e8;
+        }
+
+        .btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background-color: #0067a5;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background-color: #005587;
+        }
+
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background-color: #5a6268;
+        }
+
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background-color: #218838;
+        }
+
+        .alert {
+            padding: 12px 16px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .alert-error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .alert-info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+
+        .collapsible-section {
+            border: 1px solid #e1e4e8;
+            border-radius: 4px;
+            margin-bottom: 16px;
+        }
+
+        .collapsible-header {
+            padding: 14px 16px;
+            background-color: #f8f9fa;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .collapsible-header:hover {
+            background-color: #e9ecef;
+        }
+
+        .collapsible-content {
+            padding: 20px;
+            display: none;
+        }
+
+        .collapsible-content.active {
+            display: block;
+        }
+
+        .toggle-icon {
+            transition: transform 0.2s;
+        }
+
+        .toggle-icon.rotated {
+            transform: rotate(180deg);
+        }
+
+        .info-card {
+            background-color: #f8f9fa;
+            border-left: 4px solid #0067a5;
+            padding: 16px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+
+        .info-card-title {
+            font-weight: 600;
+            color: #0067a5;
+            margin-bottom: 8px;
+        }
+
+        .info-card-content {
+            font-size: 13px;
+            color: #495057;
+        }
+
+        /* Diagnostics */
+        .diag-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 16px;
+        }
+
+        .diag-card {
+            border: 1px solid #e1e4e8;
+            border-radius: 8px;
+            background: #fff;
+            overflow: hidden;
+        }
+
+        .diag-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 14px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e1e4e8;
+        }
+
+        .diag-card-header-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #495057;
+        }
+
+        .diag-card-body {
+            padding: 12px 14px;
+            font-size: 13px;
+            color: #495057;
+        }
+
+        .kv {
+            display: grid;
+            grid-template-columns: 180px 1fr;
+            gap: 6px 10px;
+        }
+
+        .kv .k {
+            color: #6c757d;
+            font-weight: 600;
+        }
+
+        .kv .v {
+            color: #212529;
+            word-break: break-word;
+        }
+
+        .mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+
+        .pre {
+            white-space: pre-wrap;
+            background: #0b1220;
+            color: #e6edf3;
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 12px;
+            line-height: 1.45;
+            max-height: 320px;
+            overflow: auto;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .pill-ok { background: #d4edda; color: #155724; }
+        .pill-warn { background: #fff3cd; color: #856404; }
+        .pill-bad { background: #f8d7da; color: #721c24; }
+
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #0067a5;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .tag-input-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            min-height: 40px;
+            padding: 8px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+        }
+
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background-color: #0067a5;
+            color: white;
+            border-radius: 16px;
+            font-size: 13px;
+        }
+
+        .tag-remove {
+            cursor: pointer;
+            font-weight: bold;
+            opacity: 0.8;
+        }
+
+        .tag-remove:hover {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Zerobus Connector Configuration</h1>
+            <p>Configure the connection to Databricks Zerobus for real-time tag data streaming</p>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-indicator">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Loading...</span>
+            </div>
+            <div>
+                <button type="button" class="btn btn-secondary" onclick="scrollToDiagnostics()">Diagnostics</button>
+                <button type="button" class="btn btn-secondary" onclick="loadConfiguration()">Refresh</button>
+            </div>
+        </div>
+
+        <div class="content">
+            <div id="alertContainer"></div>
+
+            <form id="configForm" autocomplete="off">
+                <!-- Module Control -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2>Module Control</h2>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="enabled" name="enabled">
+                                <label for="enabled">Enable Module</label>
+                            </div>
+                            <small class="form-help">Enable or disable the Zerobus connector module</small>
+                        </div>
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="debugLogging" name="debugLogging">
+                                <label for="debugLogging">Debug Logging</label>
+                            </div>
+                            <small class="form-help">Enable verbose debug logging for troubleshooting</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Databricks Connection -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2>Databricks Connection</h2>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="workspaceUrl" class="required">Workspace URL</label>
+                            <input type="text" class="form-control" id="workspaceUrl" name="workspaceUrl"
+                                   placeholder="https://workspace.cloud.databricks.com" required>
+                            <small class="form-help">Databricks workspace URL</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="zerobusEndpoint" class="required">Zerobus Endpoint</label>
+                            <input type="text" class="form-control" id="zerobusEndpoint" name="zerobusEndpoint"
+                                   placeholder="workspaceId.zerobus.region.cloud.databricks.com" required>
+                            <small class="form-help">Zerobus ingest endpoint</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="oauthClientId" class="required">OAuth Client ID</label>
+                            <input type="text" class="form-control" id="oauthClientId" name="oauthClientId" required
+                                   autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+                            <small class="form-help">Service principal client ID for authentication</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="oauthClientSecret" class="required">OAuth Client Secret</label>
+                            <input type="password" class="form-control" id="oauthClientSecret" name="oauthClientSecret" required
+                                   autocomplete="new-password">
+                            <small class="form-help">Service principal client secret (encrypted)</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Unity Catalog -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2>Unity Catalog Configuration</h2>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="targetTable" class="required">Target Table</label>
+                            <input type="text" class="form-control" id="targetTable" name="targetTable"
+                                   placeholder="catalog.schema.table_name" required>
+                            <small class="form-help">Unity Catalog table in format: catalog.schema.table</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="sourceSystemId">Source System ID</label>
+                            <input type="text" class="form-control" id="sourceSystemId" name="sourceSystemId"
+                                   value="ignition-gateway">
+                            <small class="form-help">Identifier for this Ignition gateway</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tag Selection -->
+                <div class="collapsible-section">
+                    <div class="collapsible-header" onclick="toggleSection(this)">
+                        <span>Tag Selection</span>
+                        <span class="toggle-icon">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="enableDirectSubscriptions" name="enableDirectSubscriptions">
+                                <label for="enableDirectSubscriptions">Enable Direct Subscriptions</label>
+                            </div>
+                            <small class="form-help">When disabled, the module will not subscribe to tags and will ingest only via HTTP endpoints (/system/zerobus/ingest and /ingest/batch).</small>
+                        </div>
+
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="tagSelectionMode">Selection Mode</label>
+                                <select class="form-control" id="tagSelectionMode" name="tagSelectionMode" onchange="updateTagSelectionUI()">
+                                    <option value="explicit">Explicit - Specify exact tag paths</option>
+                                    <option value="folder">Folder - Select all atomic tags in a folder</option>
+                                    <option value="pattern">Pattern - Use regex over full tag path</option>
+                                </select>
+                                <small class="form-help">
+                                    Folder mode accepts <b>one</b> folder root. If you need multiple providers/folders (e.g., <code>[manufacturing]</code> + <code>[manufacturing_grid]</code>),
+                                    use Pattern mode.
+                                </small>
+                            </div>
+                            <div class="form-group">
+                                <div class="checkbox-group">
+                                    <input type="checkbox" id="includeSubfolders" name="includeSubfolders">
+                                    <label for="includeSubfolders">Include Subfolders</label>
+                                </div>
+                                <small class="form-help">Include subfolders when using folder mode</small>
+                            </div>
+                        </div>
+
+                        <div id="explicitTagsSection" class="form-group full-width">
+                            <label for="explicitTagPathsInput">Explicit Tag Paths</label>
+                            <div class="tag-input-container">
+                                <input type="text" class="form-control" id="explicitTagPathsInput"
+                                       placeholder="Enter tag path and press Enter (e.g., [default]Tag1)">
+                                <div class="tag-list" id="tagList"></div>
+                            </div>
+                            <small class="form-help">Enter tag paths one at a time, press Enter after each</small>
+                        </div>
+
+                        <div id="folderPathSection" class="form-group full-width" style="display: none;">
+                            <label for="tagFolderPath">Tag Folder Path</label>
+                            <input type="text" class="form-control" id="tagFolderPath" name="tagFolderPath"
+                                   placeholder="[manufacturing]Manufacturing/Site01  (one folder root)">
+                            <small class="form-help">
+                                Folder root for folder mode (subfolders optional). Examples:
+                                <br> - Manufacturing plant: <code>[manufacturing]Manufacturing/Site01</code>
+                                <br> - Manufacturing grid: <code>[manufacturing_grid]Manufacturing/Site01</code>
+                                <br> - Renewables plant: <code>[renewables]Renewables/Site01</code>
+                                <br> - Renewables grid: <code>[grid]Renewables/Site01</code>
+                            </small>
+                        </div>
+
+                        <div id="patternSection" class="form-group full-width" style="display: none;">
+                            <label for="tagPathPattern">Tag Path Pattern</label>
+                            <input type="text" class="form-control" id="tagPathPattern" name="tagPathPattern"
+                                   placeholder="^\\[(manufacturing|manufacturing_grid|manufacturing_cmms|manufacturing_forecast)\\]Manufacturing/Site01/.*$">
+                            <small class="form-help">
+                                Java regex matched against the <b>full tag path</b> (e.g., <code>[manufacturing]Manufacturing/Site01/Furnace/Temperature_Melting_C</code>).
+                                Examples:
+                                <br> - Manufacturing all providers: <code>^\\[(manufacturing|manufacturing_grid|manufacturing_cmms|manufacturing_forecast)\\]Manufacturing/Site01/.*$</code>
+                                <br> - Renewables all providers: <code>^\\[(renewables|grid|cmms|forecast)\\]Renewables/Site01/.*$</code>
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Performance & Batching -->
+                <div class="collapsible-section">
+                    <div class="collapsible-header" onclick="toggleSection(this)">
+                        <span>Performance & Batching</span>
+                        <span class="toggle-icon">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="batchSize">Batch Size</label>
+                                <input type="number" class="form-control" id="batchSize" name="batchSize" value="200" min="1">
+                                <small class="form-help">Number of events to batch before sending</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="batchFlushIntervalMs">Batch Flush Interval (ms)</label>
+                                <input type="number" class="form-control" id="batchFlushIntervalMs" name="batchFlushIntervalMs" value="500" min="100">
+                                <small class="form-help">Maximum time to wait before flushing batch</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="maxQueueSize">Max Queue Size</label>
+                                <input type="number" class="form-control" id="maxQueueSize" name="maxQueueSize" value="10000" min="100">
+                                <small class="form-help">Maximum events to queue in memory</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="maxEventsPerSecond">Max Events Per Second</label>
+                                <input type="number" class="form-control" id="maxEventsPerSecond" name="maxEventsPerSecond" value="10000" min="1">
+                                <small class="form-help">Rate limit for event processing</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Store & Forward (disk spool) -->
+                <div class="collapsible-section">
+                    <div class="collapsible-header" onclick="toggleSection(this)">
+                        <span>Store &amp; Forward</span>
+                        <span class="toggle-icon">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="enableStoreAndForward" name="enableStoreAndForward">
+                                <label for="enableStoreAndForward">Enable Store &amp; Forward (Disk Spool)</label>
+                            </div>
+                            <small class="form-help">When enabled, events are buffered on disk if the sink is unavailable. This provides at-least-once delivery across outages.</small>
+                        </div>
+
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="spoolDirectory">Spool Directory</label>
+                                <input type="text" class="form-control" id="spoolDirectory" name="spoolDirectory" value="data/zerobus-spool"
+                                       autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+                                <small class="form-help">Directory for on-disk backlog (absolute or relative to Ignition install dir)</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="spoolMaxBytes">Spool Max Bytes</label>
+                                <input type="number" class="form-control" id="spoolMaxBytes" name="spoolMaxBytes" value="1073741824" min="0" step="1">
+                                <small class="form-help">Max on-disk backlog size in bytes (default: 1 GiB)</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="spoolHighWatermarkPct">High Watermark (0-1)</label>
+                                <input type="number" class="form-control" id="spoolHighWatermarkPct" name="spoolHighWatermarkPct" value="0.85" min="0" max="1" step="0.01">
+                                <small class="form-help">Above this, direct subscriptions auto-pause (backpressure)</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="spoolLowWatermarkPct">Low Watermark (0-1)</label>
+                                <input type="number" class="form-control" id="spoolLowWatermarkPct" name="spoolLowWatermarkPct" value="0.70" min="0" max="1" step="0.01">
+                                <small class="form-help">Below this, direct subscriptions auto-resume</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="spoolReadMaxBytes">Read Max Bytes (per flush)</label>
+                                <input type="number" class="form-control" id="spoolReadMaxBytes" name="spoolReadMaxBytes" value="2097152" min="0" step="1">
+                                <small class="form-help">Safety cap for how much to read from spool per flush (default: 2 MiB)</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Reliability -->
+                <div class="collapsible-section">
+                    <div class="collapsible-header" onclick="toggleSection(this)">
+                        <span>Reliability Settings</span>
+                        <span class="toggle-icon">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="maxRetries">Max Retries</label>
+                                <input type="number" class="form-control" id="maxRetries" name="maxRetries" value="3" min="0">
+                                <small class="form-help">Maximum retry attempts for failed requests</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="retryBackoffMs">Retry Backoff (ms)</label>
+                                <input type="number" class="form-control" id="retryBackoffMs" name="retryBackoffMs" value="1000" min="100">
+                                <small class="form-help">Initial backoff delay for retries</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="connectionTimeoutMs">Connection Timeout (ms)</label>
+                                <input type="number" class="form-control" id="connectionTimeoutMs" name="connectionTimeoutMs" value="30000" min="1000">
+                                <small class="form-help">Connection timeout in milliseconds</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="requestTimeoutMs">Request Timeout (ms)</label>
+                                <input type="number" class="form-control" id="requestTimeoutMs" name="requestTimeoutMs" value="60000" min="1000">
+                                <small class="form-help">Request timeout in milliseconds</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Data Mapping -->
+                <div class="collapsible-section">
+                    <div class="collapsible-header" onclick="toggleSection(this)">
+                        <span>Data Mapping & Filtering</span>
+                        <span class="toggle-icon">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <div class="checkbox-group">
+                                    <input type="checkbox" id="includeQuality" name="includeQuality" checked>
+                                    <label for="includeQuality">Include Quality</label>
+                                </div>
+                                <small class="form-help">Include tag quality information in events</small>
+                            </div>
+                            <div class="form-group">
+                                <div class="checkbox-group">
+                                    <input type="checkbox" id="onlyOnChange" name="onlyOnChange" checked>
+                                    <label for="onlyOnChange">Only On Change</label>
+                                </div>
+                                <small class="form-help">Only send events when values change</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="numericDeadband">Numeric Deadband</label>
+                                <input type="number" class="form-control" id="numericDeadband" name="numericDeadband" value="0.0" min="0" step="0.01">
+                                <small class="form-help">Minimum change threshold for numeric values (0 = send all)</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="button-group">
+                    <button type="submit" class="btn btn-primary" id="saveBtn">
+                        <span id="saveBtnText">Save Configuration</span>
+                        <span id="saveBtnSpinner" class="loading-spinner" style="display: none;"></span>
+                    </button>
+                    <button type="button" class="btn btn-success" onclick="testConnection()" id="testBtn">
+                        Test Connection
+                        <span id="testBtnSpinner" class="loading-spinner" style="display: none;"></span>
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="loadConfiguration()">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+
+            <!-- Diagnostics (human readable) -->
+            <div class="section" id="diagnosticsSection">
+                <div class="section-header" style="justify-content: space-between;">
+                    <h2>Diagnostics</h2>
+                    <div style="display:flex; gap:12px; align-items:center;">
+                        <span class="form-help" id="diagLastUpdated">Not loaded yet</span>
+                        <button type="button" class="btn btn-secondary" onclick="loadDiagnostics()" id="diagRefreshBtn">Refresh Diagnostics</button>
+                    </div>
+                </div>
+
+                <div class="diag-grid">
+                    <div class="diag-card">
+                        <div class="diag-card-header">
+                            <div class="diag-card-header-title">Health</div>
+                            <span id="healthPill" class="pill pill-warn">LOADING</span>
+                        </div>
+                        <div class="diag-card-body">
+                            <div class="kv">
+                                <div class="k">Status</div><div class="v" id="healthStatus">—</div>
+                                <div class="k">Enabled</div><div class="v" id="healthEnabled">—</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="diag-card">
+                        <div class="diag-card-header">
+                            <div class="diag-card-header-title">Configuration (summary)</div>
+                        </div>
+                        <div class="diag-card-body">
+                            <div class="kv">
+                                <div class="k">Workspace URL</div><div class="v mono" id="cfgWorkspaceUrl">—</div>
+                                <div class="k">Zerobus Endpoint</div><div class="v mono" id="cfgZerobusEndpoint">—</div>
+                                <div class="k">Target Table</div><div class="v mono" id="cfgTargetTable">—</div>
+                                <div class="k">Tag Mode</div><div class="v" id="cfgTagMode">—</div>
+                                <div class="k">Explicit Tags</div><div class="v" id="cfgExplicitCount">—</div>
+                                <div class="k">Include Subfolders</div><div class="v" id="cfgIncludeSubfolders">—</div>
+                                <div class="k">Store &amp; Forward</div><div class="v" id="cfgSafEnabled">—</div>
+                                <div class="k">Spool Dir</div><div class="v mono" id="cfgSpoolDir">—</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="diag-card" style="grid-column: 1 / -1;">
+                        <div class="diag-card-header">
+                            <div class="diag-card-header-title">Runtime diagnostics</div>
+                            <a class="btn btn-secondary" href="/system/zerobus/diagnostics" target="_blank" rel="noopener noreferrer">Open raw</a>
+                        </div>
+                        <div class="diag-card-body">
+                            <div class="pre mono" id="diagText">Loading…</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let explicitTags = [];
+        const apiBase = '/system/zerobus';
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            loadConfiguration();
+            loadDiagnostics();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            // Direct subscriptions toggle
+            const directToggle = document.getElementById('enableDirectSubscriptions');
+            if (directToggle) {
+                directToggle.addEventListener('change', updateTagSelectionUI);
+            }
+
+            // Store-and-forward toggle
+            const safToggle = document.getElementById('enableStoreAndForward');
+            if (safToggle) {
+                safToggle.addEventListener('change', updateSafUI);
+            }
+
+            // Tag input handler
+            const tagInput = document.getElementById('explicitTagPathsInput');
+            tagInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addTag(this.value.trim());
+                    this.value = '';
+                }
+            });
+
+            // Form submit
+            document.getElementById('configForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                saveConfiguration();
+            });
+        }
+
+        function toggleSection(header) {
+            const content = header.nextElementSibling;
+            const icon = header.querySelector('.toggle-icon');
+            content.classList.toggle('active');
+            icon.classList.toggle('rotated');
+        }
+
+        function updateTagSelectionUI() {
+            const directEnabled = document.getElementById('enableDirectSubscriptions')
+                ? document.getElementById('enableDirectSubscriptions').checked
+                : true;
+            const mode = document.getElementById('tagSelectionMode').value;
+            document.getElementById('explicitTagsSection').style.display = (directEnabled && mode === 'explicit') ? 'block' : 'none';
+            document.getElementById('folderPathSection').style.display = (directEnabled && mode === 'folder') ? 'block' : 'none';
+            document.getElementById('patternSection').style.display = (directEnabled && mode === 'pattern') ? 'block' : 'none';
+
+            // Disable mode selection if direct subscriptions are disabled
+            document.getElementById('tagSelectionMode').disabled = !directEnabled;
+        }
+
+        function updateSafUI() {
+            const enabled = document.getElementById('enableStoreAndForward')
+                ? document.getElementById('enableStoreAndForward').checked
+                : false;
+
+            const ids = [
+                'spoolDirectory',
+                'spoolMaxBytes',
+                'spoolHighWatermarkPct',
+                'spoolLowWatermarkPct',
+                'spoolReadMaxBytes'
+            ];
+            for (const id of ids) {
+                const el = document.getElementById(id);
+                if (el) el.disabled = !enabled;
+            }
+        }
+
+        function addTag(tagPath) {
+            if (tagPath && !explicitTags.includes(tagPath)) {
+                explicitTags.push(tagPath);
+                renderTags();
+            }
+        }
+
+        function removeTag(index) {
+            explicitTags.splice(index, 1);
+            renderTags();
+        }
+
+        function renderTags() {
+            const tagList = document.getElementById('tagList');
+            tagList.innerHTML = explicitTags.map((tag, index) =>
+                `<span class="tag">${tag}<span class="tag-remove" onclick="removeTag(${index})">×</span></span>`
+            ).join('');
+        }
+
+        function showAlert(message, type) {
+            const container = document.getElementById('alertContainer');
+            container.innerHTML = `<div class="alert alert-${type} show">${message}</div>`;
+            setTimeout(() => {
+                container.querySelector('.alert').classList.remove('show');
+            }, 5000);
+        }
+
+        function setButtonLoading(btnId, spinnerId, loading) {
+            const btn = document.getElementById(btnId);
+            const spinner = document.getElementById(spinnerId);
+            btn.disabled = loading;
+            spinner.style.display = loading ? 'inline-block' : 'none';
+        }
+
+        function scrollToDiagnostics() {
+            const el = document.getElementById('diagnosticsSection');
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        function setHealthPill(state) {
+            const pill = document.getElementById('healthPill');
+            if (!pill) return;
+            pill.classList.remove('pill-ok', 'pill-warn', 'pill-bad');
+            if (state === 'ok') {
+                pill.classList.add('pill-ok');
+                pill.textContent = 'OK';
+            } else if (state === 'bad') {
+                pill.classList.add('pill-bad');
+                pill.textContent = 'ERROR';
+            } else {
+                pill.classList.add('pill-warn');
+                pill.textContent = 'LOADING';
+            }
+        }
+
+        function safeText(id, value) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = (value === null || value === undefined || value === '') ? '—' : String(value);
+        }
+
+        async function loadDiagnostics() {
+            const btn = document.getElementById('diagRefreshBtn');
+            if (btn) btn.disabled = true;
+            try {
+                // Health
+                setHealthPill('loading');
+                const healthResp = await fetch(`${apiBase}/health`);
+                const health = healthResp.ok ? await healthResp.json() : null;
+                const status = health && health.status ? health.status : (healthResp.ok ? 'ok' : 'error');
+                safeText('healthStatus', status);
+                safeText('healthEnabled', health && typeof health.enabled === 'boolean' ? (health.enabled ? 'true' : 'false') : '—');
+                setHealthPill(healthResp.ok ? 'ok' : 'bad');
+
+                // Config summary
+                const cfgResp = await fetch(`${apiBase}/config`);
+                const cfg = cfgResp.ok ? await cfgResp.json() : null;
+                safeText('cfgWorkspaceUrl', cfg ? cfg.workspaceUrl : '—');
+                safeText('cfgZerobusEndpoint', cfg ? cfg.zerobusEndpoint : '—');
+                safeText('cfgTargetTable', cfg ? cfg.targetTable : '—');
+                safeText('cfgTagMode', cfg ? cfg.tagSelectionMode : '—');
+                const tagCount = cfg && Array.isArray(cfg.explicitTagPaths) ? cfg.explicitTagPaths.length : 0;
+                safeText('cfgExplicitCount', cfg ? `${tagCount} tag(s)` : '—');
+                safeText('cfgIncludeSubfolders', cfg && typeof cfg.includeSubfolders === 'boolean' ? (cfg.includeSubfolders ? 'true' : 'false') : '—');
+                safeText('cfgSafEnabled', cfg && typeof cfg.enableStoreAndForward === 'boolean' ? (cfg.enableStoreAndForward ? 'true' : 'false') : '—');
+                safeText('cfgSpoolDir', cfg ? cfg.spoolDirectory : '—');
+
+                // Runtime diagnostics (already human formatted text)
+                const diagResp = await fetch(`${apiBase}/diagnostics`);
+                const diagText = diagResp.ok ? await diagResp.text() : `Failed to load diagnostics: HTTP ${diagResp.status}`;
+                safeText('diagText', diagText);
+
+                const ts = new Date();
+                safeText('diagLastUpdated', `Last updated: ${ts.toLocaleString()}`);
+            } catch (e) {
+                console.error('Diagnostics load error:', e);
+                setHealthPill('bad');
+                safeText('diagText', `Failed to load diagnostics: ${e && e.message ? e.message : e}`);
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        async function loadConfiguration() {
+            try {
+                const response = await fetch(`${apiBase}/config`);
+                if (!response.ok) throw new Error('Failed to load configuration');
+
+                const config = await response.json();
+                populateForm(config);
+                updateStatus(true);
+                // Keep diagnostics in sync with whatever is currently running.
+                loadDiagnostics();
+                showAlert('Configuration loaded successfully', 'success');
+            } catch (error) {
+                console.error('Load error:', error);
+                updateStatus(false);
+                showAlert('Failed to load configuration: ' + error.message, 'error');
+            }
+        }
+
+        function populateForm(config) {
+            // Module control
+            document.getElementById('enabled').checked = config.enabled || false;
+            document.getElementById('debugLogging').checked = config.debugLogging || false;
+
+            // Databricks connection
+            document.getElementById('workspaceUrl').value = config.workspaceUrl || '';
+            document.getElementById('zerobusEndpoint').value = config.zerobusEndpoint || '';
+            document.getElementById('oauthClientId').value = config.oauthClientId || '';
+            document.getElementById('oauthClientSecret').value = config.oauthClientSecret || '';
+
+            // Unity Catalog
+            document.getElementById('targetTable').value = config.targetTable || '';
+            document.getElementById('sourceSystemId').value = config.sourceSystemId || 'ignition-gateway';
+
+            // Tag selection
+            document.getElementById('enableDirectSubscriptions').checked = config.enableDirectSubscriptions !== false;
+            document.getElementById('tagSelectionMode').value = config.tagSelectionMode || 'explicit';
+            document.getElementById('tagFolderPath').value = config.tagFolderPath || '';
+            document.getElementById('tagPathPattern').value = config.tagPathPattern || '';
+            document.getElementById('includeSubfolders').checked = config.includeSubfolders !== false;
+
+            explicitTags = config.explicitTagPaths || [];
+            renderTags();
+            updateTagSelectionUI();
+
+            // Performance
+            document.getElementById('batchSize').value = config.batchSize || 200;
+            document.getElementById('batchFlushIntervalMs').value = config.batchFlushIntervalMs || 500;
+            document.getElementById('maxQueueSize').value = config.maxQueueSize || 10000;
+            document.getElementById('maxEventsPerSecond').value = config.maxEventsPerSecond || 10000;
+
+            // Store-and-forward
+            document.getElementById('enableStoreAndForward').checked = config.enableStoreAndForward || false;
+            document.getElementById('spoolDirectory').value = config.spoolDirectory || 'data/zerobus-spool';
+            document.getElementById('spoolMaxBytes').value = (config.spoolMaxBytes !== undefined && config.spoolMaxBytes !== null) ? config.spoolMaxBytes : 1073741824;
+            document.getElementById('spoolHighWatermarkPct').value = (config.spoolHighWatermarkPct !== undefined && config.spoolHighWatermarkPct !== null) ? config.spoolHighWatermarkPct : 0.85;
+            document.getElementById('spoolLowWatermarkPct').value = (config.spoolLowWatermarkPct !== undefined && config.spoolLowWatermarkPct !== null) ? config.spoolLowWatermarkPct : 0.70;
+            document.getElementById('spoolReadMaxBytes').value = (config.spoolReadMaxBytes !== undefined && config.spoolReadMaxBytes !== null) ? config.spoolReadMaxBytes : 2097152;
+            updateSafUI();
+
+            // Reliability
+            document.getElementById('maxRetries').value = config.maxRetries || 3;
+            document.getElementById('retryBackoffMs').value = config.retryBackoffMs || 1000;
+            document.getElementById('connectionTimeoutMs').value = config.connectionTimeoutMs || 30000;
+            document.getElementById('requestTimeoutMs').value = config.requestTimeoutMs || 60000;
+
+            // Data mapping
+            document.getElementById('includeQuality').checked = config.includeQuality !== false;
+            document.getElementById('onlyOnChange').checked = config.onlyOnChange !== false;
+            document.getElementById('numericDeadband').value = config.numericDeadband || 0.0;
+        }
+
+        function getFormData() {
+            return {
+                enabled: document.getElementById('enabled').checked,
+                debugLogging: document.getElementById('debugLogging').checked,
+                workspaceUrl: document.getElementById('workspaceUrl').value,
+                zerobusEndpoint: document.getElementById('zerobusEndpoint').value,
+                oauthClientId: document.getElementById('oauthClientId').value,
+                oauthClientSecret: document.getElementById('oauthClientSecret').value,
+                targetTable: document.getElementById('targetTable').value,
+                sourceSystemId: document.getElementById('sourceSystemId').value,
+                enableDirectSubscriptions: document.getElementById('enableDirectSubscriptions') ? document.getElementById('enableDirectSubscriptions').checked : true,
+                tagSelectionMode: document.getElementById('tagSelectionMode').value,
+                tagFolderPath: document.getElementById('tagFolderPath').value,
+                tagPathPattern: document.getElementById('tagPathPattern').value,
+                explicitTagPaths: explicitTags,
+                includeSubfolders: document.getElementById('includeSubfolders').checked,
+                batchSize: parseInt(document.getElementById('batchSize').value),
+                batchFlushIntervalMs: parseInt(document.getElementById('batchFlushIntervalMs').value),
+                maxQueueSize: parseInt(document.getElementById('maxQueueSize').value),
+                maxEventsPerSecond: parseInt(document.getElementById('maxEventsPerSecond').value),
+                enableStoreAndForward: document.getElementById('enableStoreAndForward').checked,
+                spoolDirectory: document.getElementById('spoolDirectory').value,
+                spoolMaxBytes: parseInt(document.getElementById('spoolMaxBytes').value),
+                spoolHighWatermarkPct: parseFloat(document.getElementById('spoolHighWatermarkPct').value),
+                spoolLowWatermarkPct: parseFloat(document.getElementById('spoolLowWatermarkPct').value),
+                spoolReadMaxBytes: parseInt(document.getElementById('spoolReadMaxBytes').value),
+                maxRetries: parseInt(document.getElementById('maxRetries').value),
+                retryBackoffMs: parseInt(document.getElementById('retryBackoffMs').value),
+                connectionTimeoutMs: parseInt(document.getElementById('connectionTimeoutMs').value),
+                requestTimeoutMs: parseInt(document.getElementById('requestTimeoutMs').value),
+                includeQuality: document.getElementById('includeQuality').checked,
+                onlyOnChange: document.getElementById('onlyOnChange').checked,
+                numericDeadband: parseFloat(document.getElementById('numericDeadband').value)
+            };
+        }
+
+        async function saveConfiguration() {
+            setButtonLoading('saveBtn', 'saveBtnSpinner', true);
+
+            try {
+                const config = getFormData();
+                const response = await fetch(`${apiBase}/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+
+                if (!response.ok) {
+                    const details = await response.text().catch(() => '');
+                    throw new Error(details ? `Failed to save configuration: ${details}` : 'Failed to save configuration');
+                }
+
+                showAlert('Configuration saved successfully', 'success');
+                updateStatus(true);
+                loadDiagnostics();
+            } catch (error) {
+                console.error('Save error:', error);
+                showAlert('Failed to save configuration: ' + error.message, 'error');
+            } finally {
+                setButtonLoading('saveBtn', 'saveBtnSpinner', false);
+            }
+        }
+
+        async function testConnection() {
+            setButtonLoading('testBtn', 'testBtnSpinner', true);
+
+            try {
+                const response = await fetch(`${apiBase}/test-connection`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) throw new Error('Connection test failed');
+
+                const result = await response.json();
+                showAlert('Connection test successful', 'success');
+            } catch (error) {
+                console.error('Test error:', error);
+                showAlert('Connection test failed: ' + error.message, 'error');
+            } finally {
+                setButtonLoading('testBtn', 'testBtnSpinner', false);
+            }
+        }
+
+        function updateStatus(connected) {
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+
+            if (connected) {
+                dot.classList.add('connected');
+                text.textContent = 'Connected';
+            } else {
+                dot.classList.remove('connected');
+                text.textContent = 'Not connected';
+            }
+        }
+    </script>
+</body>
+</html>

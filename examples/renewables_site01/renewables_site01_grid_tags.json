@@ -1,0 +1,71 @@
+{
+  "name": "Renewables",
+  "tagType": "Folder",
+  "tags": [
+    {
+      "name": "Site01",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "name": "Diagnostics",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "TickCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+            { "name": "LastRun", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastStatus", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastError", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+          ]
+        },
+        {
+          "name": "Substation01",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "POI",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "ExportPower_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                { "name": "ImportPower_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                { "name": "NetPower_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                { "name": "ReactivePower_kVAr", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                { "name": "PowerFactor", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.98 },
+                { "name": "Voltage_kV", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 66.0 },
+                { "name": "Frequency_Hz", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 50.0 },
+                { "name": "BreakerClosed", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Dispatch",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "TargetExport_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 12000.0 },
+            { "name": "Curtailment_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+            { "name": "ConstraintActive", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+            { "name": "FCAS_Enabled", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false }
+          ]
+        },
+        {
+          "name": "Market",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "RRP_AUD_per_MWh", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 95.0 },
+            { "name": "PriceSpikeActive", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false }
+          ]
+        },
+        {
+          "name": "Events",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "FrequencyEventActive", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+            { "name": "VoltageSagActive", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+            { "name": "LastEvent", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+

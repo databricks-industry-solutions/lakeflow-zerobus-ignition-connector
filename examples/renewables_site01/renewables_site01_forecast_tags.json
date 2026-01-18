@@ -1,0 +1,43 @@
+{
+  "name": "Renewables",
+  "tagType": "Folder",
+  "tags": [
+    {
+      "name": "Site01",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "name": "Diagnostics",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "TickCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+            { "name": "LastRun", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastStatus", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastError", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+          ]
+        },
+        {
+          "name": "Forecast",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "H01",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "AsOfTime", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                { "name": "WindPower_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                { "name": "SolarPower_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                { "name": "BESSPower_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                { "name": "NetPower_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                { "name": "ExpectedCurtailment_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                { "name": "Confidence_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 75.0 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+

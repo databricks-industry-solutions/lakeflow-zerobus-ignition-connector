@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modules>
+    <module>
+        <name>Zerobus Connector</name>
+        <id>com.example.ignition.zerobus</id>
+        <version>1.0.0</version>
+        <description>Streams Ignition tags to Databricks Delta via Zerobus Ingest</description>
+        <requiredIgnitionVersion>8.3.0</requiredIgnitionVersion>
+        <freeModule>true</freeModule>
+        <hook scope="G">com.example.ignition.zerobus.ZerobusGatewayHook83</hook>
+        <requiredFrameworkVersion>8</requiredFrameworkVersion>
+        <jar scope="G">lib/zerobus-connector.jar</jar>
+        <jar scope="G">lib/zerobus-ingest-sdk-0.1.0-jar-with-dependencies.jar</jar>
+        <jar scope="G">lib/protobuf-java-3.21.12.jar</jar>
+    </module>
+</modules>
+
+
