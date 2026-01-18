@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package com.example.ignition.zerobus.proto;
+
+option java_package = "com.example.ignition.zerobus.proto";
+option java_outer_classname = "OTEventProto";
+option java_multiple_files = true;
+
+/**
+ * OTEvent - Operational Technology event message for Zerobus Ingest.
+ * 
+ * This protobuf schema EXACTLY matches the Delta table schema:
+ * ignition_demo.scada_data.tag_events
+ * 
+ * IMPORTANT: Column names, types, and order must match Delta table exactly
+ * for Zerobus to accept the stream.
+ */
+message OTEvent {
+  // Unique event identifier
+  string event_id = 1;
+  
+  // Event timestamp (milliseconds since Unix epoch)
+  // Maps to Delta TIMESTAMP type
+  int64 event_time = 2;
+  
+  // Full Ignition tag path (e.g., "[default]TestSimulator/Sine0")
+  string tag_path = 3;
+  
+  // Ignition tag provider name (e.g., "default")
+  string tag_provider = 4;
+  
+  // Numeric tag value (for numeric tags)
+  // Can be null/0.0 if not applicable
+    double numeric_value = 5;
+  
+  // String tag value (for string tags)
+  // Can be empty if not applicable
+  string string_value = 6;
+  
+  // Boolean tag value (for boolean tags)
+  // Can be false if not applicable
+  bool boolean_value = 7;
+  
+  // Quality indicator as string ("GOOD", "BAD", "UNCERTAIN")
+  string quality = 8;
+  
+  // Numeric quality code from Ignition
+  int32 quality_code = 9;
+  
+  // Source Ignition Gateway identifier
+  string source_system = 10;
+  
+  // Ingestion timestamp (milliseconds since Unix epoch)
+  // Set by client when event is captured
+  int64 ingestion_timestamp = 11;
+  
+  // Original data type from Ignition tag
+  string data_type = 12;
+  
+  // Alarm state if tag is in alarm (can be empty)
+  string alarm_state = 13;
+  
+  // Alarm priority if applicable (can be 0)
+  int32 alarm_priority = 14;
+}
+

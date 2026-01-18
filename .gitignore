@@ -1,27 +1,122 @@
-# Databricks Asset Bundle files
-.databricks/
+# Ignition Module Build Outputs
+*.modl
+!releases/*.modl
+module/build/
+module/build-user/
+module/build-user-*/
+module/.gradle/
+module/out/
 
-# IDE files
-.vscode/
+# Gradle
+.gradle/
+build/
+gradle-app.setting
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+
+# IDE Files
 .idea/
-*.swp
-*.swo
+*.iml
+*.ipr
+*.iws
+.vscode/
+.cursor/
+.claude/
+.settings/
+.project
+.classpath
 
-# OS files
+# Java
+*.class
+*.jar
+!gradle-wrapper.jar
+*.war
+*.ear
+hs_err_pid*
+
+# Generated Sources
+module/src/generated/
+module/build/generated/
+
+# Logs
+*.log
+logs/
+
+# OS Files
 .DS_Store
 Thumbs.db
+*.swp
+*.swo
+*~
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
-dist/
-build/
+# Credentials and Secrets
+*.secret
+*.key
+*.pem
+secrets/
+credentials.json
+config-production.json
 
-# Jupyter Notebook checkpoints
-.ipynb_checkpoints/
+# Testing
+test-results/
+test-reports/
+*.coverage
 
-# Environment files
-.env
-.env.local 
+# Temporary Files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Local tooling / caches
+.tooling/
+scripts/__pycache__/
+
+# Stray folders from other repos (Lakeflow community connector work) — keep out of this repo.
+sources/
+tools/notebook_based_deployment/
+
+# Maven (if used)
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+dependency-reduced-pom.xml
+
+# Package Files
+*.zip
+!gradle-wrapper.jar
+
+# Module Signing Keys
+*.p12
+*.jks
+keystore
+
+my-config.json
+#
+# JSON
+# We ignore JSON by default to reduce the risk of accidentally committing credentials/config dumps.
+# Demo assets (tag exports, notebook presets, dashboard definitions) live under examples/tools/sources,
+# so we explicitly allow JSON in those directories.
+*.json
+!examples/**/*.json
+!tools/**/*.json
+!sources/**/*.json
+
+# Local-only Ignition backups (do not commit)
+onboarding/ignition/**/backup_ignition81/
+
+# Gateway backups (do not commit)
+*.gwbk
+
+# Local docker/colima env files (may contain credentials)
+*.env
+!.env.example
+
+# Tools cloned/built locally (do not commit)
+tools/module-signer/
+
+# Docker-based build outputs (do not commit)
+docker-out/
+# Local generated/backup config files (do not commit)
+module/src/main/resources/zerobus.properties*
