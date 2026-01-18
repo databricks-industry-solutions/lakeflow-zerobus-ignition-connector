@@ -56,6 +56,7 @@ In all cases, the connector publishes **the same protobuf event type** to Databr
 - [Repository layout](#repository-layout)
 - [Release artifacts (two `.modl` files)](#release-artifacts-two-modl-files)
 - [Developer build](#developer-build)
+- [Module internals (code overview)](module/CODE_OVERVIEW.md)
 - [Reference](#reference)
 
 For production setup (prereqs, install, configure, verify, troubleshooting), see `DEPLOYMENT.md`.
