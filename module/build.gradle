@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'com.example.ignition'
-version = '1.0.9'
+version = '1.0.0'
 
 // Module ID:
 // - Default is the current internal/dev module id.
@@ -290,8 +290,9 @@ task buildModule(type: Zip, dependsOn: [jar, verifyIgnitionSdkJars]) {
     }
     
     doLast {
-        // Copy to project root releases folder
-        def releasesDir = file("${project.rootDir}/releases")
+        // Copy to repo-level releases folder (repoRoot/release/).
+        // This Gradle project lives in repoRoot/module, so the repo root is one level up.
+        def releasesDir = file("${project.projectDir}/../releases")
         releasesDir.mkdirs()
         def targetFile = new File(releasesDir, archiveFileName.get())
         copy {
@@ -380,8 +381,8 @@ tasks.register('buildModule81', GradleBuild) {
     group = 'build'
     description = 'Build the Ignition 8.1.x .modl artifact (zerobus-connector-<ver>.modl).'
     tasks = ['clean', 'buildModule']
-    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition8.1')
-    startParameter.projectProperties.put('buildForIgnitionVersion', '8.1.50')
+    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition81')
+    startParameter.projectProperties.put('buildForIgnitionVersion', '8.1.51')
     startParameter.projectProperties.put('minIgnitionVersion', '8.1.0')
     // Propagate moduleId override into the nested build (if provided to the outer build).
     startParameter.projectProperties.put('moduleId', moduleId)
@@ -444,7 +445,12 @@ tasks.register('signModule', JavaExec) {
     description = 'Signs the built .modl using Inductive Automation module-signer.jar (requires signing properties).'
     dependsOn buildModule
 
+    // Run module-signer.jar as a tool; use the Gradle JVM (JDK 17 toolchain is fine for the signer tool).
+    mainClass = '-jar'
+    classpath = files()
+
     doFirst {
+        // Validate signing config FIRST (doFirst actions run in LIFO order, so keep this as the only doFirst).
         def missing = []
         if (!moduleSignerJar) missing << "moduleSignerJar (or env MODULE_SIGNER_JAR)"
         if (!signingKeystore) missing << "signingKeystore (or env SIGNING_KEYSTORE)"
@@ -470,16 +476,13 @@ tasks.register('signModule', JavaExec) {
         if (signingChain && !file(signingChain).exists()) {
             throw new RuntimeException("signingChain not found: ${signingChain}")
         }
-    }
 
-    // Run module-signer.jar as a tool; use the Gradle JVM (JDK 17 toolchain is fine for the signer tool).
-    mainClass = '-jar'
-    classpath = files()
-
-    doFirst {
         def inFile = buildModule.archiveFile.get().asFile
         def outFileName = inFile.name.replaceFirst(/\\.modl$/, '') + "-signed.modl"
         def outFile = new File(inFile.parentFile, outFileName)
+        // Expose paths so we can copy the signed artifact into repo-level releases/ in doLast.
+        ext.unsignedModlFile = inFile
+        ext.signedModlFile = outFile
 
         def argsList = [
                 file(moduleSignerJar).absolutePath,
@@ -497,6 +500,22 @@ tasks.register('signModule', JavaExec) {
         args = argsList
         println "Signing module:\n  in : ${inFile}\n  out: ${outFile}"
     }
+
+    doLast {
+        def outFile = ext.has('signedModlFile') ? ext.signedModlFile : null
+        if (outFile == null || !outFile.exists()) {
+            throw new RuntimeException("Signed module was not produced (expected at: ${outFile}).")
+        }
+
+        // Copy to repo-level releases folder (repoRoot/release/).
+        def releasesDir = file("${project.projectDir}/../releases")
+        releasesDir.mkdirs()
+        copy {
+            from outFile
+            into releasesDir
+        }
+        println "✅ Signed module copied to: ${new File(releasesDir, outFile.name)}"
+    }
 }
 
 // Convenience wrappers to build+sign 8.1 and 8.3 artifacts via nested builds.
@@ -504,8 +523,8 @@ tasks.register('signModule81', GradleBuild) {
     group = 'build'
     description = 'Builds and signs the Ignition 8.1.x .modl artifact (requires signing properties).'
     tasks = ['clean', 'buildModule', 'signModule']
-    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition8.1')
-    startParameter.projectProperties.put('buildForIgnitionVersion', '8.1.50')
+    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition81')
+    startParameter.projectProperties.put('buildForIgnitionVersion', '8.1.51')
     startParameter.projectProperties.put('minIgnitionVersion', '8.1.0')
     startParameter.projectProperties.put('moduleId', moduleId)
 

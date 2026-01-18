@@ -25,8 +25,8 @@ GRANT MODIFY ON TABLE <catalog>.<schema>.<table> TO `<service_principal_name_or_
 
 ### Choose the correct module artifact
 
-- **Ignition 8.1.x**: use `releases/zerobus-connector-1.0.1.modl`
-- **Ignition 8.3.x**: use `releases/zerobus-connector-1.0.1-ignition-8.3.modl`
+- **Ignition 8.1.x**: use `releases/zerobus-connector-1.0.0.modl`
+- **Ignition 8.3.x**: use `releases/zerobus-connector-1.0.0-ignition-8.3.modl`
 
 ### Install / upgrade
 
@@ -105,7 +105,7 @@ ORDER BY rows_last_10m DESC;
 
 ### Ignition 8.3 module won’t install
 
-You likely uploaded the 8.1 artifact. Use `releases/zerobus-connector-1.0.1-ignition-8.3.modl`.
+You likely uploaded the 8.1 artifact. Use `releases/zerobus-connector-1.0.0-ignition-8.3.modl`.
 
 ### Running Ignition in Docker (dev/demo)
 
