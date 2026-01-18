@@ -580,7 +580,7 @@
                                     <option value="pattern">Pattern - Use regex over full tag path</option>
                                 </select>
                                 <small class="form-help">
-                                    Folder mode accepts <b>one</b> folder root. If you need multiple providers/folders (e.g., <code>[sg]</code> + <code>[sg_grid]</code>),
+                                    Folder mode accepts <b>one</b> folder root. If you need multiple providers/folders (e.g., <code>[manufacturing]</code> + <code>[manufacturing_grid]</code>),
                                     use Pattern mode.
                                 </small>
                             </div>
@@ -606,25 +606,25 @@
                         <div id="folderPathSection" class="form-group full-width" style="display: none;">
                             <label for="tagFolderPath">Tag Folder Path</label>
                             <input type="text" class="form-control" id="tagFolderPath" name="tagFolderPath"
-                                   placeholder="[sg]SG/Site01  (one folder root)">
+                                   placeholder="[manufacturing]Manufacturing/Site01  (one folder root)">
                             <small class="form-help">
                                 Folder root for folder mode (subfolders optional). Examples:
-                                <br> - Saint-Gobain plant: <code>[sg]SG/Site01</code>
-                                <br> - Saint-Gobain grid: <code>[sg_grid]SG/Site01</code>
-                                <br> - Tilt plant: <code>[tilt]Tilt/Site01</code>
-                                <br> - Tilt grid: <code>[grid]Tilt/Site01</code>
+                                <br> - Manufacturing plant: <code>[manufacturing]Manufacturing/Site01</code>
+                                <br> - Manufacturing grid: <code>[manufacturing_grid]Manufacturing/Site01</code>
+                                <br> - Renewables plant: <code>[renewables]Renewables/Site01</code>
+                                <br> - Renewables grid: <code>[grid]Renewables/Site01</code>
                             </small>
                         </div>
 
                         <div id="patternSection" class="form-group full-width" style="display: none;">
                             <label for="tagPathPattern">Tag Path Pattern</label>
                             <input type="text" class="form-control" id="tagPathPattern" name="tagPathPattern"
-                                   placeholder="^\\[(sg|sg_grid|sg_cmms|sg_forecast)\\]SG/Site01/.*$">
+                                   placeholder="^\\[(manufacturing|manufacturing_grid|manufacturing_cmms|manufacturing_forecast)\\]Manufacturing/Site01/.*$">
                             <small class="form-help">
-                                Java regex matched against the <b>full tag path</b> (e.g., <code>[sg]SG/Site01/Furnace/Temperature_Melting_C</code>).
+                                Java regex matched against the <b>full tag path</b> (e.g., <code>[manufacturing]Manufacturing/Site01/Furnace/Temperature_Melting_C</code>).
                                 Examples:
-                                <br> - Saint-Gobain all providers: <code>^\\[(sg|sg_grid|sg_cmms|sg_forecast)\\]SG/Site01/.*$</code>
-                                <br> - Tilt all providers: <code>^\\[(tilt|grid|cmms|forecast)\\]Tilt/Site01/.*$</code>
+                                <br> - Manufacturing all providers: <code>^\\[(manufacturing|manufacturing_grid|manufacturing_cmms|manufacturing_forecast)\\]Manufacturing/Site01/.*$</code>
+                                <br> - Renewables all providers: <code>^\\[(renewables|grid|cmms|forecast)\\]Renewables/Site01/.*$</code>
                             </small>
                         </div>
                     </div>

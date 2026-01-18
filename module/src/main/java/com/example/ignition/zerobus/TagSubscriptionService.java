@@ -367,7 +367,7 @@ public class TagSubscriptionService {
             return List.of();
         }
 
-        // Pattern mode is evaluated over the FULL tag path string (e.g., "[tilt]Tilt/Site01/MetMast01/WindSpeed_mps").
+        // Pattern mode is evaluated over the FULL tag path string (e.g., "[renewables]Renewables/Site01/MetMast01/WindSpeed_mps").
         //
         // IMPORTANT:
         // Naively browsing ALL providers can be slow (or effectively "hang") on gateways with large tag trees.

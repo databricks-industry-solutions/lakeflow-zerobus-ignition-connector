@@ -94,12 +94,14 @@ Directory structure (high-level):
 │           ├── resources/          # module.xml, i18n, UI assets (web/, mounted/)
 │           └── proto/              # protobuf schema (ot_event.proto)
 ├── examples/                        # end-to-end demo simulations (Ignition tags + timer scripts)
-│   ├── tilt_renewables_site01/
-│   ├── saint_gobain_site01/
-│   └── tilt_sim/
+│   ├── manufacturing_site01/
+│   ├── manufacturing_site02/
+│   ├── oil_gas_site01/
+│   ├── renewables_site01/
+│   └── renewables_sim/
 ├── tools/                           # Databricks SQL packs (Bronze→Silver→Gold) + dashboard/genie prompts
-│   ├── databricks_end2end_tilt/
-│   └── databricks_end2end_sg/
+│   ├── databricks_end2end_renewables/
+│   └── databricks_end2end_manufacturing/
 └── onboarding/
     ├── databricks/                 # optional: helper to create/align target table schema
     └── ignition/

@@ -1,0 +1,76 @@
+{
+  "name": "Manufacturing",
+  "tagType": "Folder",
+  "tags": [
+    {
+      "name": "Site01",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "name": "Diagnostics",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "TickCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+            { "name": "LastRun", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastStatus", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastError", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+          ]
+        },
+        {
+          "name": "Config",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "SimEnabled", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+            { "name": "UpdateEveryMs", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 2000 },
+            { "name": "Target_Density_g_cm3", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 3.85 },
+            { "name": "Target_Diameter_mm", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 10.000 }
+          ]
+        },
+        {
+          "name": "QC",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "Inspection",
+              "tagType": "Folder",
+              "tags": [
+                {
+                  "name": "Vision01",
+                  "tagType": "Folder",
+                  "tags": [
+                    { "name": "Yield_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 98.2 },
+                    { "name": "Defects_per_1000", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 6.0 },
+                    { "name": "TopDefect", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "None" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Lab",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "Density_g_cm3", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 3.84 },
+                { "name": "Porosity_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1.2 },
+                { "name": "Hardness_HV", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1450.0 },
+                { "name": "FlexuralStrength_MPa", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 360.0 }
+              ]
+            },
+            {
+              "name": "SPC",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "Diameter_mean_mm", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 10.001 },
+                { "name": "Diameter_sigma_mm", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.006 },
+                { "name": "Diameter_Cpk", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1.55 },
+                { "name": "OutOfControl", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+                { "name": "LastOOCReason", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+

@@ -1,0 +1,68 @@
+{
+  "name": "Manufacturing",
+  "tagType": "Folder",
+  "tags": [
+    {
+      "name": "Site01",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "name": "Diagnostics",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "TickCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+            { "name": "LastRun", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastStatus", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastError", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+          ]
+        },
+        {
+          "name": "WorkOrders",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "ActiveCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+            { "name": "HighPriorityCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+            { "name": "LastWorkOrderId", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastWorkOrderSummary", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+          ]
+        },
+        {
+          "name": "Assets",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "Furnace",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "ForcedOutage", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+                { "name": "OutageReason", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                { "name": "HealthScore", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 92.0 }
+              ]
+            },
+            {
+              "name": "Conveyor",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "ForcedOutage", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+                { "name": "OutageReason", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                { "name": "HealthScore", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 94.0 }
+              ]
+            },
+            {
+              "name": "CuttingStation",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "ForcedOutage", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+                { "name": "OutageReason", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                { "name": "HealthScore", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 93.0 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+
+

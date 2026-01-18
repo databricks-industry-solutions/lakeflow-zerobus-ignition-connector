@@ -1,0 +1,48 @@
+{
+  "name": "OilGas",
+  "tagType": "Folder",
+  "tags": [
+    {
+      "name": "Region",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "name": "Site01",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "Config",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "SimEnabled", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                { "name": "UpdateEveryMs", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 2000 },
+                { "name": "SiteSafetyProfile", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "Site01 - demo safety signals" }
+              ]
+            },
+            {
+              "name": "Diagnostics",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "TickCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+                { "name": "LastRun", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                { "name": "LastStatus", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                { "name": "LastError", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+              ]
+            },
+            {
+              "name": "Safety",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "ESD_Active", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+                { "name": "FireGas_Alarm", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+                { "name": "H2S_ppm", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.0 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+

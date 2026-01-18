@@ -1,0 +1,358 @@
+{
+  "name": "Renewables",
+  "tagType": "Folder",
+  "tags": [
+    {
+      "name": "Site01",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "name": "Diagnostics",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "TickCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+            { "name": "LastRun", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastStatus", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastError", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+          ]
+        },
+        {
+          "name": "Config",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "SimEnabled", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+            { "name": "UpdateEveryMs", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 1000 },
+
+            { "name": "SiteName", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "Renewables Site01 (Demo)" },
+
+            { "name": "MeanWind_mps", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 9.0 },
+            { "name": "MeanReversion_k", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.06 },
+            { "name": "TurbulenceSigma", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.7 },
+            { "name": "WindDirNoiseSigma_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 4.0 },
+
+            { "name": "MeanIrradiance_Wm2", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 650.0 },
+            { "name": "Cloudiness_sigma", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 120.0 },
+
+            { "name": "CutIn_mps", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 3.0 },
+            { "name": "RatedWind_mps", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 12.0 },
+            { "name": "CutOut_mps", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 25.0 },
+
+            { "name": "RatedPower_T01_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 3500.0 },
+            { "name": "RatedPower_T02_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 3600.0 },
+            { "name": "RatedPower_T03_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 3400.0 },
+
+            { "name": "SolarACCapacity_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 18000.0 },
+            { "name": "InverterCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 2 },
+
+            { "name": "BESS_EnergyCapacity_kWh", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 40000.0 },
+            { "name": "BESS_MaxCharge_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 10000.0 },
+            { "name": "BESS_MaxDischarge_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 10000.0 }
+          ]
+        },
+        {
+          "name": "MetMast01",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "WindSpeed_mps", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 8.0 },
+            { "name": "WindDir_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 180.0 },
+            { "name": "Irradiance_Wm2", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 600.0 },
+            { "name": "AmbientTemp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 18.0 },
+            { "name": "Humidity_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 48.0 },
+            { "name": "Pressure_hPa", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1010.0 }
+          ]
+        },
+        {
+          "name": "Windfarm01",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "Site",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "Power_Total_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                { "name": "Availability_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 100.0 },
+                { "name": "Curtailment_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 }
+              ]
+            },
+            {
+              "name": "Turbines",
+              "tagType": "Folder",
+              "tags": [
+                {
+                  "name": "T01",
+                  "tagType": "Folder",
+                  "tags": [
+                    {
+                      "name": "Electrical",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "Power_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "ReactivePower_kVAr", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "PowerFactor", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.98 },
+                        { "name": "Voltage_V", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 690.0 },
+                        { "name": "Current_A", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "EnergyToday_kWh", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "EnergyTotal_MWh", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 }
+                      ]
+                    },
+                    {
+                      "name": "WindRotor",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "WindSpeed_mps", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 8.0 },
+                        { "name": "RotorSpeed_RPM", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "GenSpeed_RPM", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "NacelleTemp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 25.0 }
+                      ]
+                    },
+                    {
+                      "name": "YawPitch",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "YawPosition_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 180.0 },
+                        { "name": "YawError_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "PitchBlade1_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.0 },
+                        { "name": "PitchBlade2_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.0 },
+                        { "name": "PitchBlade3_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.0 }
+                      ]
+                    },
+                    {
+                      "name": "Status",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "OperatingState", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+                        { "name": "Availability", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                        { "name": "AlarmActive", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+                        { "name": "FaultCode", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+                        { "name": "LastFault", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "T02",
+                  "tagType": "Folder",
+                  "tags": [
+                    {
+                      "name": "Electrical",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "Power_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "ReactivePower_kVAr", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "PowerFactor", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.98 },
+                        { "name": "Voltage_V", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 690.0 },
+                        { "name": "Current_A", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "EnergyToday_kWh", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "EnergyTotal_MWh", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 }
+                      ]
+                    },
+                    {
+                      "name": "WindRotor",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "WindSpeed_mps", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 8.0 },
+                        { "name": "RotorSpeed_RPM", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "GenSpeed_RPM", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "NacelleTemp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 25.0 }
+                      ]
+                    },
+                    {
+                      "name": "YawPitch",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "YawPosition_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 180.0 },
+                        { "name": "YawError_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "PitchBlade1_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.0 },
+                        { "name": "PitchBlade2_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.0 },
+                        { "name": "PitchBlade3_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.0 }
+                      ]
+                    },
+                    {
+                      "name": "Status",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "OperatingState", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+                        { "name": "Availability", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                        { "name": "AlarmActive", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+                        { "name": "FaultCode", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+                        { "name": "LastFault", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "T03",
+                  "tagType": "Folder",
+                  "tags": [
+                    {
+                      "name": "Electrical",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "Power_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "ReactivePower_kVAr", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "PowerFactor", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.98 },
+                        { "name": "Voltage_V", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 690.0 },
+                        { "name": "Current_A", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "EnergyToday_kWh", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "EnergyTotal_MWh", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 }
+                      ]
+                    },
+                    {
+                      "name": "WindRotor",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "WindSpeed_mps", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 8.0 },
+                        { "name": "RotorSpeed_RPM", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "GenSpeed_RPM", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "NacelleTemp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 25.0 }
+                      ]
+                    },
+                    {
+                      "name": "YawPitch",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "YawPosition_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 180.0 },
+                        { "name": "YawError_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "PitchBlade1_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.0 },
+                        { "name": "PitchBlade2_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.0 },
+                        { "name": "PitchBlade3_deg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.0 }
+                      ]
+                    },
+                    {
+                      "name": "Status",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "OperatingState", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+                        { "name": "Availability", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                        { "name": "AlarmActive", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+                        { "name": "FaultCode", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+                        { "name": "LastFault", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "SolarFarm01",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "Inverters",
+              "tagType": "Folder",
+              "tags": [
+                {
+                  "name": "I01",
+                  "tagType": "Folder",
+                  "tags": [
+                    { "name": "Status", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "RUN" },
+                    { "name": "Availability", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                    {
+                      "name": "DC",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "Voltage_V", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 900.0 },
+                        { "name": "Current_A", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "Power_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 }
+                      ]
+                    },
+                    {
+                      "name": "AC",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "Voltage_V", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 690.0 },
+                        { "name": "Current_A", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "Frequency_Hz", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 50.0 },
+                        { "name": "Power_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "I02",
+                  "tagType": "Folder",
+                  "tags": [
+                    { "name": "Status", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "RUN" },
+                    { "name": "Availability", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                    {
+                      "name": "DC",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "Voltage_V", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 900.0 },
+                        { "name": "Current_A", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "Power_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 }
+                      ]
+                    },
+                    {
+                      "name": "AC",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "Voltage_V", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 690.0 },
+                        { "name": "Current_A", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                        { "name": "Frequency_Hz", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 50.0 },
+                        { "name": "Power_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Plant",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "Power_Total_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                { "name": "Availability_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 100.0 }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "BESS01",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "Status",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "Available", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                { "name": "Mode", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "AUTO" },
+                { "name": "AlarmActive", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+                { "name": "LastAlarm", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+              ]
+            },
+            {
+              "name": "SoC",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "StateOfCharge_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 55.0 },
+                { "name": "StateOfHealth_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 98.0 }
+              ]
+            },
+            {
+              "name": "Power",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "NetPower_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                { "name": "ChargePower_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                { "name": "DischargePower_kW", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 }
+              ]
+            },
+            {
+              "name": "Energy",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "Throughput_MWh", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                { "name": "Cycles", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+

@@ -1,0 +1,41 @@
+{
+  "name": "Manufacturing",
+  "tagType": "Folder",
+  "tags": [
+    {
+      "name": "Site01",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "name": "Diagnostics",
+          "tagType": "Folder",
+          "tags": [
+            { "name": "TickCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+            { "name": "LastRun", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastStatus", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+            { "name": "LastError", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+          ]
+        },
+        {
+          "name": "Forecast",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "H01",
+              "tagType": "Folder",
+              "tags": [
+                { "name": "AsOfTime", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                { "name": "Throughput_units_per_min", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 120.0 },
+                { "name": "ScrapRate_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1.5 },
+                { "name": "Confidence_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 75.0 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+
+
