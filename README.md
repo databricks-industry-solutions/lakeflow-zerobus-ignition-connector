@@ -447,7 +447,7 @@ Any issues discovered through the use of this project should be filed as GitHub 
 
 ## License
 
-© 2025 Databricks, Inc. All rights reserved. The source in this repository is provided subject to the Databricks License: `https://databricks.com/db-license-source` (see `LICENSE.md`). This repository also includes an Apache 2.0 license text in `LICENSE` for compatibility with certain included materials; when in doubt, follow the license files shipped with this repository.
+© 2025 Databricks, Inc. All rights reserved. The source in this repository is provided subject to the Databricks License: `https://databricks.com/db-license-source` (see `LICENSE.md`).
 
 All included or referenced third party libraries are subject to the licenses set forth below.
 
