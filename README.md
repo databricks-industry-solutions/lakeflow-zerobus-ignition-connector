@@ -5,6 +5,12 @@
 **Ignition compatibility**: **8.1.x** and **8.3.x** (different `.modl` artifacts).  
 **Configuration**: via the **Ignition Gateway UI**.
 
+## Business Problem
+
+Industrial teams need **reliable, low-latency ingestion** of OT signals (PLC/SCADA/MQTT/OPC UA) into the Lakehouse for analytics, monitoring, and AI—without operating separate messaging infrastructure.
+
+This connector runs inside the **Ignition Gateway** and streams **tag-change events** to **Databricks Zerobus** (gRPC + protobuf), landing in Delta tables for downstream Bronze→Silver→Gold processing.
+
 ## Concepts (Ignition Gateway + Databricks Zerobus)
 
 ### What is an Ignition Gateway?
@@ -100,9 +106,8 @@ Directory structure (high-level):
 │   ├── oil_gas_site01/
 │   ├── renewables_site01/
 │   └── renewables_sim/
-├── tools/                           # Databricks SQL packs (Bronze→Silver→Gold) + dashboard/genie prompts
-│   ├── databricks_end2end_renewables/
-│   └── databricks_end2end_manufacturing/
+├── tools/
+│   └── module-signer/               # optional: Ignition module signing tool (see License/Third-party notices)
 └── onboarding/
     ├── databricks/                 # optional: helper to create/align target table schema
     └── ignition/
@@ -140,8 +145,8 @@ The **runtime behavior and code are the same**; the important differences are:
 
 - **JDK 17** installed (Gradle/tooling).
 - **Ignition SDK jars available locally** (used as `compileOnly` dependencies):
-  - **8.1.x** install at: `/usr/local/ignition8.1`
-  - **8.3.x** install at: `/usr/local/ignition`
+  - **8.1.x**: set `IGNITION_HOME=/usr/local/ignition8.1` (or pass `-PignitionHome=...`)
+  - **8.3.x**: set `IGNITION_HOME=/usr/local/ignition` (or pass `-PignitionHome=...`)
 
 ### 2) Code flow explainer (runtime)
 
@@ -225,7 +230,7 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PA
   ./gradlew buildModule81
 ```
 
-Output: `module/build-user-8.1/modules/zerobus-connector-1.0.1.modl`
+Output: `module/build-user-8.1/modules/zerobus-connector-1.0.0.modl`
 
 #### 3.2) Build the Ignition 8.3.x module (`.modl`)
 
@@ -235,7 +240,7 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PA
   ./gradlew buildModule83
 ```
 
-Output: `module/build-user-8.3/modules/zerobus-connector-1.0.1-ignition-8.3.modl`
+Output: `module/build-user-8.3/modules/zerobus-connector-1.0.0-ignition-8.3.modl`
 
 #### 3.3) Where release artifacts go
 
@@ -416,3 +421,52 @@ All endpoints are under `/system/zerobus`:
 1) Producer POSTs JSON → `/system/zerobus/ingest` or `/ingest/batch`  
 2) Handler parses + enqueues `TagEvent`s  
 3) Batching + streaming as above
+
+---
+
+## Code Assets Included
+
+- **Ignition Gateway module (`.modl`)**:
+  - `releases/zerobus-connector-1.0.0.modl` (Ignition 8.1.x)
+  - `releases/zerobus-connector-1.0.0-ignition-8.3.modl` (Ignition 8.3.x)
+- **Module source**: `module/` (Java + protobuf schema in `module/src/main/proto/ot_event.proto`)
+- **Demo tag exports + timer scripts**: `examples/` (manufacturing, oil & gas, renewables)
+- **Optional helper for target Delta table**: `onboarding/databricks/01_create_tables.py`
+- **Optional local testing**: `docker/ignition-gateway/` (Ignition Gateway in Docker/Colima)
+- **Developer documentation**: `DEPLOYMENT.md`, `module/CODE_OVERVIEW.md`
+
+## Authors
+
+- **Pravin Varma** (Databricks Industry Solutions)
+
+## Project support
+
+Please note the code in this project is provided for your exploration only, and are not formally supported by Databricks with Service Level Agreements (SLAs). They are provided AS-IS and we do not make any guarantees of any kind. Please do not submit a support ticket relating to any issues arising from the use of these projects. The source in this project is provided subject to the Databricks License. All included or referenced third party libraries are subject to the licenses set forth below.
+
+Any issues discovered through the use of this project should be filed as GitHub Issues on the Repo. They will be reviewed as time permits, but there are no formal SLAs for support.
+
+## License
+
+© 2025 Databricks, Inc. All rights reserved. The source in this repository is provided subject to the Databricks License: `https://databricks.com/db-license-source` (see `LICENSE.md`). This repository also includes an Apache 2.0 license text in `LICENSE` for compatibility with certain included materials; when in doubt, follow the license files shipped with this repository.
+
+All included or referenced third party libraries are subject to the licenses set forth below.
+
+## Third‑party library licenses (Ignition + Java)
+
+The connector is an **Ignition module**. Some dependencies are **provided by Ignition at runtime** (not redistributed as part of this repository), and some are **packaged into the module** at build time.
+
+| library | description | license | source |
+|---|---|---|---|
+| Inductive Automation **Ignition** | Runtime platform that hosts the module (`.modl`) and provides Gateway/Tag APIs | Commercial / Ignition EULA (see Inductive Automation terms) | Inductive Automation |
+| Ignition SDK jars (`gateway-api`, `gateway-web`, `common`, Wicket, etc.) | Compile-only APIs; provided by Ignition install at runtime | Commercial / Ignition EULA | Ignition installation |
+| `com.databricks:zerobus-ingest-sdk:0.1.0:jar-with-dependencies` | Databricks Zerobus ingest client SDK (shaded jar bundles transitive deps) | Databricks (see Databricks License) | Maven artifact |
+| `com.google.protobuf:protobuf-java:3.21.12` | Protobuf runtime used for `OTEvent` messages | BSD 3‑Clause (per Protobuf project) | Maven Central |
+| `com.google.protobuf:protoc:3.21.12` | Protobuf compiler used during build (`com.google.protobuf` Gradle plugin) | BSD 3‑Clause (per Protobuf project) | Maven Central |
+| `org.slf4j:slf4j-api:1.7.36` | Logging API (bound by Ignition at runtime) | MIT License | Maven Central |
+| `com.google.code.gson:gson` | JSON serialization for the HTTP config/ingest endpoints (provided by Ignition common libs) | Apache 2.0 | Ignition / Maven Central |
+| `jakarta.servlet:jakarta.servlet-api:6.0.0` | Servlet API for Ignition 8.3+ (`jakarta.servlet.*`) | Eclipse Public License 2.0 (per Jakarta/Eclipse) | Maven Central |
+| `javax.servlet:javax.servlet-api:4.0.1` | Servlet API for Ignition 8.1/8.2 (`javax.servlet.*`) | CDDL 1.1 and/or GPLv2 + Classpath Exception (per artifact) | Maven Central |
+| `org.junit.jupiter:junit-jupiter:5.9.2` | Unit testing | EPL 2.0 | Maven Central |
+| `org.mockito:mockito-core:5.1.1` | Unit testing (mocking) | MIT License | Maven Central |
+
+**Note on shaded/transitive dependencies**: `zerobus-ingest-sdk:jar-with-dependencies` bundles additional third-party libraries. For a complete dependency/license list, consult the artifact metadata (POM) and any `NOTICE`/license files included with the SDK at build time.
