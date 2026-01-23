@@ -134,14 +134,23 @@ public final class StoreAndForwardBuffer {
                 // Cap batch bytes to avoid huge reads
                 long maxBytes = Math.max(1L, config.getSpoolReadMaxBytes());
                 DiskSpool.ReadBatch rb = spool.readBatch(batchSize, maxBytes);
-                List<OTEvent> events = new ArrayList<>(rb.records().size());
-                for (byte[] b : rb.records()) {
-                    events.add(OTEvent.parseFrom(b));
+                List<byte[]> raw = rb.records();
+                List<OTEvent> events = new ArrayList<>(raw.size());
+                int corrupt = 0;
+                for (byte[] b : raw) {
+                    try {
+                        events.add(OTEvent.parseFrom(b));
+                    } catch (Exception parseErr) {
+                        corrupt++;
+                        // NOTE: We intentionally do not fail the whole drain on a single corrupt record.
+                        // We will advance the read offset past the corrupt bytes on the next successful commit.
+                        logger.warn("Corrupt record found in spool; dropping record (parse failed): {}", parseErr.toString());
+                    }
                 }
-                return new DrainResult(events, rb.nextOffset());
+                return new DrainResult(events, rb.nextOffset(), raw.size(), corrupt);
             } catch (Exception e) {
                 logger.warn("Failed reading from spool", e);
-                return new DrainResult(List.of(), -1L);
+                return new DrainResult(List.of(), -1L, 0, 0);
             }
         }
 
@@ -149,7 +158,7 @@ public final class StoreAndForwardBuffer {
         memLock.lock();
         try {
             if (memQueue.isEmpty()) {
-                return new DrainResult(List.of(), 0L);
+                return new DrainResult(List.of(), 0L, 0, 0);
             }
             List<OTEvent> out = new ArrayList<>(Math.min(batchSize, memQueue.size()));
             int n = 0;
@@ -158,7 +167,7 @@ public final class StoreAndForwardBuffer {
                 n++;
                 if (n >= batchSize) break;
             }
-            return new DrainResult(out, n);
+            return new DrainResult(out, n, n, 0);
         } finally {
             memLock.unlock();
         }
@@ -201,10 +210,16 @@ public final class StoreAndForwardBuffer {
     public static final class DrainResult {
         public final List<OTEvent> events;
         public final long nextOffset; // disk: commit cursor (byte offset), memory: count to remove
+        /** Number of raw records read from the buffer (disk) or previewed from memory. */
+        public final int recordsRead;
+        /** Number of records that were dropped due to corruption (parse failures). */
+        public final int corruptRecords;
 
-        public DrainResult(List<OTEvent> events, long nextOffset) {
+        public DrainResult(List<OTEvent> events, long nextOffset, int recordsRead, int corruptRecords) {
             this.events = events;
             this.nextOffset = nextOffset;
+            this.recordsRead = recordsRead;
+            this.corruptRecords = corruptRecords;
         }
     }
 }

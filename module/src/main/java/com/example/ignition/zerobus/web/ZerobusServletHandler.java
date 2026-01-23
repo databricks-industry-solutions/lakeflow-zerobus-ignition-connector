@@ -122,6 +122,9 @@ public final class ZerobusServletHandler {
                 }
             }
 
+            // Normalize any paths coming from UI/restores so the connector doesn't wedge on startup.
+            newCfg.autoCorrectPaths();
+
             List<String> errors = newCfg.validate();
             if (errors != null && !errors.isEmpty()) {
                 JsonObject resp = new JsonObject();

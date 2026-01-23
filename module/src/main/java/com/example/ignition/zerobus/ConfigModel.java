@@ -440,6 +440,10 @@ public class ConfigModel implements Serializable {
     public List<String> validate() {
         List<String> errors = new ArrayList<>();
 
+        // Auto-correct common path issues (especially in Docker restores) before validating.
+        // This mutates the in-memory ConfigModel and is intentionally best-effort.
+        autoCorrectPaths();
+
         // Gson deserialization sets fields directly (it does not call setters),
         // so catalog/schema/table may be empty even when targetTable is present.
         // Ensure we derive catalog/schema/table from targetTable before validating.
@@ -536,6 +540,47 @@ public class ConfigModel implements Serializable {
         }
         
         return errors;
+    }
+
+    /**
+     * Best-effort normalization to keep configs portable across:
+     * - local installs
+     * - Docker containers (Ignition typically lives under /usr/local/bin/ignition)
+     * - restored .gwbk configs that may include absolute host paths
+     *
+     * Rules:
+     * - Default to a relative path under Ignition install dir: "data/zerobus-spool"
+     * - If spoolDirectory points at "/usr/local/(bin/)?ignition/data/<X>", rewrite to "data/<X>"
+     * - If spoolDirectory points at "/usr/local/ignition/data/<X>" (common mistake), rewrite to "data/<X>"
+     */
+    public void autoCorrectPaths() {
+        // Keep default relative path unless explicitly overridden.
+        if (spoolDirectory == null || spoolDirectory.isBlank()) {
+            spoolDirectory = "data/zerobus-spool";
+            return;
+        }
+
+        String raw = spoolDirectory.trim();
+
+        // Prefer a portable relative path when the user provided an absolute path under Ignition's data dir.
+        String[] prefixes = new String[] {
+            "/usr/local/ignition/data/",
+            "/usr/local/bin/ignition/data/"
+        };
+        for (String pfx : prefixes) {
+            if (raw.startsWith(pfx)) {
+                String tail = raw.substring(pfx.length());
+                spoolDirectory = tail.isBlank() ? "data/zerobus-spool" : ("data/" + tail);
+                return;
+            }
+        }
+
+        // Otherwise, keep as-is (but normalize the common docker install mismatch).
+        if (raw.startsWith("/usr/local/ignition/")) {
+            spoolDirectory = raw.replaceFirst("^/usr/local/ignition/", "/usr/local/bin/ignition/");
+        } else {
+            spoolDirectory = raw;
+        }
     }
     
     /**
