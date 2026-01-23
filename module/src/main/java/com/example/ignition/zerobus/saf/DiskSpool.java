@@ -89,31 +89,47 @@ public final class DiskSpool {
                 if (bytesRead >= maxBytes) {
                     break;
                 }
-                ByteBuffer lenBuf = ByteBuffer.allocate(4);
-                int n = ch.read(lenBuf);
-                if (n < 0) {
+                // Track the start of this record so we can safely truncate corrupted tails.
+                long recordStart = ch.position();
+                try {
+                    ByteBuffer lenBuf = ByteBuffer.allocate(4);
+                    int n = ch.read(lenBuf);
+                    if (n < 0) {
+                        break;
+                    }
+                    if (n < 4) {
+                        // Partial length at end-of-file: treat as a corrupted tail and truncate.
+                        truncateCorruptTail(recordStart, "Truncated record length at offset " + recordStart);
+                        break;
+                    }
+                    lenBuf.flip();
+                    int len = lenBuf.getInt();
+                    if (len < 0 || len > (32 * 1024 * 1024)) {
+                        // Garbage length typically indicates a partial write or corruption.
+                        truncateCorruptTail(recordStart, "Invalid record length " + len + " at offset " + recordStart);
+                        break;
+                    }
+                    ByteBuffer payload = ByteBuffer.allocate(len);
+                    int m = ch.read(payload);
+                    if (m < len) {
+                        // Partial payload at end-of-file: truncate and stop.
+                        truncateCorruptTail(recordStart, "Truncated record payload at offset " + (recordStart + 4));
+                        break;
+                    }
+                    payload.flip();
+                    byte[] b = new byte[len];
+                    payload.get(b);
+                    out.add(b);
+
+                    off = ch.position();
+                    bytesRead += (4L + len);
+                } catch (EOFException eof) {
+                    truncateCorruptTail(recordStart, eof.getMessage() == null ? "Truncated record at offset " + recordStart : eof.getMessage());
+                    break;
+                } catch (IOException ioe) {
+                    truncateCorruptTail(recordStart, ioe.getMessage() == null ? "Corrupt record at offset " + recordStart : ioe.getMessage());
                     break;
                 }
-                if (n < 4) {
-                    throw new EOFException("Truncated record length at offset " + off);
-                }
-                lenBuf.flip();
-                int len = lenBuf.getInt();
-                if (len < 0 || len > (32 * 1024 * 1024)) {
-                    throw new IOException("Invalid record length " + len + " at offset " + off);
-                }
-                ByteBuffer payload = ByteBuffer.allocate(len);
-                int m = ch.read(payload);
-                if (m < len) {
-                    throw new EOFException("Truncated record payload at offset " + (off + 4));
-                }
-                payload.flip();
-                byte[] b = new byte[len];
-                payload.get(b);
-                out.add(b);
-
-                off = ch.position();
-                bytesRead += (4L + len);
             }
         }
 
@@ -184,6 +200,31 @@ public final class DiskSpool {
 
     private void persistMeta() throws IOException {
         Files.writeString(metaFile, Long.toString(readOffset), StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+    }
+
+    /**
+     * Best-effort self-healing for corrupted spools:
+     * If we encounter an invalid/truncated record, we assume corruption is in the tail and truncate the
+     * spool file back to the start of the problematic record so we can continue appending and draining.
+     *
+     * This sacrifices the corrupt tail record(s) but keeps the spool usable without manual intervention.
+     */
+    private void truncateCorruptTail(long truncateToOffset, String reason) {
+        try {
+            // Never truncate below the current committed offset.
+            long safeOffset = Math.max(0L, Math.max(readOffset, truncateToOffset));
+            long size = Files.exists(dataFile) ? Files.size(dataFile) : 0L;
+            if (safeOffset >= size) {
+                return;
+            }
+            try (FileChannel out = FileChannel.open(dataFile, StandardOpenOption.WRITE)) {
+                out.truncate(safeOffset);
+                out.force(false);
+            }
+            logger.warn("Detected corrupted spool tail; truncated spool.dat from {} bytes to {} bytes. Reason: {}", size, safeOffset, reason);
+        } catch (Throwable t) {
+            logger.warn("Failed truncating corrupted spool tail (ignored). Reason was: {}", reason, t);
+        }
     }
 
     public static Path resolveDir(String configuredPath) {

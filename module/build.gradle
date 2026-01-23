@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'com.example.ignition'
-version = '1.0.9'
+version = '1.0.10'
 
 // Module ID:
 // - Default is the current internal/dev module id.

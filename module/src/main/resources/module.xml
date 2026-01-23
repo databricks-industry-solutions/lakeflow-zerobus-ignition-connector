@@ -3,7 +3,7 @@
     <module>
         <name>Zerobus Connector</name>
         <id>com.example.ignition.zerobus</id>
-        <version>1.0.9</version>
+        <version>1.0.10</version>
         <description>Streams Ignition tags to Databricks Delta via Zerobus Ingest</description>
         <requiredIgnitionVersion>8.1.0</requiredIgnitionVersion>
         <freeModule>true</freeModule>

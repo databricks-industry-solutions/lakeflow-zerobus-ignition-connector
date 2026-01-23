@@ -175,6 +175,8 @@ public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements Z
             var records = persistence.query(query);
             if (!records.isEmpty()) {
                 this.configModel = records.get(0).toConfigModel();
+                // Auto-correct common Docker path mismatches on load so services can start immediately.
+                this.configModel.autoCorrectPaths();
                 logger.info("Configuration loaded from database (8.3)");
             } else {
                 logger.info("No saved configuration found, using defaults (8.3)");
@@ -221,14 +223,8 @@ public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements Z
     public void saveConfiguration(ConfigModel newConfig) {
         logger.info("Saving configuration to persistent storage (8.3)...");
         try {
-            var persistence = gatewayContext.getPersistenceInterface();
-            var query = new simpleorm.dataset.SQuery<>(ZerobusSettings83.META);
-            List<ZerobusSettings83> records = persistence.query(query);
-            ZerobusSettings83 settings = records.isEmpty() ? persistence.createNew(ZerobusSettings83.META) : records.get(0);
-
             boolean needsRestart = configModel.requiresRestart(newConfig);
-            settings.fromConfigModel(newConfig);
-            persistence.save(settings);
+            persistConfigOffThread(newConfig);
             logger.info("Configuration saved to database (8.3)");
 
             // Update runtime
@@ -264,7 +260,39 @@ public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements Z
             }
         } catch (Exception e) {
             logger.error("Failed to save configuration to database (8.3)", e);
-            throw new RuntimeException("Configuration save failed", e);
+            String msg = e.getMessage();
+            throw new RuntimeException(
+                "Configuration save failed" + (msg == null || msg.isBlank() ? "" : (": " + msg)),
+                e
+            );
+        }
+    }
+
+    private void persistConfigOffThread(ConfigModel newConfig) throws Exception {
+        final Exception[] holder = new Exception[1];
+        Thread t = new Thread(() -> {
+            try {
+                var persistence = gatewayContext.getPersistenceInterface();
+                var query = new simpleorm.dataset.SQuery<>(ZerobusSettings83.META);
+                List<ZerobusSettings83> records = persistence.query(query);
+                ZerobusSettings83 settings = records.isEmpty()
+                    ? persistence.createNew(ZerobusSettings83.META)
+                    : records.get(0);
+                settings.fromConfigModel(newConfig);
+                persistence.save(settings);
+            } catch (Exception e) {
+                holder[0] = e;
+            }
+        }, "Zerobus-PersistConfig");
+        t.setDaemon(true);
+        t.start();
+        t.join(5_000L);
+        if (t.isAlive()) {
+            t.interrupt();
+            throw new RuntimeException("Configuration save failed: timed out persisting settings");
+        }
+        if (holder[0] != null) {
+            throw holder[0];
         }
     }
 

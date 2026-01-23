@@ -367,7 +367,7 @@ public class TagSubscriptionService {
             return List.of();
         }
 
-        // Pattern mode is evaluated over the FULL tag path string (e.g., "[tilt]Tilt/Site01/MetMast01/WindSpeed_mps").
+        // Pattern mode is evaluated over the FULL tag path string (e.g., "[renewables]Renewables/Site01/MetMast01/WindSpeed_mps").
         //
         // IMPORTANT:
         // Naively browsing ALL providers can be slow (or effectively "hang") on gateways with large tag trees.
@@ -682,6 +682,13 @@ public class TagSubscriptionService {
 
             StoreAndForwardBuffer.DrainResult drained = buffer.drain(config.getBatchSize());
             if (drained.events == null || drained.events.isEmpty()) {
+                // If we read records but couldn't parse any, the spool contains corrupt bytes.
+                // Commit the cursor to skip them; otherwise we'd get stuck forever with "failed reading from spool".
+                if (drained.recordsRead > 0 && buffer.isDiskBacked() && drained.nextOffset >= 0) {
+                    logger.warn("All {} record(s) read from spool were corrupt; advancing spool cursor to recover.", drained.recordsRead);
+                    buffer.commit(drained);
+                    lastFlushTime = System.currentTimeMillis();
+                }
                 return;
             }
 
