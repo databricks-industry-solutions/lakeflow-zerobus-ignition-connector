@@ -282,6 +282,8 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements Zer
                 // Load configuration from first record (should only be one)
                 ZerobusSettings settings = records.get(0);
                 this.configModel = settings.toConfigModel();
+                // Auto-correct common Docker path mismatches on load so services can start immediately.
+                this.configModel.autoCorrectPaths();
                 logger.info("Configuration loaded from database");
             } else {
                 // No saved configuration - use defaults
@@ -311,31 +313,18 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements Zer
         logger.info("Saving configuration to persistent storage...");
 
         try {
-            PersistenceInterface persistence = gatewayContext.getPersistenceInterface();
-
-            // Get or create settings record
-            SQuery<ZerobusSettings> query = new SQuery<>(ZerobusSettings.META);
-            List<ZerobusSettings> records = persistence.query(query);
-            ZerobusSettings settings;
-
-            if (records.isEmpty()) {
-                // Create new record
-                settings = persistence.createNew(ZerobusSettings.META);
-                logger.debug("Creating new settings record");
-            } else {
-                // Update existing record
-                settings = records.get(0);
-                logger.debug("Updating existing settings record");
-            }
-
             // Check if restart is needed before updating
             boolean needsRestart = configModel.requiresRestart(newConfig);
 
-            // Update record from config model
-            settings.fromConfigModel(newConfig);
-
-            // Save to database
-            persistence.save(settings);
+            // Persist to the gateway DB.
+            //
+            // IMPORTANT (Ignition 8.1): servlet threads can already have an open Persistence session.
+            // Touching PersistenceInterface on that thread can throw:
+            //   "Attempting to open new session, but session already open for this thread."
+            //
+            // To keep /system/zerobus/config usable from the embedded HTML UI + REST calls, we
+            // perform persistence work on a fresh thread and wait briefly for completion.
+            persistConfigOffThread(newConfig);
             logger.info("Configuration saved to database");
 
             // Update in-memory config
@@ -382,7 +371,50 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements Zer
 
         } catch (Exception e) {
             logger.error("Failed to save configuration to database", e);
-            throw new RuntimeException("Configuration save failed", e);
+            String msg = e.getMessage();
+            throw new RuntimeException(
+                "Configuration save failed" + (msg == null || msg.isBlank() ? "" : (": " + msg)),
+                e
+            );
+        }
+    }
+
+    private void persistConfigOffThread(ConfigModel newConfig) throws Exception {
+        final Exception[] holder = new Exception[1];
+        Thread t = new Thread(() -> {
+            try {
+                PersistenceInterface persistence = gatewayContext.getPersistenceInterface();
+
+                // Get or create settings record
+                SQuery<ZerobusSettings> query = new SQuery<>(ZerobusSettings.META);
+                List<ZerobusSettings> records = persistence.query(query);
+                ZerobusSettings settings;
+
+                if (records.isEmpty()) {
+                    settings = persistence.createNew(ZerobusSettings.META);
+                    logger.debug("Creating new settings record");
+                } else {
+                    settings = records.get(0);
+                    logger.debug("Updating existing settings record");
+                }
+
+                // Update record from config model
+                settings.fromConfigModel(newConfig);
+                persistence.save(settings);
+            } catch (Exception e) {
+                holder[0] = e;
+            }
+        }, "Zerobus-PersistConfig");
+        t.setDaemon(true);
+        t.start();
+        // Persistence should be quick; bound the wait so we don't wedge gateway web threads.
+        t.join(5_000L);
+        if (t.isAlive()) {
+            t.interrupt();
+            throw new RuntimeException("Configuration save failed: timed out persisting settings");
+        }
+        if (holder[0] != null) {
+            throw holder[0];
         }
     }
 

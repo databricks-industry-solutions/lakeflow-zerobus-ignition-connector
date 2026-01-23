@@ -682,6 +682,13 @@ public class TagSubscriptionService {
 
             StoreAndForwardBuffer.DrainResult drained = buffer.drain(config.getBatchSize());
             if (drained.events == null || drained.events.isEmpty()) {
+                // If we read records but couldn't parse any, the spool contains corrupt bytes.
+                // Commit the cursor to skip them; otherwise we'd get stuck forever with "failed reading from spool".
+                if (drained.recordsRead > 0 && buffer.isDiskBacked() && drained.nextOffset >= 0) {
+                    logger.warn("All {} record(s) read from spool were corrupt; advancing spool cursor to recover.", drained.recordsRead);
+                    buffer.commit(drained);
+                    lastFlushTime = System.currentTimeMillis();
+                }
                 return;
             }
 
