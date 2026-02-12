@@ -220,6 +220,14 @@ public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements Z
     }
 
     @Override
+    public Object getCompressionMetrics() {
+        if (tagSubscriptionService == null) {
+            return null;
+        }
+        return tagSubscriptionService.getCompressionMetricsSnapshot();
+    }
+
+    @Override
     public void saveConfiguration(ConfigModel newConfig) {
         logger.info("Saving configuration to persistent storage (8.3)...");
         try {

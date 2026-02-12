@@ -47,6 +47,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public class TagSubscriptionService {
     
     private static final Logger logger = LoggerFactory.getLogger(TagSubscriptionService.class);
+    private static final int COMPRESSION_WINDOW_MINUTES = 15;
+    private static final int COMPRESSION_TAG_STATS_MAX = 5000;
     
     private final GatewayContext gatewayContext;
     private final ConfigModel config;
@@ -74,6 +76,12 @@ public class TagSubscriptionService {
     private final AtomicLong totalEventsFilteredSdt = new AtomicLong(0);
     private final AtomicLong totalEventsForcedBySdtMaxInterval = new AtomicLong(0);
     private final AtomicLong totalSdtOutOfOrderResets = new AtomicLong(0);
+
+    // Rolling window metrics for visual diagnostics (last N minutes)
+    private final RollingCompressionMetrics rolling = new RollingCompressionMetrics(COMPRESSION_WINDOW_MINUTES);
+
+    // Per-tag stats (bounded) to highlight which signals get compressed
+    private final ConcurrentHashMap<String, TagCompressionStats> perTagCompression = new ConcurrentHashMap<>();
     
     // Rate limiting
     private volatile long lastFlushTime = 0;
@@ -720,11 +728,14 @@ public class TagSubscriptionService {
         }
 
         String tagPathStr = te.getTagPath() != null ? te.getTagPath() : "";
+        long nowMs = (te.getTimestamp() != null) ? te.getTimestamp().getTime() : System.currentTimeMillis();
+        rolling.recordIncoming(nowMs);
 
         // When store-and-forward is enabled and we're paused, reject new events rather than drop later.
         buffer.refreshBackpressure();
         if (buffer.isDiskBacked() && buffer.isPaused()) {
             totalEventsDropped.incrementAndGet();
+            rolling.recordDropped(nowMs);
             return false;
         }
 
@@ -742,6 +753,8 @@ public class TagSubscriptionService {
                 Object last = lastEmittedValueByTag.get(tagPathStr);
                 if (!hasMeaningfulChange(last, value, policy.deadband)) {
                     totalEventsFilteredDeadband.incrementAndGet();
+                    rolling.recordFilteredDeadband(nowMs);
+                    recordPerTag(tagPathStr, mode, false, true, false, false);
                     if (config.isDebugLogging()) {
                         logger.debug("Skipped tag event (deadband) ({}) -> {}", source, tagPathStr);
                     }
@@ -753,10 +766,13 @@ public class TagSubscriptionService {
                 SdtCompressor.Outcome out = state.offer(te, policy.sdtDeviation, policy.sdtMaxIntervalMs);
                 if (out == null || out.emit == null) {
                     totalEventsFilteredSdt.incrementAndGet();
+                    rolling.recordFilteredSdt(nowMs);
+                    recordPerTag(tagPathStr, mode, false, false, true, false);
                     return true;
                 }
                 if (out.forcedByMaxInterval) {
                     totalEventsForcedBySdtMaxInterval.incrementAndGet();
+                    rolling.recordForcedByMaxInterval(nowMs);
                 }
                 if (out.resetDueToOutOfOrder) {
                     totalSdtOutOfOrderResets.incrementAndGet();
@@ -771,6 +787,8 @@ public class TagSubscriptionService {
             Object last = lastEmittedValueByTag.get(tagPathStr);
             if (Objects.equals(last, value)) {
                 totalEventsFilteredDeadband.incrementAndGet();
+                rolling.recordFilteredDeadband(nowMs);
+                recordPerTag(tagPathStr, mode, false, true, false, false);
                 return true;
             }
             toEmit = te;
@@ -783,11 +801,14 @@ public class TagSubscriptionService {
                 lastEmittedValueByTag.put(tagPathStr, toEmit.getValue());
             }
             totalEventsReceived.incrementAndGet();
+            rolling.recordEmitted(nowMs);
+            recordPerTag(tagPathStr, mode, true, false, false, false);
             if (config.isDebugLogging()) {
                 logger.debug("Accepted tag event ({}) -> {}", source, toEmit.getTagPath());
             }
         } else {
             totalEventsDropped.incrementAndGet();
+            rolling.recordDropped(nowMs);
             logger.warn("Buffer full, dropped event ({}) -> {}", source, toEmit.getTagPath());
         }
         return ok;
@@ -848,8 +869,56 @@ public class TagSubscriptionService {
         } else {
             sb.append("Last Flush: Never\n");
         }
+
+        // Visual compression diagnostics (rolling window)
+        sb.append("\n=== Compression (last ").append(COMPRESSION_WINDOW_MINUTES).append(" minutes) ===\n");
+        RollingCompressionMetrics.Snapshot snap = rolling.snapshot();
+        sb.append("Incoming/min: ").append(sparkline(snap.incomingPerMin)).append("\n");
+        sb.append("Emitted/min : ").append(sparkline(snap.emittedPerMin)).append("\n");
+        sb.append("Filtered DB : ").append(sparkline(snap.filteredDeadbandPerMin)).append("\n");
+        sb.append("Filtered SDT: ").append(sparkline(snap.filteredSdtPerMin)).append("\n");
+        sb.append("Forced (SDT maxInterval): ").append(sparkline(snap.forcedByMaxIntervalPerMin)).append("\n");
+
+        long incomingTotal = snap.sum(snap.incomingPerMin);
+        long emittedTotal = snap.sum(snap.emittedPerMin);
+        long filteredTotal = snap.sum(snap.filteredDeadbandPerMin) + snap.sum(snap.filteredSdtPerMin);
+        sb.append("Window totals: incoming=").append(incomingTotal)
+                .append(", emitted=").append(emittedTotal)
+                .append(", filtered=").append(filteredTotal)
+                .append("\n");
+        if (incomingTotal > 0) {
+            double ratio = (double) emittedTotal / (double) incomingTotal;
+            sb.append("Window reduction: ").append(String.format(java.util.Locale.US, "%.1f%%", (1.0 - ratio) * 100.0))
+                    .append(" (emitted ").append(String.format(java.util.Locale.US, "%.1f%%", ratio * 100.0)).append(")\n");
+        }
+
+        sb.append(renderTopCompressedTags(10));
         
         return sb.toString();
+    }
+
+    /**
+     * Snapshot of rolling compression diagnostics for HTTP/JSON consumption.
+     */
+    public CompressionMetricsSnapshot getCompressionMetricsSnapshot() {
+        RollingCompressionMetrics.Snapshot snap = rolling.snapshot();
+        CompressionMetricsSnapshot out = new CompressionMetricsSnapshot();
+        out.windowMinutes = COMPRESSION_WINDOW_MINUTES;
+        out.modeEffective = String.valueOf(config.getNumericCompressionModeEffective());
+        out.incomingPerMin = snap.incomingPerMin;
+        out.emittedPerMin = snap.emittedPerMin;
+        out.filteredDeadbandPerMin = snap.filteredDeadbandPerMin;
+        out.filteredSdtPerMin = snap.filteredSdtPerMin;
+        out.forcedByMaxIntervalPerMin = snap.forcedByMaxIntervalPerMin;
+        out.droppedPerMin = snap.droppedPerMin;
+        out.incomingTotal = snap.sum(snap.incomingPerMin);
+        out.emittedTotal = snap.sum(snap.emittedPerMin);
+        out.filteredDeadbandTotal = snap.sum(snap.filteredDeadbandPerMin);
+        out.filteredSdtTotal = snap.sum(snap.filteredSdtPerMin);
+        out.forcedByMaxIntervalTotal = snap.sum(snap.forcedByMaxIntervalPerMin);
+        out.droppedTotal = snap.sum(snap.droppedPerMin);
+        out.topTags = buildTopCompressedTags(10);
+        return out;
     }
     
     /**
@@ -877,6 +946,253 @@ public class TagSubscriptionService {
         } catch (Exception e) {
             logger.error("Error ingesting event from Event Streams", e);
             return false;
+        }
+    }
+
+    private void recordPerTag(String tagPath, ConfigModel.NumericCompressionMode mode, boolean emitted, boolean filteredDeadband, boolean filteredSdt, boolean forcedMaxInterval) {
+        if (tagPath == null || tagPath.isBlank()) {
+            return;
+        }
+        // Only track when compression is active; otherwise it's a lot of noise.
+        if (mode == null || mode == ConfigModel.NumericCompressionMode.NONE) {
+            return;
+        }
+        TagCompressionStats s = perTagCompression.get(tagPath);
+        if (s == null) {
+            if (perTagCompression.size() >= COMPRESSION_TAG_STATS_MAX) {
+                return;
+            }
+            TagCompressionStats created = new TagCompressionStats();
+            TagCompressionStats existing = perTagCompression.putIfAbsent(tagPath, created);
+            s = existing != null ? existing : created;
+        }
+        if (emitted) s.emitted.incrementAndGet();
+        if (filteredDeadband) s.filteredDeadband.incrementAndGet();
+        if (filteredSdt) s.filteredSdt.incrementAndGet();
+        if (forcedMaxInterval) s.forcedByMaxInterval.incrementAndGet();
+    }
+
+    private String renderTopCompressedTags(int limit) {
+        List<TagCompressionSummary> top = buildTopCompressedTags(limit);
+        if (top.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("\nTop tags by filtered volume (best-effort; cap ").append(COMPRESSION_TAG_STATS_MAX).append(")\n");
+        for (TagCompressionSummary t : top) {
+            sb.append("- ").append(t.tagPath)
+              .append(" | emitted=").append(t.emitted)
+              .append(" filtered=").append(t.filteredTotal)
+              .append(" forced=").append(t.forcedByMaxInterval)
+              .append(" (filtered=").append(String.format(java.util.Locale.US, "%.1f%%", t.filteredPct * 100.0)).append(")\n");
+        }
+        return sb.toString();
+    }
+
+    private List<TagCompressionSummary> buildTopCompressedTags(int limit) {
+        if (limit <= 0) {
+            return java.util.Collections.emptyList();
+        }
+        List<TagCompressionSummary> out = new ArrayList<>();
+        for (Map.Entry<String, TagCompressionStats> e : perTagCompression.entrySet()) {
+            String tag = e.getKey();
+            TagCompressionStats s = e.getValue();
+            if (s == null) continue;
+            long emitted = s.emitted.get();
+            long filteredDb = s.filteredDeadband.get();
+            long filteredSdt = s.filteredSdt.get();
+            long forced = s.forcedByMaxInterval.get();
+            long filtered = filteredDb + filteredSdt;
+            long incoming = emitted + filtered;
+            if (incoming <= 0) continue;
+            double filteredPct = (double) filtered / (double) incoming;
+            out.add(new TagCompressionSummary(tag, emitted, filteredDb, filteredSdt, forced, filteredPct));
+        }
+        out.sort((a, b) -> {
+            int c = Long.compare(b.filteredTotal, a.filteredTotal);
+            if (c != 0) return c;
+            return Double.compare(b.filteredPct, a.filteredPct);
+        });
+        if (out.size() > limit) {
+            return out.subList(0, limit);
+        }
+        return out;
+    }
+
+    private static String sparkline(long[] values) {
+        if (values == null || values.length == 0) {
+            return "";
+        }
+        long max = 0;
+        for (long v : values) {
+            if (v > max) max = v;
+        }
+        final char[] blocks = new char[] {'▁','▂','▃','▄','▅','▆','▇','█'};
+        StringBuilder sb = new StringBuilder(values.length);
+        for (long v : values) {
+            int idx = 0;
+            if (max > 0) {
+                idx = (int) Math.round(((double) v / (double) max) * (blocks.length - 1));
+                if (idx < 0) idx = 0;
+                if (idx >= blocks.length) idx = blocks.length - 1;
+            }
+            sb.append(blocks[idx]);
+        }
+        sb.append("  max=").append(max);
+        return sb.toString();
+    }
+
+    private static final class TagCompressionStats {
+        final AtomicLong emitted = new AtomicLong(0);
+        final AtomicLong filteredDeadband = new AtomicLong(0);
+        final AtomicLong filteredSdt = new AtomicLong(0);
+        final AtomicLong forcedByMaxInterval = new AtomicLong(0);
+    }
+
+    public static final class TagCompressionSummary {
+        public final String tagPath;
+        public final long emitted;
+        public final long filteredDeadband;
+        public final long filteredSdt;
+        public final long filteredTotal;
+        public final long forcedByMaxInterval;
+        public final double filteredPct;
+
+        TagCompressionSummary(String tagPath, long emitted, long filteredDeadband, long filteredSdt, long forcedByMaxInterval, double filteredPct) {
+            this.tagPath = tagPath;
+            this.emitted = emitted;
+            this.filteredDeadband = filteredDeadband;
+            this.filteredSdt = filteredSdt;
+            this.filteredTotal = filteredDeadband + filteredSdt;
+            this.forcedByMaxInterval = forcedByMaxInterval;
+            this.filteredPct = filteredPct;
+        }
+    }
+
+    public static final class CompressionMetricsSnapshot {
+        public int windowMinutes;
+        public String modeEffective;
+
+        public long[] incomingPerMin;
+        public long[] emittedPerMin;
+        public long[] filteredDeadbandPerMin;
+        public long[] filteredSdtPerMin;
+        public long[] forcedByMaxIntervalPerMin;
+        public long[] droppedPerMin;
+
+        public long incomingTotal;
+        public long emittedTotal;
+        public long filteredDeadbandTotal;
+        public long filteredSdtTotal;
+        public long forcedByMaxIntervalTotal;
+        public long droppedTotal;
+
+        public List<TagCompressionSummary> topTags;
+    }
+
+    private static final class RollingCompressionMetrics {
+        private final int windowMinutes;
+        private final long[] minuteKeys; // epoch minute for each slot
+        private final long[] incoming;
+        private final long[] emitted;
+        private final long[] filteredDeadband;
+        private final long[] filteredSdt;
+        private final long[] forcedByMaxInterval;
+        private final long[] dropped;
+
+        RollingCompressionMetrics(int windowMinutes) {
+            this.windowMinutes = Math.max(1, windowMinutes);
+            this.minuteKeys = new long[this.windowMinutes];
+            this.incoming = new long[this.windowMinutes];
+            this.emitted = new long[this.windowMinutes];
+            this.filteredDeadband = new long[this.windowMinutes];
+            this.filteredSdt = new long[this.windowMinutes];
+            this.forcedByMaxInterval = new long[this.windowMinutes];
+            this.dropped = new long[this.windowMinutes];
+        }
+
+        void recordIncoming(long nowMs) { add(nowMs, incoming, 1); }
+        void recordEmitted(long nowMs) { add(nowMs, emitted, 1); }
+        void recordFilteredDeadband(long nowMs) { add(nowMs, filteredDeadband, 1); }
+        void recordFilteredSdt(long nowMs) { add(nowMs, filteredSdt, 1); }
+        void recordForcedByMaxInterval(long nowMs) { add(nowMs, forcedByMaxInterval, 1); }
+        void recordDropped(long nowMs) { add(nowMs, dropped, 1); }
+
+        private synchronized void add(long nowMs, long[] arr, long delta) {
+            long minute = nowMs / 60000L;
+            int idx = (int) (minute % windowMinutes);
+            if (minuteKeys[idx] != minute) {
+                // slot rollover
+                minuteKeys[idx] = minute;
+                incoming[idx] = 0;
+                emitted[idx] = 0;
+                filteredDeadband[idx] = 0;
+                filteredSdt[idx] = 0;
+                forcedByMaxInterval[idx] = 0;
+                dropped[idx] = 0;
+            }
+            arr[idx] += delta;
+        }
+
+        Snapshot snapshot() {
+            return snapshotAt(System.currentTimeMillis());
+        }
+
+        synchronized Snapshot snapshotAt(long nowMs) {
+            long nowMin = nowMs / 60000L;
+            long[] in = new long[windowMinutes];
+            long[] em = new long[windowMinutes];
+            long[] fd = new long[windowMinutes];
+            long[] fs = new long[windowMinutes];
+            long[] fm = new long[windowMinutes];
+            long[] dr = new long[windowMinutes];
+
+            // Return ordered oldest -> newest
+            for (int i = 0; i < windowMinutes; i++) {
+                long minute = nowMin - (windowMinutes - 1 - i);
+                int idx = (int) (minute % windowMinutes);
+                if (minuteKeys[idx] == minute) {
+                    in[i] = incoming[idx];
+                    em[i] = emitted[idx];
+                    fd[i] = filteredDeadband[idx];
+                    fs[i] = filteredSdt[idx];
+                    fm[i] = forcedByMaxInterval[idx];
+                    dr[i] = dropped[idx];
+                } else {
+                    in[i] = 0;
+                    em[i] = 0;
+                    fd[i] = 0;
+                    fs[i] = 0;
+                    fm[i] = 0;
+                    dr[i] = 0;
+                }
+            }
+            return new Snapshot(in, em, fd, fs, fm, dr);
+        }
+
+        static final class Snapshot {
+            final long[] incomingPerMin;
+            final long[] emittedPerMin;
+            final long[] filteredDeadbandPerMin;
+            final long[] filteredSdtPerMin;
+            final long[] forcedByMaxIntervalPerMin;
+            final long[] droppedPerMin;
+
+            Snapshot(long[] incomingPerMin, long[] emittedPerMin, long[] filteredDeadbandPerMin, long[] filteredSdtPerMin, long[] forcedByMaxIntervalPerMin, long[] droppedPerMin) {
+                this.incomingPerMin = incomingPerMin;
+                this.emittedPerMin = emittedPerMin;
+                this.filteredDeadbandPerMin = filteredDeadbandPerMin;
+                this.filteredSdtPerMin = filteredSdtPerMin;
+                this.forcedByMaxIntervalPerMin = forcedByMaxIntervalPerMin;
+                this.droppedPerMin = droppedPerMin;
+            }
+
+            long sum(long[] v) {
+                long s = 0;
+                if (v == null) return 0;
+                for (long x : v) s += x;
+                return s;
+            }
         }
     }
     

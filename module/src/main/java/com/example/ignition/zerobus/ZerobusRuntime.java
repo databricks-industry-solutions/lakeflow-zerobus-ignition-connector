@@ -12,6 +12,14 @@ public interface ZerobusRuntime {
 
     String getDiagnosticsInfo();
 
+    /**
+     * Optional structured metrics for diagnostics visualization.
+     * Default returns null for backward compatibility.
+     */
+    default Object getCompressionMetrics() {
+        return null;
+    }
+
     void saveConfiguration(ConfigModel newConfig);
 
     boolean testConnection();
