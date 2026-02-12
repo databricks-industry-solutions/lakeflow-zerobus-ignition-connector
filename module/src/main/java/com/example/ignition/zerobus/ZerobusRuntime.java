@@ -20,6 +20,14 @@ public interface ZerobusRuntime {
         return null;
     }
 
+    /**
+     * Optional SDT validation report (raw vs pivot interpolation error).
+     * Default returns null for backward compatibility.
+     */
+    default Object getSdtValidationReport() {
+        return null;
+    }
+
     void saveConfiguration(ConfigModel newConfig);
 
     boolean testConnection();

@@ -42,7 +42,7 @@ final class SdtCompressor {
 
         private long lastEmitTimeMs;
 
-        synchronized Outcome offer(TagEvent current, double deviation, long maxIntervalMs) {
+        synchronized Outcome offer(TagEvent current, double deviation, long maxIntervalMs, long minIntervalMs) {
             if (current == null || !(current.getValue() instanceof Number)) {
                 return new Outcome(null, false, false);
             }
@@ -75,6 +75,15 @@ final class SdtCompressor {
                 upperSlope = Double.POSITIVE_INFINITY;
                 lastEmitTimeMs = t;
                 return new Outcome(current, false, true);
+            }
+
+            // Min-interval suppression (CompMin): don't emit anything too soon after the last emit.
+            // Still track the latest value/time so the next evaluation uses a recent "previous" point.
+            if (minIntervalMs > 0 && (t - lastEmitTimeMs) < minIntervalMs) {
+                prevTimeMs = t;
+                prevValue = v;
+                prevQuality = q;
+                return new Outcome(null, false, false);
             }
 
             // Max-interval forcing: emit current and reset door.

@@ -787,6 +787,11 @@
                                 <input type="number" class="form-control" id="numericSdtMaxIntervalMs" name="numericSdtMaxIntervalMs" value="0" min="0" step="1000">
                                 <small class="form-help">Force-emit interval (0 disables). Example: 600000 = 10 minutes.</small>
                             </div>
+                            <div class="form-group" id="sdtMinIntervalGroup" style="display:none;">
+                                <label for="numericSdtMinIntervalMs">SDT Min Interval (ms)</label>
+                                <input type="number" class="form-control" id="numericSdtMinIntervalMs" name="numericSdtMinIntervalMs" value="0" min="0" step="1000">
+                                <small class="form-help">Minimum time between emitted points (0 disables). Example: 1000 = 1 second.</small>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1120,6 +1125,7 @@
             document.getElementById('numericCompressionMode').value = ((config.numericCompressionMode || '') + '').toUpperCase();
             document.getElementById('numericSdtDeviation').value = (config.numericSdtDeviation !== undefined && config.numericSdtDeviation !== null) ? config.numericSdtDeviation : 0.0;
             document.getElementById('numericSdtMaxIntervalMs').value = (config.numericSdtMaxIntervalMs !== undefined && config.numericSdtMaxIntervalMs !== null) ? config.numericSdtMaxIntervalMs : 0;
+            document.getElementById('numericSdtMinIntervalMs').value = (config.numericSdtMinIntervalMs !== undefined && config.numericSdtMinIntervalMs !== null) ? config.numericSdtMinIntervalMs : 0;
             updateCompressionUI();
         }
 
@@ -1128,8 +1134,10 @@
             const showSdt = mode === 'SDT';
             const dev = document.getElementById('sdtDeviationGroup');
             const maxI = document.getElementById('sdtMaxIntervalGroup');
+            const minI = document.getElementById('sdtMinIntervalGroup');
             if (dev) dev.style.display = showSdt ? '' : 'none';
             if (maxI) maxI.style.display = showSdt ? '' : 'none';
+            if (minI) minI.style.display = showSdt ? '' : 'none';
         }
 
         function getFormData() {
@@ -1168,7 +1176,8 @@
                 numericDeadband: parseFloat(document.getElementById('numericDeadband').value),
                 numericCompressionMode: mode ? mode : null,
                 numericSdtDeviation: parseFloat(document.getElementById('numericSdtDeviation')?.value || '0'),
-                numericSdtMaxIntervalMs: parseInt(document.getElementById('numericSdtMaxIntervalMs')?.value || '0')
+                numericSdtMaxIntervalMs: parseInt(document.getElementById('numericSdtMaxIntervalMs')?.value || '0'),
+                numericSdtMinIntervalMs: parseInt(document.getElementById('numericSdtMinIntervalMs')?.value || '0')
             };
         }
 

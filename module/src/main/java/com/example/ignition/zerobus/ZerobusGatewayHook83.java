@@ -228,6 +228,14 @@ public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements Z
     }
 
     @Override
+    public Object getSdtValidationReport() {
+        if (tagSubscriptionService == null) {
+            return null;
+        }
+        return tagSubscriptionService.getSdtValidationReport(50, 200);
+    }
+
+    @Override
     public void saveConfiguration(ConfigModel newConfig) {
         logger.info("Saving configuration to persistent storage (8.3)...");
         try {

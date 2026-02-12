@@ -75,6 +75,7 @@ public class ZerobusSettings83 extends PersistentRecord {
     public static final StringField NumericCompressionMode = new StringField(META, "NumericCompressionMode");
     public static final DoubleField NumericSdtDeviation = new DoubleField(META, "NumericSdtDeviation");
     public static final LongField NumericSdtMaxIntervalMs = new LongField(META, "NumericSdtMaxIntervalMs");
+    public static final LongField NumericSdtMinIntervalMs = new LongField(META, "NumericSdtMinIntervalMs");
 
     static {
         // Defaults aligned with ConfigModel defaults
@@ -111,6 +112,7 @@ public class ZerobusSettings83 extends PersistentRecord {
         NumericCompressionMode.setDefault("");
         NumericSdtDeviation.setDefault(0.0);
         NumericSdtMaxIntervalMs.setDefault(0L);
+        NumericSdtMinIntervalMs.setDefault(0L);
     }
 
     @Override
@@ -170,6 +172,7 @@ public class ZerobusSettings83 extends PersistentRecord {
         }
         config.setNumericSdtDeviation(getDouble(NumericSdtDeviation));
         config.setNumericSdtMaxIntervalMs(getLong(NumericSdtMaxIntervalMs));
+        config.setNumericSdtMinIntervalMs(getLong(NumericSdtMinIntervalMs));
         return config;
     }
 
@@ -209,6 +212,7 @@ public class ZerobusSettings83 extends PersistentRecord {
         setString(NumericCompressionMode, config.getNumericCompressionMode() != null ? config.getNumericCompressionMode().name() : "");
         setDouble(NumericSdtDeviation, config.getNumericSdtDeviation());
         setLong(NumericSdtMaxIntervalMs, config.getNumericSdtMaxIntervalMs());
+        setLong(NumericSdtMinIntervalMs, config.getNumericSdtMinIntervalMs());
     }
 }
 

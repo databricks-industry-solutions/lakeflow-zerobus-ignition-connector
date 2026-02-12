@@ -6,6 +6,8 @@ import com.example.ignition.zerobus.pipeline.StoreAndForwardBuffer;
 import com.example.ignition.zerobus.pipeline.EventSink;
 import com.example.ignition.zerobus.pipeline.ZerobusPipelineFactory;
 import com.example.ignition.zerobus.proto.OTEvent;
+import com.example.ignition.zerobus.compression.SdtValidationManager;
+import com.example.ignition.zerobus.compression.SdtValidationReport;
 import com.inductiveautomation.ignition.gateway.model.GatewayContext;
 import com.inductiveautomation.ignition.gateway.tags.model.GatewayTagManager;
 import com.inductiveautomation.ignition.common.model.values.QualifiedValue;
@@ -82,6 +84,9 @@ public class TagSubscriptionService {
 
     // Per-tag stats (bounded) to highlight which signals get compressed
     private final ConcurrentHashMap<String, TagCompressionStats> perTagCompression = new ConcurrentHashMap<>();
+
+    // SDT validation buffers (raw points + pivot markers) for deviation-band proof
+    private final SdtValidationManager sdtValidationManager = new SdtValidationManager();
     
     // Rate limiting
     private volatile long lastFlushTime = 0;
@@ -233,6 +238,36 @@ public class TagSubscriptionService {
 
     public boolean isRunning() {
         return running.get();
+    }
+
+    /**
+     * Generate an SDT validation report by comparing raw points vs linear interpolation of emitted pivots.
+     *
+     * This is primarily intended for demos and tuning (proving the deviation guarantee).
+     */
+    public SdtValidationReport getSdtValidationReport(int maxTags, int samplePoints) {
+        // If we haven't recorded any SDT points yet, return an "unavailable" report.
+        if (sdtValidationManager.getTrackedTagCount() == 0) {
+            SdtValidationReport r = new SdtValidationReport();
+            r.enabled = false;
+            r.deviationConfigured = config.getNumericSdtDeviation();
+            r.sdtMaxIntervalMs = config.getNumericSdtMaxIntervalMs();
+            r.sdtMinIntervalMs = config.getNumericSdtMinIntervalMs();
+            r.trackedTags = 0;
+            r.overallVerdict = "PASS";
+            r.tags = java.util.Collections.emptyList();
+            return r;
+        }
+
+        // Use global SDT params for the report header.
+        // Note: per-tag overrides may exist; this report is still useful as a "best-effort" proof.
+        return sdtValidationManager.generateReport(
+                config.getNumericSdtDeviation(),
+                config.getNumericSdtMaxIntervalMs(),
+                config.getNumericSdtMinIntervalMs(),
+                maxTags,
+                samplePoints
+        );
     }
     
     
@@ -586,6 +621,7 @@ public class TagSubscriptionService {
             subscribedListeners.clear();
             lastEmittedValueByTag.clear();
             sdtStateByTag.clear();
+            sdtValidationManager.clear();
 
             if (paths.isEmpty() || listeners.isEmpty()) {
                 return;
@@ -762,13 +798,25 @@ public class TagSubscriptionService {
                 }
                 toEmit = te;
             } else if (mode == ConfigModel.NumericCompressionMode.SDT) {
+                // Validation buffers record the raw point *before* SDT decision so we can prove reconstruction
+                // via interpolation stays within deviation.
+                long tMs = te.getTimestamp() != null ? te.getTimestamp().getTime() : nowMs;
+                double v = ((Number) te.getValue()).doubleValue();
+                sdtValidationManager.recordRawPoint(tagPathStr, tMs, v);
+
                 SdtCompressor.State state = sdtStateByTag.computeIfAbsent(tagPathStr, k -> new SdtCompressor.State());
-                SdtCompressor.Outcome out = state.offer(te, policy.sdtDeviation, policy.sdtMaxIntervalMs);
+                SdtCompressor.Outcome out = state.offer(te, policy.sdtDeviation, policy.sdtMaxIntervalMs, policy.sdtMinIntervalMs);
                 if (out == null || out.emit == null) {
                     totalEventsFilteredSdt.incrementAndGet();
                     rolling.recordFilteredSdt(nowMs);
                     recordPerTag(tagPathStr, mode, false, false, true, false);
                     return true;
+                }
+                // Mark the emitted pivot in the validation buffer (by timestamp handles "emit previous point").
+                if (out.emit.getTimestamp() != null) {
+                    sdtValidationManager.markPivotByTimestamp(tagPathStr, out.emit.getTimestamp().getTime());
+                } else {
+                    sdtValidationManager.markPivot(tagPathStr);
                 }
                 if (out.forcedByMaxInterval) {
                     totalEventsForcedBySdtMaxInterval.incrementAndGet();

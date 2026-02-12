@@ -174,6 +174,14 @@ public class ConfigModel implements Serializable {
     private long numericSdtMaxIntervalMs = 0L;
 
     /**
+     * SDT minimum interval between emitted points (ms). Used when mode = SDT.
+     * 0 disables min-interval suppression.
+     *
+     * This is analogous to PI "CompMin": suppress points that arrive too soon after the last emitted point.
+     */
+    private long numericSdtMinIntervalMs = 0L;
+
+    /**
      * Optional per-tag deadband rules (applies only to numeric values).
      * The first matching rule wins; if none match, {@link #numericDeadband} is used.
      *
@@ -483,6 +491,14 @@ public class ConfigModel implements Serializable {
         this.numericSdtMaxIntervalMs = numericSdtMaxIntervalMs;
     }
 
+    public long getNumericSdtMinIntervalMs() {
+        return numericSdtMinIntervalMs;
+    }
+
+    public void setNumericSdtMinIntervalMs(long numericSdtMinIntervalMs) {
+        this.numericSdtMinIntervalMs = numericSdtMinIntervalMs;
+    }
+
     public List<NumericCompressionRule> getNumericCompressionRules() {
         return numericCompressionRules;
     }
@@ -500,7 +516,13 @@ public class ConfigModel implements Serializable {
 
         // Start with global defaults.
         NumericCompressionMode mode = getNumericCompressionModeEffective();
-        NumericCompressionPolicy base = new NumericCompressionPolicy(mode, numericDeadband, numericSdtDeviation, numericSdtMaxIntervalMs);
+        NumericCompressionPolicy base = new NumericCompressionPolicy(
+                mode,
+                numericDeadband,
+                numericSdtDeviation,
+                numericSdtMaxIntervalMs,
+                numericSdtMinIntervalMs
+        );
 
         // New rules (preferred).
         if (numericCompressionRules != null) {
@@ -514,7 +536,13 @@ public class ConfigModel implements Serializable {
         // Backward-compatible per-tag deadband rules (only meaningful when using deadband mode).
         if (base.mode == NumericCompressionMode.DEADBAND) {
             double db = getNumericDeadbandForTag(tp);
-            return new NumericCompressionPolicy(NumericCompressionMode.DEADBAND, db, base.sdtDeviation, base.sdtMaxIntervalMs);
+            return new NumericCompressionPolicy(
+                    NumericCompressionMode.DEADBAND,
+                    db,
+                    base.sdtDeviation,
+                    base.sdtMaxIntervalMs,
+                    base.sdtMinIntervalMs
+            );
         }
 
         return base;
@@ -698,6 +726,12 @@ public class ConfigModel implements Serializable {
             if (numericSdtMaxIntervalMs < 0L) {
                 errors.add("numericSdtMaxIntervalMs must be >= 0");
             }
+            if (numericSdtMinIntervalMs < 0L) {
+                errors.add("numericSdtMinIntervalMs must be >= 0");
+            }
+            if (numericSdtMaxIntervalMs > 0L && numericSdtMinIntervalMs > numericSdtMaxIntervalMs) {
+                errors.add("numericSdtMinIntervalMs must be <= numericSdtMaxIntervalMs when maxInterval is enabled");
+            }
         }
 
         // Per-tag numeric compression rules validation.
@@ -722,6 +756,12 @@ public class ConfigModel implements Serializable {
                     }
                     if (r.sdtMaxIntervalMs < 0L) {
                         errors.add("numericCompressionRules[" + i + "].sdtMaxIntervalMs must be >= 0");
+                    }
+                    if (r.sdtMinIntervalMs < 0L) {
+                        errors.add("numericCompressionRules[" + i + "].sdtMinIntervalMs must be >= 0");
+                    }
+                    if (r.sdtMaxIntervalMs > 0L && r.sdtMinIntervalMs > r.sdtMaxIntervalMs) {
+                        errors.add("numericCompressionRules[" + i + "].sdtMinIntervalMs must be <= sdtMaxIntervalMs when maxInterval is enabled");
                     }
                 }
                 try {
@@ -838,6 +878,7 @@ public class ConfigModel implements Serializable {
             || Double.compare(this.numericDeadband, newConfig.numericDeadband) != 0
             || Double.compare(this.numericSdtDeviation, newConfig.numericSdtDeviation) != 0
             || this.numericSdtMaxIntervalMs != newConfig.numericSdtMaxIntervalMs
+            || this.numericSdtMinIntervalMs != newConfig.numericSdtMinIntervalMs
             || !Objects.equals(this.numericDeadbandRules, newConfig.numericDeadbandRules)
             || !Objects.equals(this.numericCompressionRules, newConfig.numericCompressionRules)
             || this.enabled != newConfig.enabled
@@ -881,6 +922,7 @@ public class ConfigModel implements Serializable {
         this.numericDeadband = other.numericDeadband;
         this.numericSdtDeviation = other.numericSdtDeviation;
         this.numericSdtMaxIntervalMs = other.numericSdtMaxIntervalMs;
+        this.numericSdtMinIntervalMs = other.numericSdtMinIntervalMs;
         this.numericDeadbandRules = (other.numericDeadbandRules == null) ? new ArrayList<>() : new ArrayList<>(other.numericDeadbandRules);
         this.numericCompressionRules = (other.numericCompressionRules == null) ? new ArrayList<>() : new ArrayList<>(other.numericCompressionRules);
         this.enabled = other.enabled;
@@ -905,12 +947,20 @@ public class ConfigModel implements Serializable {
         public final double deadband;
         public final double sdtDeviation;
         public final long sdtMaxIntervalMs;
+        public final long sdtMinIntervalMs;
 
-        public NumericCompressionPolicy(NumericCompressionMode mode, double deadband, double sdtDeviation, long sdtMaxIntervalMs) {
+        public NumericCompressionPolicy(
+                NumericCompressionMode mode,
+                double deadband,
+                double sdtDeviation,
+                long sdtMaxIntervalMs,
+                long sdtMinIntervalMs
+        ) {
             this.mode = (mode == null) ? NumericCompressionMode.NONE : mode;
             this.deadband = deadband;
             this.sdtDeviation = sdtDeviation;
             this.sdtMaxIntervalMs = sdtMaxIntervalMs;
+            this.sdtMinIntervalMs = sdtMinIntervalMs;
         }
 
         @Override
@@ -920,6 +970,7 @@ public class ConfigModel implements Serializable {
                     ", deadband=" + deadband +
                     ", sdtDeviation=" + sdtDeviation +
                     ", sdtMaxIntervalMs=" + sdtMaxIntervalMs +
+                    ", sdtMinIntervalMs=" + sdtMinIntervalMs +
                     '}';
         }
     }
@@ -938,6 +989,7 @@ public class ConfigModel implements Serializable {
         private double deadband = 0.0;
         private double sdtDeviation = 0.0;
         private long sdtMaxIntervalMs = 0L;
+        private long sdtMinIntervalMs = 0L;
 
         private transient Pattern compiled;
 
@@ -989,6 +1041,14 @@ public class ConfigModel implements Serializable {
             this.sdtMaxIntervalMs = sdtMaxIntervalMs;
         }
 
+        public long getSdtMinIntervalMs() {
+            return sdtMinIntervalMs;
+        }
+
+        public void setSdtMinIntervalMs(long sdtMinIntervalMs) {
+            this.sdtMinIntervalMs = sdtMinIntervalMs;
+        }
+
         boolean matches(String tagPath) {
             if (tagPathRegex == null || tagPathRegex.isBlank()) {
                 return false;
@@ -1011,7 +1071,8 @@ public class ConfigModel implements Serializable {
             double db = (m == NumericCompressionMode.DEADBAND) ? this.deadband : (fallback != null ? fallback.deadband : 0.0);
             double dev = (m == NumericCompressionMode.SDT) ? this.sdtDeviation : (fallback != null ? fallback.sdtDeviation : 0.0);
             long maxInt = (m == NumericCompressionMode.SDT) ? this.sdtMaxIntervalMs : (fallback != null ? fallback.sdtMaxIntervalMs : 0L);
-            return new NumericCompressionPolicy(m, db, dev, maxInt);
+            long minInt = (m == NumericCompressionMode.SDT) ? this.sdtMinIntervalMs : (fallback != null ? fallback.sdtMinIntervalMs : 0L);
+            return new NumericCompressionPolicy(m, db, dev, maxInt, minInt);
         }
 
         @Override
@@ -1022,6 +1083,7 @@ public class ConfigModel implements Serializable {
                     ", deadband=" + deadband +
                     ", sdtDeviation=" + sdtDeviation +
                     ", sdtMaxIntervalMs=" + sdtMaxIntervalMs +
+                    ", sdtMinIntervalMs=" + sdtMinIntervalMs +
                     '}';
         }
 
@@ -1033,13 +1095,14 @@ public class ConfigModel implements Serializable {
             return Double.compare(this.deadband, that.deadband) == 0
                     && Double.compare(this.sdtDeviation, that.sdtDeviation) == 0
                     && this.sdtMaxIntervalMs == that.sdtMaxIntervalMs
+                    && this.sdtMinIntervalMs == that.sdtMinIntervalMs
                     && Objects.equals(this.tagPathRegex, that.tagPathRegex)
                     && this.mode == that.mode;
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(tagPathRegex, mode, deadband, sdtDeviation, sdtMaxIntervalMs);
+            return Objects.hash(tagPathRegex, mode, deadband, sdtDeviation, sdtMaxIntervalMs, sdtMinIntervalMs);
         }
     }
 

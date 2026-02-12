@@ -603,6 +603,14 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements Zer
         }
         return tagSubscriptionService.getCompressionMetricsSnapshot();
     }
+
+    @Override
+    public Object getSdtValidationReport() {
+        if (tagSubscriptionService == null) {
+            return null;
+        }
+        return tagSubscriptionService.getSdtValidationReport(50, 200);
+    }
     
     /**
      * Ingest a single tag event from Event Streams.
