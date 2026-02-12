@@ -61,7 +61,7 @@ public class TagSubscriptionService {
     private volatile GatewayTagManager tagManager;
     private final Map<TagPath, TagChangeListener> subscribedListeners = new ConcurrentHashMap<>();
     private final Map<String, Object> lastEmittedValueByTag = new ConcurrentHashMap<>();
-    private final Map<String, SdtState> sdtStateByTag = new ConcurrentHashMap<>();
+    private final Map<String, SdtCompressor.State> sdtStateByTag = new ConcurrentHashMap<>();
     private volatile boolean autoPausedDirectSubscriptions = false;
     
     // Metrics
@@ -749,8 +749,8 @@ public class TagSubscriptionService {
                 }
                 toEmit = te;
             } else if (mode == ConfigModel.NumericCompressionMode.SDT) {
-                SdtState state = sdtStateByTag.computeIfAbsent(tagPathStr, k -> new SdtState());
-                SdtOutcome out = state.offer(te, policy.sdtDeviation, policy.sdtMaxIntervalMs);
+                SdtCompressor.State state = sdtStateByTag.computeIfAbsent(tagPathStr, k -> new SdtCompressor.State());
+                SdtCompressor.Outcome out = state.offer(te, policy.sdtDeviation, policy.sdtMaxIntervalMs);
                 if (out == null || out.emit == null) {
                     totalEventsFilteredSdt.incrementAndGet();
                     return true;
@@ -791,161 +791,6 @@ public class TagSubscriptionService {
             logger.warn("Buffer full, dropped event ({}) -> {}", source, toEmit.getTagPath());
         }
         return ok;
-    }
-
-    private static final class SdtOutcome {
-        final TagEvent emit; // null means "do not emit"
-        final boolean forcedByMaxInterval;
-        final boolean resetDueToOutOfOrder;
-
-        private SdtOutcome(TagEvent emit, boolean forcedByMaxInterval, boolean resetDueToOutOfOrder) {
-            this.emit = emit;
-            this.forcedByMaxInterval = forcedByMaxInterval;
-            this.resetDueToOutOfOrder = resetDueToOutOfOrder;
-        }
-
-        static SdtOutcome noEmit() {
-            return new SdtOutcome(null, false, false);
-        }
-
-        static SdtOutcome emit(TagEvent evt, boolean forcedByMaxInterval, boolean resetDueToOutOfOrder) {
-            return new SdtOutcome(evt, forcedByMaxInterval, resetDueToOutOfOrder);
-        }
-    }
-
-    /**
-     * PI-like Swinging Door Trending (SDT) compressor state for a single tag.
-     *
-     * Semantics:
-     * - Maintains a \"door\" (line segment) anchored at the last emitted point with an error band ±deviation.
-     * - When a new point would cause the door to \"close\" (slope bounds cross), emit the previous point
-     *   as the closing point, reset the door at that point, then continue.
-     * - If maxIntervalMs > 0, force an emit at least every maxIntervalMs.
-     */
-    private static final class SdtState {
-        private boolean initialized = false;
-
-        private long anchorTimeMs;
-        private double anchorValue;
-
-        private long prevTimeMs;
-        private double prevValue;
-        private String prevQuality;
-
-        private double lowerSlope;
-        private double upperSlope;
-
-        private long lastEmitTimeMs;
-
-        synchronized SdtOutcome offer(TagEvent current, double deviation, long maxIntervalMs) {
-            if (current == null || !(current.getValue() instanceof Number)) {
-                return SdtOutcome.noEmit();
-            }
-
-            long t = (current.getTimestamp() != null) ? current.getTimestamp().getTime() : System.currentTimeMillis();
-            double v = ((Number) current.getValue()).doubleValue();
-            String q = current.getQuality();
-
-            if (!initialized) {
-                // Emit first sample and initialize door state.
-                initialized = true;
-                anchorTimeMs = t;
-                anchorValue = v;
-                prevTimeMs = t;
-                prevValue = v;
-                prevQuality = q;
-                lowerSlope = Double.NEGATIVE_INFINITY;
-                upperSlope = Double.POSITIVE_INFINITY;
-                lastEmitTimeMs = t;
-                return SdtOutcome.emit(current, false, false);
-            }
-
-            // Out-of-order timestamps: reset on current sample and emit it to maintain monotonic archive.
-            if (t <= prevTimeMs) {
-                anchorTimeMs = t;
-                anchorValue = v;
-                prevTimeMs = t;
-                prevValue = v;
-                prevQuality = q;
-                lowerSlope = Double.NEGATIVE_INFINITY;
-                upperSlope = Double.POSITIVE_INFINITY;
-                lastEmitTimeMs = t;
-                return SdtOutcome.emit(current, false, true);
-            }
-
-            // Max-interval forcing: emit current and reset door.
-            if (maxIntervalMs > 0 && (t - lastEmitTimeMs) >= maxIntervalMs) {
-                anchorTimeMs = t;
-                anchorValue = v;
-                prevTimeMs = t;
-                prevValue = v;
-                prevQuality = q;
-                lowerSlope = Double.NEGATIVE_INFINITY;
-                upperSlope = Double.POSITIVE_INFINITY;
-                lastEmitTimeMs = t;
-                return SdtOutcome.emit(current, true, false);
-            }
-
-            long dt = t - anchorTimeMs;
-            if (dt <= 0) {
-                // Defensive: treat as out-of-order
-                anchorTimeMs = t;
-                anchorValue = v;
-                prevTimeMs = t;
-                prevValue = v;
-                prevQuality = q;
-                lowerSlope = Double.NEGATIVE_INFINITY;
-                upperSlope = Double.POSITIVE_INFINITY;
-                lastEmitTimeMs = t;
-                return SdtOutcome.emit(current, false, true);
-            }
-
-            // Update slope bounds for the door.
-            double sLow = (v - anchorValue - deviation) / (double) dt;
-            double sHigh = (v - anchorValue + deviation) / (double) dt;
-            lowerSlope = Math.max(lowerSlope, sLow);
-            upperSlope = Math.min(upperSlope, sHigh);
-
-            if (lowerSlope > upperSlope) {
-                // Door closed: emit previous point, reset door at previous, then incorporate current.
-                TagEvent closing = new TagEvent(
-                        current.getTagPath(),
-                        prevValue,
-                        prevQuality,
-                        new Date(prevTimeMs),
-                        current.getAssetId(),
-                        current.getAssetPath()
-                );
-
-                // Reset door anchored at closing point
-                anchorTimeMs = prevTimeMs;
-                anchorValue = prevValue;
-                lowerSlope = Double.NEGATIVE_INFINITY;
-                upperSlope = Double.POSITIVE_INFINITY;
-                lastEmitTimeMs = prevTimeMs;
-
-                // Re-process current point into the new door (no emit on this step).
-                prevTimeMs = t;
-                prevValue = v;
-                prevQuality = q;
-
-                long dt2 = t - anchorTimeMs;
-                if (dt2 > 0) {
-                    double sLow2 = (v - anchorValue - deviation) / (double) dt2;
-                    double sHigh2 = (v - anchorValue + deviation) / (double) dt2;
-                    lowerSlope = Math.max(lowerSlope, sLow2);
-                    upperSlope = Math.min(upperSlope, sHigh2);
-                }
-
-                return SdtOutcome.emit(closing, false, false);
-            }
-
-            // Door still open: update prev and do not emit.
-            prevTimeMs = t;
-            prevValue = v;
-            prevQuality = q;
-            return SdtOutcome.noEmit();
-        }
     }
     
     /**
