@@ -60,13 +60,20 @@ public class TagSubscriptionService {
     // Direct tag subscription state
     private volatile GatewayTagManager tagManager;
     private final Map<TagPath, TagChangeListener> subscribedListeners = new ConcurrentHashMap<>();
-    private final Map<String, Object> lastSentValueByTag = new ConcurrentHashMap<>();
+    private final Map<String, Object> lastEmittedValueByTag = new ConcurrentHashMap<>();
+    private final Map<String, SdtState> sdtStateByTag = new ConcurrentHashMap<>();
     private volatile boolean autoPausedDirectSubscriptions = false;
     
     // Metrics
     private AtomicLong totalEventsReceived = new AtomicLong(0);
     private AtomicLong totalEventsDropped = new AtomicLong(0);
     private AtomicLong totalBatchesFlushed = new AtomicLong(0);
+
+    // Compression metrics (edge reduction)
+    private final AtomicLong totalEventsFilteredDeadband = new AtomicLong(0);
+    private final AtomicLong totalEventsFilteredSdt = new AtomicLong(0);
+    private final AtomicLong totalEventsForcedBySdtMaxInterval = new AtomicLong(0);
+    private final AtomicLong totalSdtOutOfOrderResets = new AtomicLong(0);
     
     // Rate limiting
     private volatile long lastFlushTime = 0;
@@ -569,7 +576,8 @@ public class TagSubscriptionService {
 
             // Clear maps immediately to avoid double-unsubscribe
             subscribedListeners.clear();
-            lastSentValueByTag.clear();
+            lastEmittedValueByTag.clear();
+            sdtStateByTag.clear();
 
             if (paths.isEmpty() || listeners.isEmpty()) {
                 return;
@@ -621,7 +629,7 @@ public class TagSubscriptionService {
         }
     }
 
-    private boolean hasMeaningfulChange(Object last, Object current) {
+    private boolean hasMeaningfulChange(Object last, Object current, double deadband) {
         if (last == null && current == null) {
             return false;
         }
@@ -631,7 +639,6 @@ public class TagSubscriptionService {
         if (last instanceof Number && current instanceof Number) {
             double a = ((Number) last).doubleValue();
             double b = ((Number) current).doubleValue();
-            double deadband = config.getNumericDeadband();
             return Math.abs(a - b) > deadband;
         }
         return !Objects.equals(last, current);
@@ -712,6 +719,8 @@ public class TagSubscriptionService {
             return true;
         }
 
+        String tagPathStr = te.getTagPath() != null ? te.getTagPath() : "";
+
         // When store-and-forward is enabled and we're paused, reject new events rather than drop later.
         buffer.refreshBackpressure();
         if (buffer.isDiskBacked() && buffer.isPaused()) {
@@ -719,35 +728,224 @@ public class TagSubscriptionService {
             return false;
         }
 
-        // Optional filtering: onlyOnChange + numeric deadband.
-        // Apply consistently for BOTH direct subscriptions and HTTP ingest.
-        if (config.isOnlyOnChange()) {
-            String tagPathStr = te.getTagPath() != null ? te.getTagPath() : "";
-            Object last = lastSentValueByTag.get(tagPathStr);
-            if (!hasMeaningfulChange(last, te.getValue())) {
-                if (config.isDebugLogging()) {
-                    logger.debug("Skipped tag event (onlyOnChange) ({}) -> {}", source, tagPathStr);
+        // Numeric compression / filtering (applies consistently for BOTH direct subscriptions and HTTP ingest).
+        ConfigModel.NumericCompressionPolicy policy = config.getNumericCompressionPolicyForTag(tagPathStr);
+        ConfigModel.NumericCompressionMode mode = policy != null ? policy.mode : ConfigModel.NumericCompressionMode.NONE;
+
+        TagEvent toEmit = null;
+        Object value = te.getValue();
+
+        if (mode == ConfigModel.NumericCompressionMode.NONE) {
+            toEmit = te;
+        } else if (value instanceof Number) {
+            if (mode == ConfigModel.NumericCompressionMode.DEADBAND) {
+                Object last = lastEmittedValueByTag.get(tagPathStr);
+                if (!hasMeaningfulChange(last, value, policy.deadband)) {
+                    totalEventsFilteredDeadband.incrementAndGet();
+                    if (config.isDebugLogging()) {
+                        logger.debug("Skipped tag event (deadband) ({}) -> {}", source, tagPathStr);
+                    }
+                    return true;
                 }
-                return true; // not an error; just filtered out
+                toEmit = te;
+            } else if (mode == ConfigModel.NumericCompressionMode.SDT) {
+                SdtState state = sdtStateByTag.computeIfAbsent(tagPathStr, k -> new SdtState());
+                SdtOutcome out = state.offer(te, policy.sdtDeviation, policy.sdtMaxIntervalMs);
+                if (out == null || out.emit == null) {
+                    totalEventsFilteredSdt.incrementAndGet();
+                    return true;
+                }
+                if (out.forcedByMaxInterval) {
+                    totalEventsForcedBySdtMaxInterval.incrementAndGet();
+                }
+                if (out.resetDueToOutOfOrder) {
+                    totalSdtOutOfOrderResets.incrementAndGet();
+                }
+                toEmit = out.emit;
+            } else {
+                // Defensive: treat unknown modes as NONE.
+                toEmit = te;
             }
+        } else {
+            // Non-numeric values: treat DEADBAND/SDT as "only on change" semantics.
+            Object last = lastEmittedValueByTag.get(tagPathStr);
+            if (Objects.equals(last, value)) {
+                totalEventsFilteredDeadband.incrementAndGet();
+                return true;
+            }
+            toEmit = te;
         }
 
-        OTEvent evt = mapper.map(te);
+        OTEvent evt = mapper.map(toEmit);
         boolean ok = buffer.offer(evt);
         if (ok) {
-            if (config.isOnlyOnChange()) {
-                String tagPathStr = te.getTagPath() != null ? te.getTagPath() : "";
-                lastSentValueByTag.put(tagPathStr, te.getValue());
+            if (mode != ConfigModel.NumericCompressionMode.NONE) {
+                lastEmittedValueByTag.put(tagPathStr, toEmit.getValue());
             }
             totalEventsReceived.incrementAndGet();
             if (config.isDebugLogging()) {
-                logger.debug("Accepted tag event ({}) -> {}", source, te.getTagPath());
+                logger.debug("Accepted tag event ({}) -> {}", source, toEmit.getTagPath());
             }
         } else {
             totalEventsDropped.incrementAndGet();
-            logger.warn("Buffer full, dropped event ({}) -> {}", source, te.getTagPath());
+            logger.warn("Buffer full, dropped event ({}) -> {}", source, toEmit.getTagPath());
         }
         return ok;
+    }
+
+    private static final class SdtOutcome {
+        final TagEvent emit; // null means "do not emit"
+        final boolean forcedByMaxInterval;
+        final boolean resetDueToOutOfOrder;
+
+        private SdtOutcome(TagEvent emit, boolean forcedByMaxInterval, boolean resetDueToOutOfOrder) {
+            this.emit = emit;
+            this.forcedByMaxInterval = forcedByMaxInterval;
+            this.resetDueToOutOfOrder = resetDueToOutOfOrder;
+        }
+
+        static SdtOutcome noEmit() {
+            return new SdtOutcome(null, false, false);
+        }
+
+        static SdtOutcome emit(TagEvent evt, boolean forcedByMaxInterval, boolean resetDueToOutOfOrder) {
+            return new SdtOutcome(evt, forcedByMaxInterval, resetDueToOutOfOrder);
+        }
+    }
+
+    /**
+     * PI-like Swinging Door Trending (SDT) compressor state for a single tag.
+     *
+     * Semantics:
+     * - Maintains a \"door\" (line segment) anchored at the last emitted point with an error band ±deviation.
+     * - When a new point would cause the door to \"close\" (slope bounds cross), emit the previous point
+     *   as the closing point, reset the door at that point, then continue.
+     * - If maxIntervalMs > 0, force an emit at least every maxIntervalMs.
+     */
+    private static final class SdtState {
+        private boolean initialized = false;
+
+        private long anchorTimeMs;
+        private double anchorValue;
+
+        private long prevTimeMs;
+        private double prevValue;
+        private String prevQuality;
+
+        private double lowerSlope;
+        private double upperSlope;
+
+        private long lastEmitTimeMs;
+
+        synchronized SdtOutcome offer(TagEvent current, double deviation, long maxIntervalMs) {
+            if (current == null || !(current.getValue() instanceof Number)) {
+                return SdtOutcome.noEmit();
+            }
+
+            long t = (current.getTimestamp() != null) ? current.getTimestamp().getTime() : System.currentTimeMillis();
+            double v = ((Number) current.getValue()).doubleValue();
+            String q = current.getQuality();
+
+            if (!initialized) {
+                // Emit first sample and initialize door state.
+                initialized = true;
+                anchorTimeMs = t;
+                anchorValue = v;
+                prevTimeMs = t;
+                prevValue = v;
+                prevQuality = q;
+                lowerSlope = Double.NEGATIVE_INFINITY;
+                upperSlope = Double.POSITIVE_INFINITY;
+                lastEmitTimeMs = t;
+                return SdtOutcome.emit(current, false, false);
+            }
+
+            // Out-of-order timestamps: reset on current sample and emit it to maintain monotonic archive.
+            if (t <= prevTimeMs) {
+                anchorTimeMs = t;
+                anchorValue = v;
+                prevTimeMs = t;
+                prevValue = v;
+                prevQuality = q;
+                lowerSlope = Double.NEGATIVE_INFINITY;
+                upperSlope = Double.POSITIVE_INFINITY;
+                lastEmitTimeMs = t;
+                return SdtOutcome.emit(current, false, true);
+            }
+
+            // Max-interval forcing: emit current and reset door.
+            if (maxIntervalMs > 0 && (t - lastEmitTimeMs) >= maxIntervalMs) {
+                anchorTimeMs = t;
+                anchorValue = v;
+                prevTimeMs = t;
+                prevValue = v;
+                prevQuality = q;
+                lowerSlope = Double.NEGATIVE_INFINITY;
+                upperSlope = Double.POSITIVE_INFINITY;
+                lastEmitTimeMs = t;
+                return SdtOutcome.emit(current, true, false);
+            }
+
+            long dt = t - anchorTimeMs;
+            if (dt <= 0) {
+                // Defensive: treat as out-of-order
+                anchorTimeMs = t;
+                anchorValue = v;
+                prevTimeMs = t;
+                prevValue = v;
+                prevQuality = q;
+                lowerSlope = Double.NEGATIVE_INFINITY;
+                upperSlope = Double.POSITIVE_INFINITY;
+                lastEmitTimeMs = t;
+                return SdtOutcome.emit(current, false, true);
+            }
+
+            // Update slope bounds for the door.
+            double sLow = (v - anchorValue - deviation) / (double) dt;
+            double sHigh = (v - anchorValue + deviation) / (double) dt;
+            lowerSlope = Math.max(lowerSlope, sLow);
+            upperSlope = Math.min(upperSlope, sHigh);
+
+            if (lowerSlope > upperSlope) {
+                // Door closed: emit previous point, reset door at previous, then incorporate current.
+                TagEvent closing = new TagEvent(
+                        current.getTagPath(),
+                        prevValue,
+                        prevQuality,
+                        new Date(prevTimeMs),
+                        current.getAssetId(),
+                        current.getAssetPath()
+                );
+
+                // Reset door anchored at closing point
+                anchorTimeMs = prevTimeMs;
+                anchorValue = prevValue;
+                lowerSlope = Double.NEGATIVE_INFINITY;
+                upperSlope = Double.POSITIVE_INFINITY;
+                lastEmitTimeMs = prevTimeMs;
+
+                // Re-process current point into the new door (no emit on this step).
+                prevTimeMs = t;
+                prevValue = v;
+                prevQuality = q;
+
+                long dt2 = t - anchorTimeMs;
+                if (dt2 > 0) {
+                    double sLow2 = (v - anchorValue - deviation) / (double) dt2;
+                    double sHigh2 = (v - anchorValue + deviation) / (double) dt2;
+                    lowerSlope = Math.max(lowerSlope, sLow2);
+                    upperSlope = Math.min(upperSlope, sHigh2);
+                }
+
+                return SdtOutcome.emit(closing, false, false);
+            }
+
+            // Door still open: update prev and do not emit.
+            prevTimeMs = t;
+            prevValue = v;
+            prevQuality = q;
+            return SdtOutcome.noEmit();
+        }
     }
     
     /**
@@ -790,6 +988,11 @@ public class TagSubscriptionService {
         }
         sb.append("Total Events Received: ").append(totalEventsReceived.get()).append("\n");
         sb.append("Total Events Dropped: ").append(totalEventsDropped.get()).append("\n");
+        sb.append("Compression Mode (effective): ").append(config.getNumericCompressionModeEffective()).append("\n");
+        sb.append("Events Filtered (deadband/on-change): ").append(totalEventsFilteredDeadband.get()).append("\n");
+        sb.append("Events Filtered (SDT): ").append(totalEventsFilteredSdt.get()).append("\n");
+        sb.append("Events Forced (SDT max interval): ").append(totalEventsForcedBySdtMaxInterval.get()).append("\n");
+        sb.append("SDT Out-of-order Resets: ").append(totalSdtOutOfOrderResets.get()).append("\n");
         sb.append("Total Batches Flushed: ").append(totalBatchesFlushed.get()).append("\n");
         sb.append("Direct Subscriptions: ").append(subscribedListeners.size()).append(" tags\n");
         sb.append("Auto-Paused Direct Subscriptions: ").append(autoPausedDirectSubscriptions).append("\n");

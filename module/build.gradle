@@ -17,7 +17,7 @@ def moduleId = project.hasProperty('moduleId') ? project.getProperty('moduleId')
 // Some local builds were previously run with sudo, which can leave the default ./build directory
 // owned by root and therefore unwritable. To keep builds reliable, always use a user-writable build dir.
 // Also, keep 8.1 and 8.3 builds from stepping on each other by using distinct build dirs.
-def buildFlavor = (project.hasProperty('buildForIgnitionVersion') ? project.getProperty('buildForIgnitionVersion') : '8.1.5').startsWith('8.3') ? '8.3' : '8.1'
+def buildFlavor = (project.hasProperty('buildForIgnitionVersion') ? project.getProperty('buildForIgnitionVersion') : '8.1.51').startsWith('8.3') ? '8.3' : '8.1'
 buildDir = file("$projectDir/build-user-${buildFlavor}")
 
 // Cross-version compatibility:
@@ -31,7 +31,7 @@ buildDir = file("$projectDir/build-user-${buildFlavor}")
 // For Ignition 8.3 builds, we emit Java 17 bytecode to match the platform runtime.
 def isIgnition83Build = (project.hasProperty('buildForIgnitionVersion')
         ? project.getProperty('buildForIgnitionVersion')
-        : '8.1.5').startsWith('8.3')
+        : '8.1.51').startsWith('8.3')
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(17)
@@ -52,12 +52,18 @@ repositories {
 ext {
     // Build version - what Ignition version to compile against
     // Build against the lowest supported version for best compatibility.
-    // Override with: -PbuildForIgnitionVersion=8.1.5
-    buildForIgnitionVersion = project.hasProperty('buildForIgnitionVersion') ? project.getProperty('buildForIgnitionVersion') : '8.1.5'
+    // Override with: -PbuildForIgnitionVersion=8.1.51
+    buildForIgnitionVersion = project.hasProperty('buildForIgnitionVersion') ? project.getProperty('buildForIgnitionVersion') : '8.1.51'
 
     // Ignition installation home (used to locate SDK jars). Override with:
     // -PignitionHome=/path/to/ignition OR env IGNITION_HOME
-    ignitionHome = project.hasProperty('ignitionHome') ? project.getProperty('ignitionHome') : (System.getenv('IGNITION_HOME') ?: '/usr/local/ignition')
+    // Default behavior (when not explicitly overridden):
+    // - For 8.1 builds, use /usr/local/ignition81
+    // - For 8.3 builds, use /usr/local/ignition
+    def defaultIgnitionHome = buildForIgnitionVersion.startsWith('8.3') ? '/usr/local/ignition' : '/usr/local/ignition81'
+    ignitionHome = project.hasProperty('ignitionHome')
+            ? project.getProperty('ignitionHome')
+            : (System.getenv('IGNITION_HOME') ?: defaultIgnitionHome)
     
     // Minimum version - what the module will declare as minimum requirement
     minIgnitionVersion = project.hasProperty('minIgnitionVersion') ? project.getProperty('minIgnitionVersion') : '8.1.0'
@@ -129,8 +135,8 @@ tasks.register('verifyIgnitionSdkJars') {
         if (!missing.isEmpty()) {
             throw new RuntimeException("Missing required Ignition SDK jars:\n- " + missing.join("\n- ") +
                     "\n\nYou likely pointed at the wrong install. Example for 8.1 SDK:\n" +
-                    "  export IGNITION_HOME=/usr/local/ignition8.1\n" +
-                    "  ./gradlew clean buildModule -PbuildForIgnitionVersion=8.1.50")
+                    "  export IGNITION_HOME=/usr/local/ignition81\n" +
+                    "  ./gradlew clean buildModule -PbuildForIgnitionVersion=8.1.51")
         }
     }
 }
@@ -380,8 +386,8 @@ tasks.register('buildModule81', GradleBuild) {
     group = 'build'
     description = 'Build the Ignition 8.1.x .modl artifact (zerobus-connector-<ver>.modl).'
     tasks = ['clean', 'buildModule']
-    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition8.1')
-    startParameter.projectProperties.put('buildForIgnitionVersion', '8.1.50')
+    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition81')
+    startParameter.projectProperties.put('buildForIgnitionVersion', '8.1.51')
     startParameter.projectProperties.put('minIgnitionVersion', '8.1.0')
     // Propagate moduleId override into the nested build (if provided to the outer build).
     startParameter.projectProperties.put('moduleId', moduleId)
@@ -504,8 +510,8 @@ tasks.register('signModule81', GradleBuild) {
     group = 'build'
     description = 'Builds and signs the Ignition 8.1.x .modl artifact (requires signing properties).'
     tasks = ['clean', 'buildModule', 'signModule']
-    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition8.1')
-    startParameter.projectProperties.put('buildForIgnitionVersion', '8.1.50')
+    startParameter.projectProperties.put('ignitionHome', '/usr/local/ignition81')
+    startParameter.projectProperties.put('buildForIgnitionVersion', '8.1.51')
     startParameter.projectProperties.put('minIgnitionVersion', '8.1.0')
     startParameter.projectProperties.put('moduleId', moduleId)
 
