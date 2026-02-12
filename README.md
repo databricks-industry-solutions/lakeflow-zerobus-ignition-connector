@@ -382,11 +382,66 @@ If you run into permissions errors starting/stopping, run the same commands with
 
 All endpoints are under `/system/zerobus`:
 - `GET /health`
+- `GET /configure` (HTML config + diagnostics page)
 - `GET /diagnostics`
+- `GET /metrics/compression` (SDT/deadband rolling stats + top tags, JSON)
 - `POST /config`
 - `POST /test-connection`
 - `POST /ingest` (single JSON event)
 - `POST /ingest/batch` (JSON array of events)
+
+### Edge compression (deadband + SDT)
+
+This connector can reduce numeric event volume **at the edge** (in the Ignition module) before sending to Zerobus/Delta.
+
+#### Modes
+
+Configured by `numericCompressionMode`:
+
+- `NONE`: send all values (no filtering)
+- `DEADBAND`: send numeric values only when \(|Δ| > deadband\); non-numerics use “only on change”
+- `SDT`: PI-like **Swinging Door Trending** with:
+  - `numericSdtDeviation` (engineering units)
+  - `numericSdtMaxIntervalMs` (force a point at least every N ms; 0 disables)
+
+Backward compatibility:
+- If `numericCompressionMode` is unset (null/empty), the effective mode is derived from legacy `onlyOnChange`:
+  - `onlyOnChange=true` ⇒ `DEADBAND`
+  - `onlyOnChange=false` ⇒ `NONE`
+
+#### Per-tag defaults (multi-variable deadband, and per-signal SDT)
+
+You can configure different defaults for different tag types (temperature vs pressure vs flow) using regex rules.
+
+- **Legacy per-tag deadband rules** (already implemented earlier): `numericDeadbandRules[]`
+  - Each rule has `tagPathRegex` and `deadband`
+  - First match wins; falls back to global `numericDeadband`
+
+- **Preferred unified rules**: `numericCompressionRules[]`
+  - Each rule has `tagPathRegex` and can set:
+    - `mode`: `NONE | DEADBAND | SDT`
+    - `deadband` (when mode=DEADBAND)
+    - `sdtDeviation`, `sdtMaxIntervalMs` (when mode=SDT)
+  - First match wins; falls back to global settings
+
+Notes:
+- The Ignition 8.1 HTML config page currently exposes the global SDT fields.
+- Rule lists (`numericDeadbandRules`, `numericCompressionRules`) are configured by `POST /system/zerobus/config` (JSON).
+
+Example (illustrative):
+
+```json
+{
+  "numericCompressionMode": "SDT",
+  "numericSdtDeviation": 0.2,
+  "numericSdtMaxIntervalMs": 600000,
+  "numericCompressionRules": [
+    { "tagPathRegex": ".*(Temp|Temperature|_C$|/Thermal/).*", "mode": "SDT", "sdtDeviation": 0.2, "sdtMaxIntervalMs": 600000 },
+    { "tagPathRegex": ".*(Pressure|_bar$|_kPa$|/Pressure/).*", "mode": "SDT", "sdtDeviation": 0.05, "sdtMaxIntervalMs": 300000 },
+    { "tagPathRegex": ".*(Flow|_m3h$|/Flow/).*", "mode": "SDT", "sdtDeviation": 2.0, "sdtMaxIntervalMs": 300000 }
+  ]
+}
+```
 
 ### Key classes
 
