@@ -749,6 +749,16 @@
                     <div class="collapsible-content">
                         <div class="form-grid">
                             <div class="form-group">
+                                <label for="numericCompressionMode">Numeric Compression Mode</label>
+                                <select class="form-control" id="numericCompressionMode" name="numericCompressionMode" onchange="updateCompressionUI()">
+                                    <option value="">(legacy / auto)</option>
+                                    <option value="NONE">NONE (send all)</option>
+                                    <option value="DEADBAND">DEADBAND (absolute change threshold)</option>
+                                    <option value="SDT">SDT (Swinging Door Trending)</option>
+                                </select>
+                                <small class="form-help">Preferred numeric reduction setting. Leave blank to use legacy “Only On Change”.</small>
+                            </div>
+                            <div class="form-group">
                                 <div class="checkbox-group">
                                     <input type="checkbox" id="includeQuality" name="includeQuality" checked>
                                     <label for="includeQuality">Include Quality</label>
@@ -760,12 +770,22 @@
                                     <input type="checkbox" id="onlyOnChange" name="onlyOnChange" checked>
                                     <label for="onlyOnChange">Only On Change</label>
                                 </div>
-                                <small class="form-help">Only send events when values change</small>
+                                <small class="form-help">Legacy toggle. If Numeric Compression Mode is set, this is ignored.</small>
                             </div>
                             <div class="form-group">
                                 <label for="numericDeadband">Numeric Deadband</label>
                                 <input type="number" class="form-control" id="numericDeadband" name="numericDeadband" value="0.0" min="0" step="0.01">
                                 <small class="form-help">Minimum change threshold for numeric values (0 = send all)</small>
+                            </div>
+                            <div class="form-group" id="sdtDeviationGroup" style="display:none;">
+                                <label for="numericSdtDeviation">SDT Deviation</label>
+                                <input type="number" class="form-control" id="numericSdtDeviation" name="numericSdtDeviation" value="0.0" min="0" step="0.01">
+                                <small class="form-help">Engineering units. Must be &gt; 0 when SDT is enabled.</small>
+                            </div>
+                            <div class="form-group" id="sdtMaxIntervalGroup" style="display:none;">
+                                <label for="numericSdtMaxIntervalMs">SDT Max Interval (ms)</label>
+                                <input type="number" class="form-control" id="numericSdtMaxIntervalMs" name="numericSdtMaxIntervalMs" value="0" min="0" step="1000">
+                                <small class="form-help">Force-emit interval (0 disables). Example: 600000 = 10 minutes.</small>
                             </div>
                         </div>
                     </div>
@@ -1097,9 +1117,23 @@
             document.getElementById('includeQuality').checked = config.includeQuality !== false;
             document.getElementById('onlyOnChange').checked = config.onlyOnChange !== false;
             document.getElementById('numericDeadband').value = config.numericDeadband || 0.0;
+            document.getElementById('numericCompressionMode').value = ((config.numericCompressionMode || '') + '').toUpperCase();
+            document.getElementById('numericSdtDeviation').value = (config.numericSdtDeviation !== undefined && config.numericSdtDeviation !== null) ? config.numericSdtDeviation : 0.0;
+            document.getElementById('numericSdtMaxIntervalMs').value = (config.numericSdtMaxIntervalMs !== undefined && config.numericSdtMaxIntervalMs !== null) ? config.numericSdtMaxIntervalMs : 0;
+            updateCompressionUI();
+        }
+
+        function updateCompressionUI() {
+            const mode = (document.getElementById('numericCompressionMode')?.value || '').toUpperCase();
+            const showSdt = mode === 'SDT';
+            const dev = document.getElementById('sdtDeviationGroup');
+            const maxI = document.getElementById('sdtMaxIntervalGroup');
+            if (dev) dev.style.display = showSdt ? '' : 'none';
+            if (maxI) maxI.style.display = showSdt ? '' : 'none';
         }
 
         function getFormData() {
+            const mode = (document.getElementById('numericCompressionMode')?.value || '').trim();
             return {
                 enabled: document.getElementById('enabled').checked,
                 debugLogging: document.getElementById('debugLogging').checked,
@@ -1131,7 +1165,10 @@
                 requestTimeoutMs: parseInt(document.getElementById('requestTimeoutMs').value),
                 includeQuality: document.getElementById('includeQuality').checked,
                 onlyOnChange: document.getElementById('onlyOnChange').checked,
-                numericDeadband: parseFloat(document.getElementById('numericDeadband').value)
+                numericDeadband: parseFloat(document.getElementById('numericDeadband').value),
+                numericCompressionMode: mode ? mode : null,
+                numericSdtDeviation: parseFloat(document.getElementById('numericSdtDeviation')?.value || '0'),
+                numericSdtMaxIntervalMs: parseInt(document.getElementById('numericSdtMaxIntervalMs')?.value || '0')
             };
         }
 

@@ -42,6 +42,9 @@ module/build/generated/
 *.log
 logs/
 
+# Local demo docs (do not commit)
+AGL_Tomago_Demo_Talk_Track.pdf
+
 # OS Files
 .DS_Store
 Thumbs.db
