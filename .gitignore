@@ -1,6 +1,7 @@
 # Ignition Module Build Outputs
 *.modl
 !releases/*.modl
+!module/releases/*.modl
 module/build/
 module/build-user/
 module/build-user-*/
