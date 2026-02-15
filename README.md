@@ -53,6 +53,8 @@ In all cases, the connector publishes **the same protobuf event type** to Databr
 ## Table of contents
 
 - [Get started (download the module)](#get-started-download-the-module)
+- [Create Databricks tables (so you can ingest data)](#create-databricks-tables-so-you-can-ingest-data)
+- [Generate example tag-change data (Ignition)](#generate-example-tag-change-data-ignition)
 - [Repository layout](#repository-layout)
 - [Release artifacts (two `.modl` files)](#release-artifacts-two-modl-files)
 - [Developer build](#developer-build)
@@ -68,6 +70,40 @@ Download the prebuilt Ignition module (`.modl`) from GitHub Releases:
 - **Ignition 8.3.x**: `zerobus-connector-1.0.1-ignition-8.3.modl`
 
 Then follow `DEPLOYMENT.md` for installation and configuration.
+
+## Create Databricks tables (so you can ingest data)
+
+Before the connector can write, you must create the **target Bronze Delta table** in Unity Catalog and enable it for Zerobus ingest.
+
+### Option A (recommended): run the provided Databricks notebook
+
+Import and run `onboarding/databricks/01_create_tables.py` in Databricks. In the first cell, set:
+- `CATALOG`, `SCHEMA`
+- `SERVICE_PRINCIPAL_UUID` (optional, for grants)
+
+It creates:
+- **Bronze ingestion table**: `<catalog>.<schema>.ot_events_bronze`
+  - schema matches `module/src/main/proto/ot_event.proto`
+  - sets `TBLPROPERTIES('delta.enableZerobus'='true', ...)`
+- optional Silver scaffolding tables/views for mapping + normalization
+
+### Option B: use the SQL packs in `tools/`
+
+This repo includes end-to-end Databricks SQL packs under `tools/` (Bronze → Silver → Gold patterns + sample dashboards/prompts). Start from:
+- `tools/databricks_end2end_tilt/`
+- `tools/databricks_end2end_sg/`
+
+## Generate example tag-change data (Ignition)
+
+If you want a repeatable demo stream, use the `examples/` folders:
+- **Tags**: `*_tags.json` (Ignition tag definitions)
+- **Timer scripts**: `timer_script_*_orchestrator.py` (periodic tag writes to simulate telemetry)
+
+Once tags are changing in Ignition and the module is configured, you should see rows landing in your Bronze table.
+
+## Note on Alpha Vantage
+
+This connector repo does **not** use Alpha Vantage. (Alpha Vantage only appears in the separate Treasury/PPNR demo repo where yield curves are backfilled into Unity Catalog.)
 
 ## Repository layout
 

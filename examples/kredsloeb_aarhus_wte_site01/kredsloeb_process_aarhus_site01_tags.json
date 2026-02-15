@@ -1,0 +1,105 @@
+{
+  "name": "Kredsloeb",
+  "tagType": "Folder",
+  "tags": [
+    {
+      "name": "Denmark",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "name": "Midtjylland",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "Aarhus",
+              "tagType": "Folder",
+              "tags": [
+                {
+                  "name": "Site01",
+                  "tagType": "Folder",
+                  "tags": [
+                    {
+                      "name": "Config",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "SimEnabled", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                        { "name": "UpdateEveryMs", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 1000 },
+                        { "name": "SiteName", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "Kredsløb Aarhus WtE + District Heating - Demo" },
+
+                        { "name": "TurbineCapacity_MWe", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 55.0 },
+                        { "name": "MaxWasteFeed_tph", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 28.0 },
+                        { "name": "WasteLHV_MJ_per_kg", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 9.5 }
+                      ]
+                    },
+                    {
+                      "name": "Diagnostics",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "TickCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+                        { "name": "LastRun", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                        { "name": "LastStatus", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                        { "name": "LastError", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+                      ]
+                    },
+                    {
+                      "name": "Plant01",
+                      "tagType": "Folder",
+                      "tags": [
+                        {
+                          "name": "WasteToEnergy",
+                          "tagType": "Folder",
+                          "tags": [
+                            {
+                              "name": "Furnace",
+                              "tagType": "Folder",
+                              "tags": [
+                                { "name": "WasteFeedRate_tph", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 19.0 },
+                                { "name": "PrimaryAirFlow_kg_s", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 32.0 },
+                                { "name": "O2_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 7.0 },
+                                { "name": "FurnaceTemp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 940.0 }
+                              ]
+                            },
+                            {
+                              "name": "Boiler",
+                              "tagType": "Folder",
+                              "tags": [
+                                { "name": "BoilerLoad_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 64.0 },
+                                { "name": "SteamPressure_bar", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 92.0 },
+                                { "name": "SteamTemp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 505.0 },
+                                { "name": "SteamFlow_tph", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 110.0 }
+                              ]
+                            },
+                            {
+                              "name": "Turbine",
+                              "tagType": "Folder",
+                              "tags": [
+                                { "name": "GeneratorPower_MWe", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 26.0 },
+                                { "name": "CondenserVacuum_kPa", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 10.2 },
+                                { "name": "TurbineValve_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 56.0 }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "name": "KPIs",
+                          "tagType": "Folder",
+                          "tags": [
+                            { "name": "HeatOutput_MWth", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 95.0 },
+                            { "name": "ElectricOutput_MWe", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 26.0 },
+                            { "name": "OverallEfficiency_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 83.0 },
+                            { "name": "Availability", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
