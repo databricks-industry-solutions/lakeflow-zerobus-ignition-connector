@@ -76,11 +76,13 @@ public class TagSubscriptionService {
     // Compression metrics (edge reduction)
     private final AtomicLong totalEventsFilteredDeadband = new AtomicLong(0);
     private final AtomicLong totalEventsFilteredSdt = new AtomicLong(0);
+    private final AtomicLong totalEventsEmittedSdt = new AtomicLong(0);
     private final AtomicLong totalEventsForcedBySdtMaxInterval = new AtomicLong(0);
     private final AtomicLong totalSdtOutOfOrderResets = new AtomicLong(0);
 
     // Rolling window metrics for visual diagnostics (last N minutes)
     private final RollingCompressionMetrics rolling = new RollingCompressionMetrics(COMPRESSION_WINDOW_MINUTES);
+    private final RollingLatencyMetrics rollingLatency = new RollingLatencyMetrics(COMPRESSION_WINDOW_MINUTES);
 
     // Per-tag stats (bounded) to highlight which signals get compressed
     private final ConcurrentHashMap<String, TagCompressionStats> perTagCompression = new ConcurrentHashMap<>();
@@ -744,14 +746,29 @@ public class TagSubscriptionService {
             }
 
             logger.debug("Flushing batch of {} events", drained.events.size());
-            boolean success = sink.send(drained.events);
+            long sendStartMs = System.currentTimeMillis();
+            long batchBytes = 0L;
+            List<OTEvent> sendEvents = new ArrayList<>(drained.events.size());
+            for (OTEvent e : drained.events) {
+                if (e == null) {
+                    continue;
+                }
+                batchBytes += e.getSerializedSize();
+                sendEvents.add(e.toBuilder().setBatchBytesSent(0L).build());
+            }
+            for (int i = 0; i < sendEvents.size(); i++) {
+                OTEvent e = sendEvents.get(i);
+                sendEvents.set(i, e.toBuilder().setBatchBytesSent(batchBytes).build());
+            }
+            boolean success = sink.send(sendEvents);
             if (success) {
                 buffer.commit(drained);
+                recordSendLatencies(sendStartMs, sendEvents);
                 totalBatchesFlushed.incrementAndGet();
                 lastFlushTime = System.currentTimeMillis();
             } else {
                 // Do NOT commit; records remain for retry. For memory mode, commit is required to remove.
-                logger.warn("Failed to send batch of {} events (will retry)", drained.events.size());
+                logger.warn("Failed to send batch of {} events (will retry)", sendEvents.size());
             }
         } catch (Exception e) {
             logger.error("Error flushing batch", e);
@@ -766,6 +783,7 @@ public class TagSubscriptionService {
         String tagPathStr = te.getTagPath() != null ? te.getTagPath() : "";
         long nowMs = (te.getTimestamp() != null) ? te.getTimestamp().getTime() : System.currentTimeMillis();
         rolling.recordIncoming(nowMs);
+        recordIngestLatency(nowMs, te);
 
         // When store-and-forward is enabled and we're paused, reject new events rather than drop later.
         buffer.refreshBackpressure();
@@ -842,11 +860,17 @@ public class TagSubscriptionService {
             toEmit = te;
         }
 
-        OTEvent evt = mapper.map(toEmit);
+        boolean sdtEnabled = mode == ConfigModel.NumericCompressionMode.SDT;
+        boolean sdtCompressed = sdtEnabled && toEmit != null && toEmit.isNumeric();
+        double sdtCompressionRatio = computeSdtCompressionRatio();
+        OTEvent evt = mapper.map(toEmit, sdtCompressed, sdtCompressionRatio, sdtEnabled, 0L);
         boolean ok = buffer.offer(evt);
         if (ok) {
             if (mode != ConfigModel.NumericCompressionMode.NONE) {
                 lastEmittedValueByTag.put(tagPathStr, toEmit.getValue());
+            }
+            if (mode == ConfigModel.NumericCompressionMode.SDT) {
+                totalEventsEmittedSdt.incrementAndGet();
             }
             totalEventsReceived.incrementAndGet();
             rolling.recordEmitted(nowMs);
@@ -878,6 +902,50 @@ public class TagSubscriptionService {
         
         long count = eventsThisSecond.incrementAndGet();
         return count <= config.getMaxEventsPerSecond();
+    }
+
+    private void recordIngestLatency(long eventTimestampMs, TagEvent te) {
+        long nowMs = System.currentTimeMillis();
+        long tsMs = eventTimestampMs;
+        if (te != null && te.getTimestamp() != null) {
+            tsMs = te.getTimestamp().getTime();
+        }
+        if (tsMs <= 0) {
+            return;
+        }
+        long ingestLatencyMs = Math.max(0L, nowMs - tsMs);
+        rollingLatency.recordIngest(nowMs, ingestLatencyMs);
+    }
+
+    private void recordSendLatencies(long sendStartMs, List<OTEvent> events) {
+        if (events == null || events.isEmpty()) {
+            return;
+        }
+        for (OTEvent e : events) {
+            if (e == null) {
+                continue;
+            }
+            if (e.getIngestionTimestamp() > 0) {
+                long ingestTsMs = e.getIngestionTimestamp() / 1000L;
+                long queueLatencyMs = Math.max(0L, sendStartMs - ingestTsMs);
+                rollingLatency.recordQueue(sendStartMs, queueLatencyMs);
+            }
+            if (e.getEventTime() > 0) {
+                long eventTsMs = e.getEventTime() / 1000L;
+                long endToEndMs = Math.max(0L, sendStartMs - eventTsMs);
+                rollingLatency.recordEndToEnd(sendStartMs, endToEndMs);
+            }
+        }
+    }
+
+    private double computeSdtCompressionRatio() {
+        long filtered = totalEventsFilteredSdt.get();
+        long emitted = totalEventsEmittedSdt.get();
+        long denom = filtered + emitted;
+        if (denom <= 0L) {
+            return 0.0;
+        }
+        return (double) filtered / (double) denom;
     }
     
     
@@ -940,6 +1008,21 @@ public class TagSubscriptionService {
                     .append(" (emitted ").append(String.format(java.util.Locale.US, "%.1f%%", ratio * 100.0)).append(")\n");
         }
 
+        RollingLatencyMetrics.Snapshot lat = rollingLatency.snapshot();
+        sb.append("\n=== Latency (last ").append(COMPRESSION_WINDOW_MINUTES).append(" minutes) ===\n");
+        sb.append("Ingest latency ms  : avg=").append(String.format(java.util.Locale.US, "%.1f", lat.ingestAvgMs))
+                .append(" p95=").append(lat.ingestP95Ms)
+                .append(" p99=").append(lat.ingestP99Ms)
+                .append(" max=").append(lat.ingestMaxMs).append("\n");
+        sb.append("Queue latency ms   : avg=").append(String.format(java.util.Locale.US, "%.1f", lat.queueAvgMs))
+                .append(" p95=").append(lat.queueP95Ms)
+                .append(" p99=").append(lat.queueP99Ms)
+                .append(" max=").append(lat.queueMaxMs).append("\n");
+        sb.append("End-to-end ms      : avg=").append(String.format(java.util.Locale.US, "%.1f", lat.endToEndAvgMs))
+                .append(" p95=").append(lat.endToEndP95Ms)
+                .append(" p99=").append(lat.endToEndP99Ms)
+                .append(" max=").append(lat.endToEndMaxMs).append("\n");
+
         sb.append(renderTopCompressedTags(10));
         
         return sb.toString();
@@ -950,6 +1033,7 @@ public class TagSubscriptionService {
      */
     public CompressionMetricsSnapshot getCompressionMetricsSnapshot() {
         RollingCompressionMetrics.Snapshot snap = rolling.snapshot();
+        RollingLatencyMetrics.Snapshot lat = rollingLatency.snapshot();
         CompressionMetricsSnapshot out = new CompressionMetricsSnapshot();
         out.windowMinutes = COMPRESSION_WINDOW_MINUTES;
         out.modeEffective = String.valueOf(config.getNumericCompressionModeEffective());
@@ -965,6 +1049,23 @@ public class TagSubscriptionService {
         out.filteredSdtTotal = snap.sum(snap.filteredSdtPerMin);
         out.forcedByMaxIntervalTotal = snap.sum(snap.forcedByMaxIntervalPerMin);
         out.droppedTotal = snap.sum(snap.droppedPerMin);
+        out.sdtCompressionRatio = computeSdtCompressionRatio();
+        out.sdtEmittedTotal = totalEventsEmittedSdt.get();
+
+        out.ingestLatencyAvgMs = lat.ingestAvgMs;
+        out.ingestLatencyP95Ms = lat.ingestP95Ms;
+        out.ingestLatencyP99Ms = lat.ingestP99Ms;
+        out.ingestLatencyMaxMs = lat.ingestMaxMs;
+
+        out.queueLatencyAvgMs = lat.queueAvgMs;
+        out.queueLatencyP95Ms = lat.queueP95Ms;
+        out.queueLatencyP99Ms = lat.queueP99Ms;
+        out.queueLatencyMaxMs = lat.queueMaxMs;
+
+        out.endToEndLatencyAvgMs = lat.endToEndAvgMs;
+        out.endToEndLatencyP95Ms = lat.endToEndP95Ms;
+        out.endToEndLatencyP99Ms = lat.endToEndP99Ms;
+        out.endToEndLatencyMaxMs = lat.endToEndMaxMs;
         out.topTags = buildTopCompressedTags(10);
         return out;
     }
@@ -1134,8 +1235,171 @@ public class TagSubscriptionService {
         public long filteredSdtTotal;
         public long forcedByMaxIntervalTotal;
         public long droppedTotal;
+        public long sdtEmittedTotal;
+        public double sdtCompressionRatio;
+
+        public double ingestLatencyAvgMs;
+        public long ingestLatencyP95Ms;
+        public long ingestLatencyP99Ms;
+        public long ingestLatencyMaxMs;
+
+        public double queueLatencyAvgMs;
+        public long queueLatencyP95Ms;
+        public long queueLatencyP99Ms;
+        public long queueLatencyMaxMs;
+
+        public double endToEndLatencyAvgMs;
+        public long endToEndLatencyP95Ms;
+        public long endToEndLatencyP99Ms;
+        public long endToEndLatencyMaxMs;
 
         public List<TagCompressionSummary> topTags;
+    }
+
+    private static final class RollingLatencyMetrics {
+        private final LatencyReservoir ingestReservoir = new LatencyReservoir(4096);
+        private final LatencyReservoir queueReservoir = new LatencyReservoir(4096);
+        private final LatencyReservoir endToEndReservoir = new LatencyReservoir(4096);
+
+        RollingLatencyMetrics(int windowMinutes) {
+            // Currently reservoir-based only; keep ctor signature aligned with compression window config.
+        }
+
+        void recordIngest(long nowMs, long latencyMs) {
+            ingestReservoir.record(nowMs, latencyMs);
+        }
+
+        void recordQueue(long nowMs, long latencyMs) {
+            queueReservoir.record(nowMs, latencyMs);
+        }
+
+        void recordEndToEnd(long nowMs, long latencyMs) {
+            endToEndReservoir.record(nowMs, latencyMs);
+        }
+
+        Snapshot snapshot() {
+            LatencyReservoir.Stats in = ingestReservoir.snapshot();
+            LatencyReservoir.Stats q = queueReservoir.snapshot();
+            LatencyReservoir.Stats e2e = endToEndReservoir.snapshot();
+            return new Snapshot(
+                    in.avg, in.p95, in.p99, in.max,
+                    q.avg, q.p95, q.p99, q.max,
+                    e2e.avg, e2e.p95, e2e.p99, e2e.max
+            );
+        }
+
+        static final class Snapshot {
+            final double ingestAvgMs;
+            final long ingestP95Ms;
+            final long ingestP99Ms;
+            final long ingestMaxMs;
+
+            final double queueAvgMs;
+            final long queueP95Ms;
+            final long queueP99Ms;
+            final long queueMaxMs;
+
+            final double endToEndAvgMs;
+            final long endToEndP95Ms;
+            final long endToEndP99Ms;
+            final long endToEndMaxMs;
+
+            Snapshot(
+                    double ingestAvgMs, long ingestP95Ms, long ingestP99Ms, long ingestMaxMs,
+                    double queueAvgMs, long queueP95Ms, long queueP99Ms, long queueMaxMs,
+                    double endToEndAvgMs, long endToEndP95Ms, long endToEndP99Ms, long endToEndMaxMs
+            ) {
+                this.ingestAvgMs = ingestAvgMs;
+                this.ingestP95Ms = ingestP95Ms;
+                this.ingestP99Ms = ingestP99Ms;
+                this.ingestMaxMs = ingestMaxMs;
+                this.queueAvgMs = queueAvgMs;
+                this.queueP95Ms = queueP95Ms;
+                this.queueP99Ms = queueP99Ms;
+                this.queueMaxMs = queueMaxMs;
+                this.endToEndAvgMs = endToEndAvgMs;
+                this.endToEndP95Ms = endToEndP95Ms;
+                this.endToEndP99Ms = endToEndP99Ms;
+                this.endToEndMaxMs = endToEndMaxMs;
+            }
+        }
+    }
+
+    private static final class LatencyReservoir {
+        private static final class Sample {
+            final long tsMs;
+            final long latencyMs;
+            Sample(long tsMs, long latencyMs) {
+                this.tsMs = tsMs;
+                this.latencyMs = latencyMs;
+            }
+        }
+
+        static final class Stats {
+            final double avg;
+            final long p95;
+            final long p99;
+            final long max;
+            Stats(double avg, long p95, long p99, long max) {
+                this.avg = avg;
+                this.p95 = p95;
+                this.p99 = p99;
+                this.max = max;
+            }
+        }
+
+        private final int maxSamples;
+        private final java.util.ArrayDeque<Sample> samples;
+
+        LatencyReservoir(int maxSamples) {
+            this.maxSamples = Math.max(256, maxSamples);
+            this.samples = new java.util.ArrayDeque<>(this.maxSamples);
+        }
+
+        synchronized void record(long nowMs, long latencyMs) {
+            long safeLatency = Math.max(0L, latencyMs);
+            if (samples.size() >= maxSamples) {
+                samples.removeFirst();
+            }
+            samples.addLast(new Sample(nowMs, safeLatency));
+        }
+
+        synchronized Stats snapshot() {
+            if (samples.isEmpty()) {
+                return new Stats(0.0, 0L, 0L, 0L);
+            }
+            long[] values = new long[samples.size()];
+            long sum = 0L;
+            long max = 0L;
+            int i = 0;
+            for (Sample s : samples) {
+                long v = s.latencyMs;
+                values[i++] = v;
+                sum += v;
+                if (v > max) {
+                    max = v;
+                }
+            }
+            java.util.Arrays.sort(values);
+            double avg = (double) sum / (double) values.length;
+            long p95 = percentile(values, 0.95);
+            long p99 = percentile(values, 0.99);
+            return new Stats(avg, p95, p99, max);
+        }
+
+        private static long percentile(long[] values, double q) {
+            if (values == null || values.length == 0) {
+                return 0L;
+            }
+            int idx = (int) Math.ceil(q * values.length) - 1;
+            if (idx < 0) {
+                idx = 0;
+            }
+            if (idx >= values.length) {
+                idx = values.length - 1;
+            }
+            return values[idx];
+        }
     }
 
     private static final class RollingCompressionMetrics {

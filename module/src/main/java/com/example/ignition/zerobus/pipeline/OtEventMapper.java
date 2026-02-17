@@ -20,6 +20,16 @@ public final class OtEventMapper {
     }
 
     public OTEvent map(TagEvent event) {
+        return map(event, false, 0.0, false, 0L);
+    }
+
+    public OTEvent map(
+            TagEvent event,
+            boolean sdtCompressed,
+            double compressionRatio,
+            boolean sdtEnabled,
+            long batchBytesSent
+    ) {
         String eventId = UUID.randomUUID().toString();
 
         long ingestionTimeMicros = System.currentTimeMillis() * 1000L;
@@ -57,7 +67,11 @@ public final class OtEventMapper {
             .setIngestionTimestamp(ingestionTimeMicros)
             .setDataType(dataType)
             .setAlarmState("")
-            .setAlarmPriority(0);
+            .setAlarmPriority(0)
+            .setSdtCompressed(sdtCompressed)
+            .setCompressionRatio(Math.max(0.0, compressionRatio))
+            .setSdtEnabled(sdtEnabled)
+            .setBatchBytesSent(Math.max(0L, batchBytesSent));
 
         if (event.isNumeric()) {
             builder.setNumericValue(event.getValueAsDouble());

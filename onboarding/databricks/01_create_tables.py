@@ -47,7 +47,11 @@ CREATE TABLE IF NOT EXISTS {FULL_BRONZE} (
   ingestion_timestamp BIGINT,
   data_type STRING,
   alarm_state STRING,
-  alarm_priority INT
+  alarm_priority INT,
+  sdt_compressed BOOLEAN,
+  compression_ratio DOUBLE,
+  sdt_enabled BOOLEAN,
+  batch_bytes_sent BIGINT
 )
 USING DELTA
 TBLPROPERTIES (
