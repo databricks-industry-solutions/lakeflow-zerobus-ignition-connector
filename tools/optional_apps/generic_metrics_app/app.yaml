@@ -1,0 +1,13 @@
+command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "$DATABRICKS_APP_PORT"]
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: APP_TARGET_CATALOG
+    value: "main"
+  - name: APP_TARGET_SCHEMA
+    value: "default"
+  - name: APP_TARGET_TABLE
+    value: "raw_tags"
+  - name: STATIC_DIR
+    value: "./frontend"
+

@@ -2,6 +2,11 @@
 
 This is the production runbook for deploying the **Ignition Zerobus Connector** module.
 
+## Scope note (core vs optional)
+
+- This runbook covers **core connector deployment only**.
+- Any visualization app scaffold (for example `tools/optional_apps/generic_metrics_app/`) is optional, outside core connector runtime, and not required for production connector operation.
+
 ## Production deployment
 
 ### Prerequisites

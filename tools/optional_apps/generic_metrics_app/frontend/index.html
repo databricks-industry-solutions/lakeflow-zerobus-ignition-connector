@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zerobus Metrics Dashboard</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Zerobus Metrics Dashboard</h1>
+      <p class="subtitle">Generic app scaffold (no customer-specific branding)</p>
+
+      <div class="controls">
+        <label for="minutes">Lookback (minutes)</label>
+        <input id="minutes" type="number" min="1" max="1440" value="15" />
+        <button id="refresh">Refresh</button>
+      </div>
+
+      <section>
+        <h2>Health</h2>
+        <pre id="health"></pre>
+      </section>
+
+      <section>
+        <h2>Throughput</h2>
+        <pre id="throughput"></pre>
+      </section>
+
+      <section>
+        <h2>Latency</h2>
+        <pre id="latency"></pre>
+      </section>
+
+      <section>
+        <h2>Compression</h2>
+        <pre id="compression"></pre>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
+

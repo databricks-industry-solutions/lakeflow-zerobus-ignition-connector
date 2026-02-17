@@ -5,6 +5,12 @@
 **Ignition compatibility**: **8.1.x** and **8.3.x** (different `.modl` artifacts).  
 **Configuration**: via the **Ignition Gateway UI**.
 
+### Core vs optional components
+
+- **Core functionality** is the Ignition module under `module/` and onboarding/table setup under `onboarding/`.
+- The generic visualization app scaffold under `tools/optional_apps/generic_metrics_app/` is **optional** and **not required** to run or deploy the connector.
+- The optional app is intended for fork-level workflows (for example `pravinva`) and should be treated as non-core.
+
 ## Concepts (Ignition Gateway + Databricks Zerobus)
 
 ### What is an Ignition Gateway?
@@ -56,6 +62,7 @@ In all cases, the connector publishes **the same protobuf event type** to Databr
 - [Create Databricks tables (so you can ingest data)](#create-databricks-tables-so-you-can-ingest-data)
 - [Generate example tag-change data (Ignition)](#generate-example-tag-change-data-ignition)
 - [Repository layout](#repository-layout)
+- [Important recent changes](#important-recent-changes)
 - [Release artifacts (two `.modl` files)](#release-artifacts-two-modl-files)
 - [Developer build](#developer-build)
 - [Reference](#reference)
@@ -136,12 +143,23 @@ Directory structure (high-level):
 ├── tools/                           # Databricks SQL packs (Bronze→Silver→Gold) + dashboard/genie prompts
 │   ├── databricks_end2end_tilt/
 │   └── databricks_end2end_sg/
+│   └── optional_apps/
+│       └── generic_metrics_app/     # optional Databricks app scaffold (non-core)
 └── onboarding/
     ├── databricks/                 # optional: helper to create/align target table schema
     └── ignition/
         ├── 8.1.50/README.md
         └── 8.3.2/README.md
 ```
+
+## Important recent changes
+
+- **Proto presence semantics**: `module/src/main/proto/ot_event.proto` now uses proto3 `optional` on value/quality/alarm fields to preserve explicit default values (for example `0`, `false`, empty string).
+- **Optional OT event telemetry fields** added to schema:
+  - `sdt_compressed`, `compression_ratio`, `sdt_enabled`, `batch_bytes_sent`
+- **Edge latency metrics added** in `TagSubscriptionService` diagnostics/metrics snapshot:
+  - ingest latency, queue latency, and end-to-end latency (avg/p95/p99/max)
+- **Table setup updated**: `onboarding/databricks/01_create_tables.py` includes the new optional telemetry columns in Bronze DDL.
 
 ## Release artifacts (two `.modl` files)
 
