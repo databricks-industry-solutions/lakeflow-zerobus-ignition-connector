@@ -1,11 +1,16 @@
 package com.example.ignition.zerobus;
 
+import com.example.ignition.zerobus.compression.SdtOverride;
+
 import java.io.Serializable;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * ConfigModel - POJO for module configuration settings.
@@ -29,11 +34,24 @@ public class ConfigModel implements Serializable {
     /** Zerobus Ingest endpoint URL */
     private String zerobusEndpoint = "";
     
+    /**
+     * Authentication mode: "service_principal" (default) or "bearer_token".
+     * - service_principal: uses oauthClientId + oauthClientSecret (M2M OAuth)
+     * - bearer_token: uses a pre-obtained bearer token (PAT, U2M, etc.)
+     */
+    private String authMode = "service_principal";
+    
     /** OAuth2 client ID for authentication */
     private String oauthClientId = "";
     
     /** OAuth2 client secret for authentication */
     private String oauthClientSecret = "";
+
+    /** Databricks account ID for account-level OIDC auth (empty = use workspace OIDC) */
+    private String accountId = "";
+
+    /** Pre-obtained bearer token (PAT, U2M access token, etc.) for bearer_token auth mode */
+    private String bearerToken = "";
     
     // === Unity Catalog Settings ===
     
@@ -137,12 +155,66 @@ public class ConfigModel implements Serializable {
     
     /** Numeric deadband for change detection (absolute difference) */
     private double numericDeadband = 0.0;
-    
+
+    // === SDT Compression ===
+
+    /** Enable Swinging Door Trending compression for numeric tags. */
+    private boolean enableSdtCompression = false;
+
+    /** SDT deviation band (+/-) around a linear interpolation corridor. */
+    private double sdtDeviation = 1.0;
+
+    /** Maximum seconds between transmitted points (heartbeat). */
+    private int sdtMaxIntervalSeconds = 300;
+
+    /** Per-tag SDT override rules. Evaluated in order; first match wins. */
+    private List<SdtOverride> sdtOverrides = new ArrayList<>();
+
+    // === Sink Selection ===
+
+    /** Sink mode: "zerobus" or "lakebase". */
+    private String sinkMode = "zerobus";
+
+    /** Enable Zerobus (Delta Lake) sink. Kept for backward compatibility. */
+    private boolean enableZerobusSink = true;
+
+    /** Enable PostgreSQL (Lakebase) sink. Kept for backward compatibility. */
+    private boolean enablePostgresSink = false;
+
+    // === PostgreSQL (Lakebase) Settings ===
+
+    /** PostgreSQL host (e.g., ep-xxx.databricks.com) */
+    private String postgresHost = "";
+
+    /** PostgreSQL port (default 5432) */
+    private int postgresPort = 5432;
+
+    /** PostgreSQL database name */
+    private String postgresDatabase = "";
+
+    /** PostgreSQL username (role name) */
+    private String postgresUser = "";
+
+    /** PostgreSQL password */
+    private String postgresPassword = "";
+
+    /** PostgreSQL table name (default raw_tags) */
+    private String postgresTable = "raw_tags";
+
+    /** PostgreSQL connection pool size (default 5) */
+    private int postgresPoolSize = 5;
+
+    // === API Security ===
+
+    /** Optional API key for authenticating POST requests to /system/zerobus/* endpoints.
+     *  When set (non-empty), all POST requests must include Authorization: Bearer &lt;key&gt;. */
+    private String ingestApiKey = "";
+
     // === Module Control ===
-    
+
     /** Enable/disable the entire module */
     private boolean enabled = false;
-    
+
     /** Enable verbose debug logging */
     private boolean debugLogging = false;
     
@@ -184,6 +256,35 @@ public class ConfigModel implements Serializable {
     
     public void setOauthClientSecret(String oauthClientSecret) {
         this.oauthClientSecret = oauthClientSecret;
+    }
+    
+    public String getAuthMode() {
+        return authMode;
+    }
+    
+    public void setAuthMode(String authMode) {
+        this.authMode = authMode;
+    }
+    
+    public String getBearerToken() {
+        return bearerToken;
+    }
+    
+    public void setBearerToken(String bearerToken) {
+        this.bearerToken = bearerToken;
+    }
+
+    public String getAccountId() {
+        return accountId;
+    }
+
+    public void setAccountId(String accountId) {
+        this.accountId = accountId;
+    }
+
+    /** @return true when auth mode is "bearer_token" */
+    public boolean isBearerTokenMode() {
+        return "bearer_token".equals(authMode);
     }
     
     public String getTargetTable() {
@@ -398,7 +499,57 @@ public class ConfigModel implements Serializable {
     public void setNumericDeadband(double numericDeadband) {
         this.numericDeadband = numericDeadband;
     }
-    
+
+    public boolean isEnableSdtCompression() {
+        return enableSdtCompression;
+    }
+
+    public void setEnableSdtCompression(boolean enableSdtCompression) {
+        this.enableSdtCompression = enableSdtCompression;
+    }
+
+    public double getSdtDeviation() {
+        return sdtDeviation;
+    }
+
+    public void setSdtDeviation(double sdtDeviation) {
+        this.sdtDeviation = sdtDeviation;
+    }
+
+    public int getSdtMaxIntervalSeconds() {
+        return sdtMaxIntervalSeconds;
+    }
+
+    public void setSdtMaxIntervalSeconds(int sdtMaxIntervalSeconds) {
+        this.sdtMaxIntervalSeconds = sdtMaxIntervalSeconds;
+    }
+
+    public List<SdtOverride> getSdtOverrides() {
+        return sdtOverrides;
+    }
+
+    public void setSdtOverrides(List<SdtOverride> sdtOverrides) {
+        this.sdtOverrides = sdtOverrides != null ? sdtOverrides : new ArrayList<>();
+    }
+
+    /**
+     * Find the first SDT override rule that matches the given tag path.
+     *
+     * @param tagPath full tag path string
+     * @return the matching override, or null if no rule matches (use global defaults)
+     */
+    public SdtOverride findMatchingOverride(String tagPath) {
+        if (tagPath == null || sdtOverrides == null || sdtOverrides.isEmpty()) {
+            return null;
+        }
+        for (SdtOverride override : sdtOverrides) {
+            if (override != null && override.matches(tagPath)) {
+                return override;
+            }
+        }
+        return null;
+    }
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -407,14 +558,111 @@ public class ConfigModel implements Serializable {
         this.enabled = enabled;
     }
     
+    public String getIngestApiKey() {
+        return ingestApiKey;
+    }
+
+    public void setIngestApiKey(String ingestApiKey) {
+        this.ingestApiKey = ingestApiKey;
+    }
+
     public boolean isDebugLogging() {
         return debugLogging;
     }
-    
+
     public void setDebugLogging(boolean debugLogging) {
         this.debugLogging = debugLogging;
     }
-    
+
+    public boolean isEnableZerobusSink() {
+        return enableZerobusSink;
+    }
+
+    public void setEnableZerobusSink(boolean enableZerobusSink) {
+        this.enableZerobusSink = enableZerobusSink;
+        if (enableZerobusSink) {
+            this.enablePostgresSink = false;
+            this.sinkMode = "zerobus";
+        }
+    }
+
+    public boolean isEnablePostgresSink() {
+        return enablePostgresSink;
+    }
+
+    public void setEnablePostgresSink(boolean enablePostgresSink) {
+        this.enablePostgresSink = enablePostgresSink;
+        if (enablePostgresSink) {
+            this.enableZerobusSink = false;
+            this.sinkMode = "lakebase";
+        }
+    }
+
+    public String getSinkMode() {
+        return sinkMode;
+    }
+
+    public void setSinkMode(String sinkMode) {
+        this.sinkMode = sinkMode;
+        normalizeSinkConfiguration();
+    }
+
+    public String getPostgresHost() {
+        return postgresHost;
+    }
+
+    public void setPostgresHost(String postgresHost) {
+        this.postgresHost = postgresHost;
+    }
+
+    public int getPostgresPort() {
+        return postgresPort;
+    }
+
+    public void setPostgresPort(int postgresPort) {
+        this.postgresPort = postgresPort;
+    }
+
+    public String getPostgresDatabase() {
+        return postgresDatabase;
+    }
+
+    public void setPostgresDatabase(String postgresDatabase) {
+        this.postgresDatabase = postgresDatabase;
+    }
+
+    public String getPostgresUser() {
+        return postgresUser;
+    }
+
+    public void setPostgresUser(String postgresUser) {
+        this.postgresUser = postgresUser;
+    }
+
+    public String getPostgresPassword() {
+        return postgresPassword;
+    }
+
+    public void setPostgresPassword(String postgresPassword) {
+        this.postgresPassword = postgresPassword;
+    }
+
+    public String getPostgresTable() {
+        return postgresTable;
+    }
+
+    public void setPostgresTable(String postgresTable) {
+        this.postgresTable = postgresTable;
+    }
+
+    public int getPostgresPoolSize() {
+        return postgresPoolSize;
+    }
+
+    public void setPostgresPoolSize(int postgresPoolSize) {
+        this.postgresPoolSize = postgresPoolSize;
+    }
+
     // === Helper Methods ===
     
     /**
@@ -443,6 +691,7 @@ public class ConfigModel implements Serializable {
         // Auto-correct common path issues (especially in Docker restores) before validating.
         // This mutates the in-memory ConfigModel and is intentionally best-effort.
         autoCorrectPaths();
+        normalizeSinkConfiguration();
 
         // Gson deserialization sets fields directly (it does not call setters),
         // so catalog/schema/table may be empty even when targetTable is present.
@@ -457,26 +706,42 @@ public class ConfigModel implements Serializable {
         // When the module is disabled, allow saving partial configs so users can incrementally configure.
         // When enabled, enforce required fields.
         if (enabled) {
-            if (workspaceUrl == null || workspaceUrl.isEmpty()) {
-                errors.add("Workspace URL is required");
-            }
+            if (enableZerobusSink) {
+                if (workspaceUrl == null || workspaceUrl.isEmpty()) {
+                    errors.add("Workspace URL is required");
+                }
 
-            if (zerobusEndpoint == null || zerobusEndpoint.isEmpty()) {
-                errors.add("Zerobus endpoint is required");
-            }
+                if (zerobusEndpoint == null || zerobusEndpoint.isEmpty()) {
+                    errors.add("Zerobus endpoint is required");
+                } else {
+                    // Workspace URL and Zerobus endpoint must refer to the same workspace (same ID).
+                    String urlId = extractWorkspaceIdFromWorkspaceUrl(workspaceUrl);
+                    String endpointId = extractWorkspaceIdFromEndpoint(zerobusEndpoint);
+                    if (urlId != null && endpointId != null && !urlId.equals(endpointId)) {
+                        errors.add("Workspace URL and Zerobus endpoint must be for the same workspace (workspace ID mismatch: " + urlId + " vs " + endpointId + ")");
+                    }
+                }
 
-            if (oauthClientId == null || oauthClientId.isEmpty()) {
-                errors.add("OAuth client ID is required");
-            }
+                if (isBearerTokenMode()) {
+                    if (bearerToken == null || bearerToken.isEmpty()) {
+                        errors.add("Bearer token is required when using bearer token auth mode");
+                    }
+                } else {
+                    // service_principal mode (default)
+                    if (oauthClientId == null || oauthClientId.isEmpty()) {
+                        errors.add("OAuth client ID is required");
+                    }
 
-            if (oauthClientSecret == null || oauthClientSecret.isEmpty()) {
-                errors.add("OAuth client secret is required");
-            }
+                    if (oauthClientSecret == null || oauthClientSecret.isEmpty()) {
+                        errors.add("OAuth client secret is required");
+                    }
+                }
 
-            if (targetTable == null || targetTable.isEmpty()) {
-                errors.add("Target table is required");
-            } else if (catalogName.isEmpty() || schemaName.isEmpty() || tableName.isEmpty()) {
-                errors.add("Target table must be in format: catalog.schema.table");
+                if (targetTable == null || targetTable.isEmpty()) {
+                    errors.add("Target table is required");
+                } else if (catalogName.isEmpty() || schemaName.isEmpty() || tableName.isEmpty()) {
+                    errors.add("Target table must be in format: catalog.schema.table");
+                }
             }
 
             // Only validate tag selection when direct subscriptions are enabled.
@@ -501,6 +766,14 @@ public class ConfigModel implements Serializable {
         
         if (batchFlushIntervalMs < 100 || batchFlushIntervalMs > 60000) {
             errors.add("Batch flush interval must be between 100ms and 60000ms");
+        }
+
+        if (maxQueueSize < 1 || maxQueueSize > 1_000_000) {
+            errors.add("Max queue size must be between 1 and 1000000");
+        }
+
+        if (maxEventsPerSecond < 1 || maxEventsPerSecond > 1_000_000) {
+            errors.add("Max events per second must be between 1 and 1000000");
         }
 
         if (enableStoreAndForward) {
@@ -538,8 +811,111 @@ public class ConfigModel implements Serializable {
                 errors.add("Spool directory is not usable: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
             }
         }
-        
+
+        if (enableSdtCompression) {
+            if (sdtDeviation <= 0) {
+                errors.add("SDT deviation must be greater than 0 when compression is enabled");
+            }
+            if (sdtMaxIntervalSeconds <= 0) {
+                errors.add("SDT max interval must be greater than 0 when compression is enabled");
+            }
+        }
+
+        if (sdtOverrides != null) {
+            for (int i = 0; i < sdtOverrides.size(); i++) {
+                SdtOverride ov = sdtOverrides.get(i);
+                if (ov == null) {
+                    continue;
+                }
+                String prefix = "sdtOverrides[" + i + "]: ";
+                if (ov.getPattern() == null || ov.getPattern().isEmpty()) {
+                    errors.add(prefix + "pattern is required");
+                } else {
+                    try {
+                        Pattern.compile(ov.getPattern());
+                    } catch (PatternSyntaxException e) {
+                        errors.add(prefix + "invalid regex pattern: " + e.getDescription());
+                    }
+                }
+                if (ov.getDeviation() < 0) {
+                    errors.add(prefix + "deviation must be >= 0");
+                }
+                if (ov.getMaxIntervalSeconds() <= 0) {
+                    errors.add(prefix + "maxIntervalSeconds must be > 0");
+                }
+            }
+        }
+
+        // Validate PostgreSQL settings when enabled
+        if (enablePostgresSink && enabled) {
+            if (postgresHost == null || postgresHost.isEmpty()) {
+                errors.add("PostgreSQL host is required when PostgreSQL sink is enabled");
+            }
+            if (postgresPort <= 0 || postgresPort > 65535) {
+                errors.add("PostgreSQL port must be between 1 and 65535");
+            }
+            if (postgresDatabase == null || postgresDatabase.isEmpty()) {
+                errors.add("PostgreSQL database is required when PostgreSQL sink is enabled");
+            }
+            if (postgresUser == null || postgresUser.isEmpty()) {
+                errors.add("PostgreSQL user is required when PostgreSQL sink is enabled");
+            }
+            if (postgresPassword == null || postgresPassword.isEmpty()) {
+                errors.add("PostgreSQL password is required when PostgreSQL sink is enabled");
+            }
+            if (postgresTable == null || postgresTable.isEmpty()) {
+                errors.add("PostgreSQL table is required when PostgreSQL sink is enabled");
+            }
+            if (postgresPoolSize < 1 || postgresPoolSize > 100) {
+                errors.add("PostgreSQL pool size must be between 1 and 100");
+            }
+        }
+
+        if (!"zerobus".equals(sinkMode) && !"lakebase".equals(sinkMode)) {
+            errors.add("Sink mode must be either 'zerobus' or 'lakebase'");
+        }
+
         return errors;
+    }
+
+    /**
+     * Normalize sink mode + legacy boolean flags.
+     *
+     * Backward-compatibility behavior:
+     * - If sinkMode is missing/blank (older config), infer mode from booleans.
+     * - Once mode is known, force booleans to an exclusive configuration.
+     */
+    public void normalizeSinkConfiguration() {
+        String normalizedMode = sinkMode == null ? "" : sinkMode.trim().toLowerCase();
+
+        if (normalizedMode.isEmpty()) {
+            // Legacy config migration path (no sinkMode set yet)
+            if (enablePostgresSink && !enableZerobusSink) {
+                normalizedMode = "lakebase";
+            } else {
+                // Default and tie-breaker: zerobus
+                normalizedMode = "zerobus";
+            }
+        }
+
+        if ("lakebase".equals(normalizedMode)) {
+            sinkMode = "lakebase";
+            enableZerobusSink = false;
+            enablePostgresSink = true;
+            return;
+        }
+
+        if ("zerobus".equals(normalizedMode)) {
+            sinkMode = "zerobus";
+            enableZerobusSink = true;
+            enablePostgresSink = false;
+            return;
+        }
+
+        // Preserve unknown value for validation error, but keep a safe default behavior.
+        sinkMode = normalizedMode;
+        enableZerobusSink = true;
+        enablePostgresSink = false;
     }
 
     /**
@@ -582,6 +958,66 @@ public class ConfigModel implements Serializable {
             spoolDirectory = raw;
         }
     }
+
+    /**
+     * Extract workspace ID from Databricks workspace URL for validation.
+     * Azure: https://adb-7405607216190670.10.azuredatabricks.net -> 7405607216190670
+     * AWS: host may contain workspace ID in first segment.
+     */
+    private static String extractWorkspaceIdFromWorkspaceUrl(String workspaceUrl) {
+        if (workspaceUrl == null || workspaceUrl.isBlank()) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(workspaceUrl.trim());
+            String host = uri.getHost();
+            if (host == null || host.isEmpty()) {
+                return null;
+            }
+            // Azure: adb-<workspaceId>.10.azuredatabricks.net
+            if (host.startsWith("adb-")) {
+                int dot = host.indexOf('.', 4);
+                return dot > 4 ? host.substring(4, dot) : host.substring(4);
+            }
+            // AWS: <workspaceId>.cloud.databricks.com or similar; first segment is often the ID
+            int dot = host.indexOf('.');
+            return dot > 0 ? host.substring(0, dot) : host;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Extract workspace ID from Zerobus endpoint host for validation.
+     * Format: <workspaceId>.zerobus.<region>.<domain> e.g. 7405607216190670.zerobus.eastus2.azuredatabricks.net
+     * Endpoint may be host-only (no scheme) or full URL.
+     */
+    private static String extractWorkspaceIdFromEndpoint(String zerobusEndpoint) {
+        if (zerobusEndpoint == null || zerobusEndpoint.isBlank()) {
+            return null;
+        }
+        try {
+            String s = zerobusEndpoint.trim();
+            String host = null;
+            if (s.contains("://")) {
+                URI uri = URI.create(s);
+                host = uri.getHost();
+            }
+            if (host == null || host.isEmpty()) {
+                int slash = s.indexOf('/');
+                String hostPart = slash > 0 ? s.substring(0, slash) : s;
+                int colon = hostPart.indexOf(':');
+                host = colon > 0 ? hostPart.substring(0, colon) : hostPart;
+            }
+            if (host == null || host.isEmpty()) {
+                return null;
+            }
+            int dot = host.indexOf('.');
+            return dot > 0 ? host.substring(0, dot) : host;
+        } catch (Exception e) {
+            return null;
+        }
+    }
     
     /**
      * Check if the new configuration requires a service restart.
@@ -592,8 +1028,11 @@ public class ConfigModel implements Serializable {
     public boolean requiresRestart(ConfigModel newConfig) {
         return !Objects.equals(this.workspaceUrl, newConfig.workspaceUrl)
             || !Objects.equals(this.zerobusEndpoint, newConfig.zerobusEndpoint)
+            || !Objects.equals(this.authMode, newConfig.authMode)
             || !Objects.equals(this.oauthClientId, newConfig.oauthClientId)
             || !Objects.equals(this.oauthClientSecret, newConfig.oauthClientSecret)
+            || !Objects.equals(this.accountId, newConfig.accountId)
+            || !Objects.equals(this.bearerToken, newConfig.bearerToken)
             || !Objects.equals(this.targetTable, newConfig.targetTable)
             || this.enableDirectSubscriptions != newConfig.enableDirectSubscriptions
             || !Objects.equals(this.tagSelectionMode, newConfig.tagSelectionMode)
@@ -619,8 +1058,22 @@ public class ConfigModel implements Serializable {
             || this.includeQuality != newConfig.includeQuality
             || this.onlyOnChange != newConfig.onlyOnChange
             || Double.compare(this.numericDeadband, newConfig.numericDeadband) != 0
+            || this.enableSdtCompression != newConfig.enableSdtCompression
+            || Double.compare(this.sdtDeviation, newConfig.sdtDeviation) != 0
+            || this.sdtMaxIntervalSeconds != newConfig.sdtMaxIntervalSeconds
+            || !Objects.equals(this.sdtOverrides, newConfig.sdtOverrides)
             || this.enabled != newConfig.enabled
-            || this.debugLogging != newConfig.debugLogging;
+            || this.debugLogging != newConfig.debugLogging
+            || !Objects.equals(this.sinkMode, newConfig.sinkMode)
+            || this.enableZerobusSink != newConfig.enableZerobusSink
+            || this.enablePostgresSink != newConfig.enablePostgresSink
+            || !Objects.equals(this.postgresHost, newConfig.postgresHost)
+            || this.postgresPort != newConfig.postgresPort
+            || !Objects.equals(this.postgresDatabase, newConfig.postgresDatabase)
+            || !Objects.equals(this.postgresUser, newConfig.postgresUser)
+            || !Objects.equals(this.postgresPassword, newConfig.postgresPassword)
+            || !Objects.equals(this.postgresTable, newConfig.postgresTable)
+            || this.postgresPoolSize != newConfig.postgresPoolSize;
     }
     
     /**
@@ -629,8 +1082,11 @@ public class ConfigModel implements Serializable {
     public void updateFrom(ConfigModel other) {
         this.workspaceUrl = other.workspaceUrl;
         this.zerobusEndpoint = other.zerobusEndpoint;
+        this.authMode = other.authMode;
         this.oauthClientId = other.oauthClientId;
         this.oauthClientSecret = other.oauthClientSecret;
+        this.accountId = other.accountId;
+        this.bearerToken = other.bearerToken;
         this.targetTable = other.targetTable;
         this.parseTableName();
         this.enableDirectSubscriptions = other.enableDirectSubscriptions;
@@ -657,8 +1113,24 @@ public class ConfigModel implements Serializable {
         this.includeQuality = other.includeQuality;
         this.onlyOnChange = other.onlyOnChange;
         this.numericDeadband = other.numericDeadband;
+        this.enableSdtCompression = other.enableSdtCompression;
+        this.sdtDeviation = other.sdtDeviation;
+        this.sdtMaxIntervalSeconds = other.sdtMaxIntervalSeconds;
+        this.sdtOverrides = other.sdtOverrides != null ? new ArrayList<>(other.sdtOverrides) : new ArrayList<>();
         this.enabled = other.enabled;
         this.debugLogging = other.debugLogging;
+        this.sinkMode = other.sinkMode;
+        this.ingestApiKey = other.ingestApiKey;
+        this.enableZerobusSink = other.enableZerobusSink;
+        this.enablePostgresSink = other.enablePostgresSink;
+        this.postgresHost = other.postgresHost;
+        this.postgresPort = other.postgresPort;
+        this.postgresDatabase = other.postgresDatabase;
+        this.postgresUser = other.postgresUser;
+        this.postgresPassword = other.postgresPassword;
+        this.postgresTable = other.postgresTable;
+        this.postgresPoolSize = other.postgresPoolSize;
+        normalizeSinkConfiguration();
     }
     
     @Override

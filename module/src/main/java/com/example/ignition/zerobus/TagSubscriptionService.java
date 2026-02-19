@@ -1,5 +1,10 @@
 package com.example.ignition.zerobus;
 
+import com.example.ignition.zerobus.compression.CompressionMetrics;
+import com.example.ignition.zerobus.compression.SdtOverride;
+import com.example.ignition.zerobus.compression.SdtValidationManager;
+import com.example.ignition.zerobus.compression.SdtValidationReport;
+import com.example.ignition.zerobus.compression.SwingDoorCompressor;
 import com.example.ignition.zerobus.web.TagEventPayload;
 import com.example.ignition.zerobus.pipeline.OtEventMapper;
 import com.example.ignition.zerobus.pipeline.StoreAndForwardBuffer;
@@ -21,6 +26,9 @@ import com.inductiveautomation.ignition.common.browsing.Results;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -62,6 +70,11 @@ public class TagSubscriptionService {
     private final Map<TagPath, TagChangeListener> subscribedListeners = new ConcurrentHashMap<>();
     private final Map<String, Object> lastSentValueByTag = new ConcurrentHashMap<>();
     private volatile boolean autoPausedDirectSubscriptions = false;
+
+    // SDT compression state
+    private final ConcurrentHashMap<String, SwingDoorCompressor> compressorsByTag = new ConcurrentHashMap<>();
+    private final CompressionMetrics compressionMetrics = new CompressionMetrics();
+    private final SdtValidationManager sdtValidationManager = new SdtValidationManager();
     
     // Metrics
     private AtomicLong totalEventsReceived = new AtomicLong(0);
@@ -219,10 +232,14 @@ public class TagSubscriptionService {
     public boolean isRunning() {
         return running.get();
     }
-    
-    
-    
-    
+
+    /**
+     * Current buffer backlog in bytes (for metrics/observability).
+     * When disk-backed, this is the spool file backlog; when in-memory, an approximate size.
+     */
+    public long getBufferBacklogBytes() {
+        return buffer.backlogBytes();
+    }
     
     private void subscribeConfiguredTags() {
         try {
@@ -570,6 +587,8 @@ public class TagSubscriptionService {
             // Clear maps immediately to avoid double-unsubscribe
             subscribedListeners.clear();
             lastSentValueByTag.clear();
+            compressorsByTag.clear();
+            sdtValidationManager.clear();
 
             if (paths.isEmpty() || listeners.isEmpty()) {
                 return;
@@ -638,13 +657,19 @@ public class TagSubscriptionService {
     }
     
     /**
-     * Flush a batch of events to Zerobus.
-     * 
-     * Note: Not synchronized - uses thread-safe queue operations.
-     * Multiple threads can call this concurrently without blocking each other.
+     * Top-level flush entry point used by the scheduled executor.
+     *
+     * IMPORTANT: ScheduledExecutorService silently stops future executions if the task throws.
+     * This wrapper catches all Throwables to keep the flush thread alive.
      */
     private void flushBatch() {
-        flushBatch(true);
+        try {
+            flushBatch(true);
+        } catch (Throwable t) {
+            // Never let an exception kill the flush thread - ScheduledExecutorService will
+            // silently cancel all future executions if the task throws.
+            logger.error("Unexpected error in flush thread (thread kept alive)", t);
+        }
     }
 
     /**
@@ -719,24 +744,92 @@ public class TagSubscriptionService {
             return false;
         }
 
-        // Optional filtering: onlyOnChange + numeric deadband.
-        // Apply consistently for BOTH direct subscriptions and HTTP ingest.
+        String tagPathStr = te.getTagPath() != null ? te.getTagPath() : "";
+        boolean isNumeric = te.getValue() instanceof Number;
+
+        // --- SDT compression for numeric tags ---
+        if (config.isEnableSdtCompression() && isNumeric) {
+            compressionMetrics.incrementReceived();
+            double value = ((Number) te.getValue()).doubleValue();
+            long timestampMs = te.getTimestamp() != null ? te.getTimestamp().getTime() : System.currentTimeMillis();
+            String quality = te.getQuality() != null ? te.getQuality() : "UNKNOWN";
+
+            SwingDoorCompressor compressor = compressorsByTag.computeIfAbsent(tagPathStr, k -> {
+                SdtOverride override = config.findMatchingOverride(k);
+                double dev = override != null ? override.getDeviation() : config.getSdtDeviation();
+                long maxMs = (override != null ? override.getMaxIntervalSeconds() : config.getSdtMaxIntervalSeconds()) * 1000L;
+                return new SwingDoorCompressor(dev, maxMs);
+            });
+
+            sdtValidationManager.recordRawPoint(tagPathStr, timestampMs, value);
+
+            SwingDoorCompressor.Result result = compressor.accept(value, timestampMs, quality);
+
+            double ratio = compressionMetrics.getCompressionRatio();
+
+            switch (result.type) {
+                case EMIT:
+                    compressionMetrics.incrementEmitted();
+                    sdtValidationManager.markPivot(tagPathStr);
+                    return mapAndBuffer(te, source, true, ratio);
+
+                case SUPPRESS:
+                    compressionMetrics.incrementSuppressed();
+                    if (config.isDebugLogging()) {
+                        logger.debug("SDT suppressed ({}) -> {}", source, tagPathStr);
+                    }
+                    return true;
+
+                case EMIT_HELD:
+                    compressionMetrics.incrementEmitted();
+                    sdtValidationManager.markPivotByTimestamp(tagPathStr, result.timestampMs);
+                    // Reconstruct the held event and send it
+                    TagEvent heldEvent = new TagEvent(tagPathStr, result.value, result.quality,
+                        new Date(result.timestampMs));
+                    mapAndBuffer(heldEvent, source, true, ratio);
+                    // Current point is now held inside the compressor; it will be emitted
+                    // when the corridor breaks or on heartbeat.
+                    return true;
+            }
+        }
+
+        // --- SDT enabled but non-numeric: pass through ---
+        if (config.isEnableSdtCompression() && !isNumeric) {
+            compressionMetrics.incrementReceived();
+            compressionMetrics.incrementNonNumericPassthrough();
+            // Still apply onlyOnChange if enabled
+            if (config.isOnlyOnChange()) {
+                Object last = lastSentValueByTag.get(tagPathStr);
+                if (!hasMeaningfulChange(last, te.getValue())) {
+                    if (config.isDebugLogging()) {
+                        logger.debug("Skipped tag event (onlyOnChange) ({}) -> {}", source, tagPathStr);
+                    }
+                    return true;
+                }
+            }
+            return mapAndBuffer(te, source, true, compressionMetrics.getCompressionRatio());
+        }
+
+        // --- SDT disabled: existing logic ---
         if (config.isOnlyOnChange()) {
-            String tagPathStr = te.getTagPath() != null ? te.getTagPath() : "";
             Object last = lastSentValueByTag.get(tagPathStr);
             if (!hasMeaningfulChange(last, te.getValue())) {
                 if (config.isDebugLogging()) {
                     logger.debug("Skipped tag event (onlyOnChange) ({}) -> {}", source, tagPathStr);
                 }
-                return true; // not an error; just filtered out
+                return true;
             }
         }
 
-        OTEvent evt = mapper.map(te);
+        return mapAndBuffer(te, source, false, 0.0);
+    }
+
+    private boolean mapAndBuffer(TagEvent te, String source, boolean sdtCompressed, double compressionRatio) {
+        String tagPathStr = te.getTagPath() != null ? te.getTagPath() : "";
+        OTEvent evt = mapper.map(te, sdtCompressed, compressionRatio);
         boolean ok = buffer.offer(evt);
         if (ok) {
             if (config.isOnlyOnChange()) {
-                String tagPathStr = te.getTagPath() != null ? te.getTagPath() : "";
                 lastSentValueByTag.put(tagPathStr, te.getValue());
             }
             totalEventsReceived.incrementAndGet();
@@ -770,8 +863,33 @@ public class TagSubscriptionService {
     
     
     /**
+     * Generate an SDT validation report showing interpolation errors for tracked tags.
+     *
+     * @param maxTags      max number of tags to include (sorted by activity)
+     * @param samplePoints max number of point details per tag
+     * @return the validation report
+     */
+    public SdtValidationReport getSdtValidationReport(int maxTags, int samplePoints) {
+        if (!config.isEnableSdtCompression()) {
+            SdtValidationReport report = new SdtValidationReport();
+            report.enabled = false;
+            report.deviationConfigured = config.getSdtDeviation();
+            report.sdtMaxIntervalSeconds = config.getSdtMaxIntervalSeconds();
+            report.trackedTags = 0;
+            report.overallVerdict = "PASS";
+            report.tags = java.util.Collections.emptyList();
+            return report;
+        }
+        return sdtValidationManager.generateReport(
+                config,
+                maxTags,
+                samplePoints
+        );
+    }
+
+    /**
      * Get diagnostics information.
-     * 
+     *
      * @return Diagnostics string
      */
     public String getDiagnostics() {
@@ -796,11 +914,22 @@ public class TagSubscriptionService {
         
         if (lastFlushTime > 0) {
             long secondsAgo = (System.currentTimeMillis() - lastFlushTime) / 1000;
-            sb.append("Last Flush: ").append(secondsAgo).append(" seconds ago\n");
+            String aedt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z")
+                    .withZone(ZoneId.of("Australia/Sydney"))
+                    .format(Instant.ofEpochMilli(lastFlushTime));
+            sb.append("Last Flush: ").append(secondsAgo).append(" seconds ago (").append(aedt).append(")\n");
         } else {
             sb.append("Last Flush: Never\n");
         }
-        
+
+        if (config.isEnableSdtCompression()) {
+            sb.append("\n=== SDT Compression ===\n");
+            sb.append(compressionMetrics.toDiagnosticString()).append("\n");
+            sb.append("Active Compressors: ").append(compressorsByTag.size()).append(" tags\n");
+            int overrideCount = config.getSdtOverrides() != null ? config.getSdtOverrides().size() : 0;
+            sb.append("Override Rules: ").append(overrideCount).append("\n");
+        }
+
         return sb.toString();
     }
     
