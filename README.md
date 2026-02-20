@@ -1,6 +1,6 @@
 ## Ignition Zerobus Connector
 
-**Version**: `1.0.1`  
+**Version**: `1.0.10`  
 **Purpose**: Stream Ignition tag-change events to Databricks Delta tables via Zerobus (gRPC + protobuf).  
 **Ignition compatibility**: **8.1.x** and **8.3.x** (different `.modl` artifacts).  
 **Configuration**: via the **Ignition Gateway UI**.
@@ -73,8 +73,8 @@ For production setup (prereqs, install, configure, verify, troubleshooting), see
 
 Download the prebuilt Ignition module (`.modl`) from GitHub Releases:
 
-- **Ignition 8.1.x**: `zerobus-connector-1.0.1.modl`
-- **Ignition 8.3.x**: `zerobus-connector-1.0.1-ignition-8.3.modl`
+- **Ignition 8.1.x**: `zerobus-connector-1.0.10.modl`
+- **Ignition 8.3.x**: `zerobus-connector-1.0.10-ignition-8.3.modl`
 
 Then follow `DEPLOYMENT.md` for installation and configuration.
 
@@ -125,8 +125,8 @@ Directory structure (high-level):
 ├── README.md
 ├── DEPLOYMENT.md
 ├── releases/                       # canonical .modl artifacts (root)
-│   ├── zerobus-connector-1.0.1.modl
-│   └── zerobus-connector-1.0.1-ignition-8.3.modl
+│   ├── zerobus-connector-1.0.10.modl
+│   └── zerobus-connector-1.0.10-ignition-8.3.modl
 ├── module/                         # Ignition module source + Gradle build
 │   ├── build.gradle
 │   ├── settings.gradle
@@ -165,11 +165,11 @@ Directory structure (high-level):
 
 There are **two** prebuilt module packages under `releases/`:
 
-- **`releases/zerobus-connector-1.0.1.modl`**:
+- **`releases/zerobus-connector-1.0.10.modl`**:
   - **Install on**: Ignition **8.1.x** (and 8.2.x if you run it)
   - **Why**: the packaged `module.xml` sets `<requiredIgnitionVersion>` to `8.1.0`
 
-- **`releases/zerobus-connector-1.0.1-ignition-8.3.modl`**:
+- **`releases/zerobus-connector-1.0.10-ignition-8.3.modl`**:
   - **Install on**: Ignition **8.3.x**
   - **Why**: the packaged `module.xml` sets `<requiredIgnitionVersion>` to `8.3.0`
 
@@ -276,7 +276,7 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PA
   ./gradlew buildModule81
 ```
 
-Output: `module/build-user-8.1/modules/zerobus-connector-1.0.1.modl`
+Output: `module/build-user-8.1/modules/zerobus-connector-1.0.10.modl`
 
 #### 3.2) Build the Ignition 8.3.x module (`.modl`)
 
@@ -286,7 +286,7 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PA
   ./gradlew buildModule83
 ```
 
-Output: `module/build-user-8.3/modules/zerobus-connector-1.0.1-ignition-8.3.modl`
+Output: `module/build-user-8.3/modules/zerobus-connector-1.0.10-ignition-8.3.modl`
 
 #### 3.3) Where release artifacts go
 
