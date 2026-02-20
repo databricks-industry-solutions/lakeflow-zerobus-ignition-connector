@@ -19,6 +19,7 @@ public class SdtValidationReport {
 
     public static class TagValidation {
         public String tagPath;
+        public double deviationUsed;
         public int rawPointCount;
         public int pivotCount;
         public double compressionRatioPct;

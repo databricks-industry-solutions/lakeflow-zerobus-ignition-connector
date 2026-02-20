@@ -52,10 +52,10 @@ class QueryService:
     def throughput(self, minutes: int) -> list[dict[str, Any]]:
         q = f"""
         SELECT
-          date_trunc('minute', timestamp_micros(event_time)) AS minute_bucket,
+          date_trunc('minute', event_time) AS minute_bucket,
           count(*) AS events
         FROM {self.fqtn}
-        WHERE timestamp_micros(event_time) >= current_timestamp() - INTERVAL {minutes} MINUTES
+        WHERE event_time >= current_timestamp() - INTERVAL {minutes} MINUTES
         GROUP BY 1
         ORDER BY 1
         """
@@ -64,12 +64,12 @@ class QueryService:
     def latency(self, minutes: int) -> list[dict[str, Any]]:
         q = f"""
         SELECT
-          date_trunc('minute', timestamp_micros(event_time)) AS minute_bucket,
-          avg((ingestion_timestamp - event_time) / 1000.0) AS avg_latency_ms,
-          percentile_approx((ingestion_timestamp - event_time) / 1000.0, 0.95) AS p95_latency_ms,
-          percentile_approx((ingestion_timestamp - event_time) / 1000.0, 0.99) AS p99_latency_ms
+          date_trunc('minute', event_time) AS minute_bucket,
+          avg((ingestion_timestamp - unix_micros(event_time)) / 1000.0) AS avg_latency_ms,
+          percentile_approx((ingestion_timestamp - unix_micros(event_time)) / 1000.0, 0.95) AS p95_latency_ms,
+          percentile_approx((ingestion_timestamp - unix_micros(event_time)) / 1000.0, 0.99) AS p99_latency_ms
         FROM {self.fqtn}
-        WHERE timestamp_micros(event_time) >= current_timestamp() - INTERVAL {minutes} MINUTES
+        WHERE event_time >= current_timestamp() - INTERVAL {minutes} MINUTES
         GROUP BY 1
         ORDER BY 1
         """
@@ -78,11 +78,11 @@ class QueryService:
     def compression(self, minutes: int) -> list[dict[str, Any]]:
         q = f"""
         SELECT
-          date_trunc('minute', timestamp_micros(event_time)) AS minute_bucket,
+          date_trunc('minute', event_time) AS minute_bucket,
           avg(COALESCE(compression_ratio, 0.0)) AS avg_compression_ratio,
           avg(CASE WHEN COALESCE(sdt_compressed, false) THEN 1.0 ELSE 0.0 END) AS pct_sdt_flagged
         FROM {self.fqtn}
-        WHERE timestamp_micros(event_time) >= current_timestamp() - INTERVAL {minutes} MINUTES
+        WHERE event_time >= current_timestamp() - INTERVAL {minutes} MINUTES
         GROUP BY 1
         ORDER BY 1
         """

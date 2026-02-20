@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="320" viewBox="0 0 1180 320">
+  <style>
+    .box { fill: #ffffff; stroke: #1f2937; stroke-width: 2; rx: 10; }
+    .group { fill: #f3f4f6; stroke: #6b7280; stroke-width: 2; rx: 14; }
+    .title { font: 700 14px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif; fill: #111827; }
+    .text { font: 12px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif; fill: #111827; }
+    .muted { font: 12px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif; fill: #374151; }
+    .arrow { stroke: #111827; stroke-width: 2.5; fill: none; marker-end: url(#arrowhead); }
+  </style>
+
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <polygon points="0,0 10,4 0,8" fill="#111827"/>
+    </marker>
+  </defs>
+
+  <!-- Left: Ignition -->
+  <rect x="20" y="20" width="290" height="280" class="group"/>
+  <text x="35" y="48" class="title">Ignition Gateway</text>
+
+  <rect x="40" y="70" width="250" height="46" class="box"/>
+  <text x="55" y="98" class="text">tilt: plant telemetry</text>
+  <text x="55" y="114" class="muted">wind + solar + BESS + met mast</text>
+
+  <rect x="40" y="126" width="250" height="46" class="box"/>
+  <text x="55" y="154" class="text">grid: POI + dispatch + market</text>
+
+  <rect x="40" y="182" width="250" height="46" class="box"/>
+  <text x="55" y="210" class="text">cmms: maintenance / work orders</text>
+
+  <rect x="40" y="238" width="250" height="46" class="box"/>
+  <text x="55" y="266" class="text">forecast: next-hour forecast</text>
+
+  <!-- Zerobus -->
+  <rect x="350" y="115" width="190" height="90" class="box"/>
+  <text x="365" y="145" class="title">Zerobus Connector</text>
+  <text x="365" y="168" class="muted">explicit tag paths</text>
+
+  <!-- Databricks -->
+  <rect x="575" y="20" width="585" height="280" class="group"/>
+  <text x="590" y="48" class="title">Databricks Lakehouse</text>
+
+  <rect x="595" y="85" width="150" height="70" class="box"/>
+  <text x="610" y="112" class="text">Bronze</text>
+  <text x="610" y="132" class="muted">ignition_demo.scada_data</text>
+  <text x="610" y="148" class="muted">tag_events</text>
+
+  <rect x="770" y="85" width="150" height="70" class="box"/>
+  <text x="785" y="112" class="text">Silver mapping</text>
+  <text x="785" y="132" class="muted">signal mapping</text>
+
+  <rect x="945" y="85" width="190" height="70" class="box"/>
+  <text x="960" y="112" class="text">Silver views</text>
+  <text x="960" y="132" class="muted">normalized + 1m + latest</text>
+
+  <rect x="595" y="175" width="190" height="70" class="box"/>
+  <text x="610" y="202" class="text">Gold views</text>
+  <text x="610" y="222" class="muted">KPIs + rollups</text>
+
+  <rect x="810" y="175" width="150" height="70" class="box"/>
+  <text x="825" y="202" class="text">Dashboards</text>
+  <text x="825" y="222" class="muted">AI/BI</text>
+
+  <rect x="985" y="175" width="150" height="70" class="box"/>
+  <text x="1000" y="202" class="text">Genie</text>
+  <text x="1000" y="222" class="muted">Q&amp;A</text>
+
+  <!-- Arrows -->
+  <path d="M 290 160 L 350 160" class="arrow"/>
+  <path d="M 540 160 L 595 120" class="arrow"/>
+  <path d="M 745 120 L 770 120" class="arrow"/>
+  <path d="M 920 120 L 945 120" class="arrow"/>
+  <path d="M 1040 155 L 690 175" class="arrow"/>
+  <path d="M 785 210 L 810 210" class="arrow"/>
+  <path d="M 960 210 L 985 210" class="arrow"/>
+</svg>
+
+
+

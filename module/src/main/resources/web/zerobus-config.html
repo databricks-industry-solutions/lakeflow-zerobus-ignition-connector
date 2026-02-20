@@ -455,6 +455,163 @@
         .tag-remove:hover {
             opacity: 1;
         }
+
+        /* Top-level tabs */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            padding: 12px 32px 0 32px;
+            border-bottom: 1px solid #e1e4e8;
+            background: #fff;
+        }
+
+        .tab-btn {
+            border: 1px solid #cdd5df;
+            border-bottom: none;
+            background: #f8f9fa;
+            color: #495057;
+            border-radius: 6px 6px 0 0;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .tab-btn.active {
+            background: #0067a5;
+            color: #fff;
+            border-color: #0067a5;
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        .embed-card {
+            border: 1px solid #d7e3ee;
+            border-radius: 8px;
+            background: #ffffff;
+            overflow: hidden;
+        }
+
+        .embed-card-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid #e6edf4;
+            background: linear-gradient(180deg, #f8fbff 0%, #eef5fc 100%);
+        }
+
+        .embed-controls {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 10px;
+            align-items: end;
+        }
+
+        .embed-frame-wrap {
+            height: 78vh;
+            min-height: 560px;
+            background: #f5f8fb;
+        }
+
+        .embed-frame {
+            width: 100%;
+            height: 100%;
+            border: 0;
+            background: #ffffff;
+        }
+
+        .embed-status {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        .embed-status.ok { color: #1f7a3f; }
+        .embed-status.warn { color: #a06a00; }
+        .embed-status.bad { color: #b42318; }
+
+        .native-dashboard {
+            margin-top: 12px;
+            border-top: 1px solid #e6edf4;
+            padding: 14px 16px 16px 16px;
+            background: #f8fbff;
+        }
+
+        .native-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .native-kpi {
+            background: #fff;
+            border: 1px solid #d7e3ee;
+            border-radius: 8px;
+            padding: 10px 12px;
+        }
+
+        .native-kpi .k {
+            font-size: 11px;
+            color: #5f7389;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .native-kpi .v {
+            font-size: 18px;
+            font-weight: 700;
+            color: #0f4f7a;
+            margin-top: 4px;
+        }
+
+        .native-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .native-card {
+            background: #fff;
+            border: 1px solid #d7e3ee;
+            border-radius: 8px;
+            padding: 10px 12px;
+        }
+
+        .native-card h4 {
+            font-size: 13px;
+            color: #184f78;
+            margin-bottom: 8px;
+        }
+
+        .native-chart {
+            width: 100%;
+            height: 220px;
+            border: 1px solid #e2ebf4;
+            border-radius: 6px;
+            background: #fff;
+        }
+
+        .native-pre {
+            white-space: pre-wrap;
+            background: #0b1220;
+            color: #e6edf3;
+            border-radius: 6px;
+            padding: 8px;
+            font-size: 12px;
+            max-height: 220px;
+            overflow: auto;
+        }
+
+        @media (max-width: 1000px) {
+            .native-grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -475,7 +632,13 @@
             </div>
         </div>
 
+        <div class="tabs">
+            <button type="button" id="tabBtnConfig" class="tab-btn active" onclick="switchTopTab('config')">Configuration</button>
+            <button type="button" id="tabBtnDashboard" class="tab-btn" onclick="switchTopTab('dashboard')">Dashboard</button>
+        </div>
+
         <div class="content">
+            <div id="tabConfig" class="tab-panel active">
             <div id="alertContainer"></div>
 
             <form id="configForm" autocomplete="off">
@@ -580,7 +743,7 @@
                                     <option value="pattern">Pattern - Use regex over full tag path</option>
                                 </select>
                                 <small class="form-help">
-                                    Folder mode accepts <b>one</b> folder root. If you need multiple providers/folders (e.g., <code>[sg]</code> + <code>[sg_grid]</code>),
+                                    Folder mode accepts <b>one</b> folder root. If you need multiple providers/folders (e.g., <code>[plant]</code> + <code>[ops]</code>),
                                     use Pattern mode.
                                 </small>
                             </div>
@@ -606,25 +769,25 @@
                         <div id="folderPathSection" class="form-group full-width" style="display: none;">
                             <label for="tagFolderPath">Tag Folder Path</label>
                             <input type="text" class="form-control" id="tagFolderPath" name="tagFolderPath"
-                                   placeholder="[sg]SG/Site01  (one folder root)">
+                                   placeholder="[plant]Company/Site01  (one folder root)">
                             <small class="form-help">
                                 Folder root for folder mode (subfolders optional). Examples:
-                                <br> - Saint-Gobain plant: <code>[sg]SG/Site01</code>
-                                <br> - Saint-Gobain grid: <code>[sg_grid]SG/Site01</code>
-                                <br> - Tilt plant: <code>[tilt]Tilt/Site01</code>
-                                <br> - Tilt grid: <code>[grid]Tilt/Site01</code>
+                                <br> - Company plant telemetry: <code>[plant]Company/Site01</code>
+                                <br> - Company operations context: <code>[ops]Company/Site01</code>
+                                <br> - Company maintenance: <code>[cmms]Company/Site01</code>
+                                <br> - Company forecast: <code>[forecast]Company/Site01</code>
                             </small>
                         </div>
 
                         <div id="patternSection" class="form-group full-width" style="display: none;">
                             <label for="tagPathPattern">Tag Path Pattern</label>
                             <input type="text" class="form-control" id="tagPathPattern" name="tagPathPattern"
-                                   placeholder="^\\[(sg|sg_grid|sg_cmms|sg_forecast)\\]SG/Site01/.*$">
+                                   placeholder="^\\[(plant|ops|cmms|forecast)\\]Company/Site01/.*$">
                             <small class="form-help">
-                                Java regex matched against the <b>full tag path</b> (e.g., <code>[sg]SG/Site01/Furnace/Temperature_Melting_C</code>).
+                                Java regex matched against the <b>full tag path</b> (e.g., <code>[plant]Company/Site01/Area/SignalName</code>).
                                 Examples:
-                                <br> - Saint-Gobain all providers: <code>^\\[(sg|sg_grid|sg_cmms|sg_forecast)\\]SG/Site01/.*$</code>
-                                <br> - Tilt all providers: <code>^\\[(tilt|grid|cmms|forecast)\\]Tilt/Site01/.*$</code>
+                                <br> - Company providers (plant + ops + cmms + forecast): <code>^\\[(plant|ops|cmms|forecast)\\]Company/Site01/.*$</code>
+                                <br> - Alternate provider set (scada + grid + workorders): <code>^\\[(scada|grid|workorders)\\]Company/Site01/.*$</code>
                             </small>
                         </div>
                     </div>
@@ -865,6 +1028,73 @@
                     </div>
                 </div>
             </div>
+            </div>
+
+            <div id="tabDashboard" class="tab-panel">
+                <div class="section">
+                    <div class="section-header">
+                        <h2>Embedded Metrics Dashboard (Optional)</h2>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-card-title">Optional visualization (non-core)</div>
+                        <div class="info-card-content">
+                            This embedded dashboard is optional and does not affect Zerobus connector core functionality.
+                        </div>
+                    </div>
+                    <div class="embed-card">
+                        <div class="embed-card-header">
+                            <div class="embed-controls">
+                                <div class="form-group" style="margin:0;">
+                                    <label for="dashboardUrl">Dashboard URL</label>
+                                    <input type="text" class="form-control" id="dashboardUrl"
+                                           placeholder="http://127.0.0.1:8000/" value="http://127.0.0.1:8000/">
+                                    <small class="form-help">Local app or Databricks app URL</small>
+                                </div>
+                                <button type="button" class="btn btn-primary" onclick="loadEmbeddedDashboard()">Load</button>
+                                <button type="button" class="btn btn-primary" onclick="activateNativeDashboard()">Use built-in dashboard</button>
+                                <button type="button" class="btn btn-secondary" onclick="reloadEmbeddedDashboardNoCache()">Reload (no cache)</button>
+                                <button type="button" class="btn btn-secondary" onclick="openEmbeddedDashboard()">Open in new tab</button>
+                            </div>
+                            <div id="embedStatus" class="embed-status">Not loaded yet.</div>
+                        </div>
+                        <div class="embed-frame-wrap">
+                            <iframe id="dashboardFrame" class="embed-frame" title="Embedded metrics dashboard" referrerpolicy="no-referrer"></iframe>
+                        </div>
+                        <div id="nativeDashboard" class="native-dashboard" style="display:none;">
+                            <div class="native-kpi-grid">
+                                <div class="native-kpi"><div class="k">Incoming Total</div><div class="v" id="nativeIncomingTotal">—</div></div>
+                                <div class="native-kpi"><div class="k">Emitted Total</div><div class="v" id="nativeEmittedTotal">—</div></div>
+                                <div class="native-kpi"><div class="k">SDT Compression Ratio</div><div class="v" id="nativeCompressionRatio">—</div></div>
+                                <div class="native-kpi"><div class="k">End-to-End P99 (ms)</div><div class="v" id="nativeP99E2E">—</div></div>
+                                <div class="native-kpi"><div class="k">Queue P99 (ms)</div><div class="v" id="nativeP99Queue">—</div></div>
+                                <div class="native-kpi"><div class="k">Ingest P99 (ms)</div><div class="v" id="nativeP99Ingest">—</div></div>
+                            </div>
+                            <div class="native-grid">
+                                <div class="native-card">
+                                    <h4>Throughput (per minute)</h4>
+                                    <canvas id="nativeThroughputChart" class="native-chart"></canvas>
+                                </div>
+                                <div class="native-card">
+                                    <h4>Compression Filter (per minute)</h4>
+                                    <canvas id="nativeFilterChart" class="native-chart"></canvas>
+                                </div>
+                                <div class="native-card">
+                                    <h4>Top Tags by Filtered %</h4>
+                                    <canvas id="nativeTopTagsChart" class="native-chart"></canvas>
+                                </div>
+                                <div class="native-card">
+                                    <h4>Top Tags (compression)</h4>
+                                    <div class="native-pre mono" id="nativeTopTags">Loading…</div>
+                                </div>
+                                <div class="native-card">
+                                    <h4>SDT Validation Summary</h4>
+                                    <div class="native-pre mono" id="nativeSdtSummary">Loading…</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -872,12 +1102,18 @@
         // Global state
         let explicitTags = [];
         const apiBase = '/system/zerobus';
+        const DASHBOARD_URL_KEY = 'zerobus.dashboard.url';
+        const DEFAULT_DASHBOARD_URL = 'http://127.0.0.1:8000/';
+        let embedLoadTimer = null;
+        let nativeDashboardInterval = null;
+        let nativeDashboardActive = false;
 
         // Initialize page
         document.addEventListener('DOMContentLoaded', function() {
             loadConfiguration();
             loadDiagnostics();
             setupEventListeners();
+            initDashboardEmbed();
         });
 
         function setupEventListeners() {
@@ -983,10 +1219,354 @@
         }
 
         function scrollToDiagnostics() {
+            switchTopTab('config');
             const el = document.getElementById('diagnosticsSection');
             if (el) {
                 el.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
+        }
+
+        function switchTopTab(tabName) {
+            const configActive = tabName === 'config';
+            document.getElementById('tabConfig').classList.toggle('active', configActive);
+            document.getElementById('tabDashboard').classList.toggle('active', !configActive);
+            document.getElementById('tabBtnConfig').classList.toggle('active', configActive);
+            document.getElementById('tabBtnDashboard').classList.toggle('active', !configActive);
+            if (!configActive && nativeDashboardActive) {
+                loadNativeDashboard();
+            }
+        }
+
+        function initDashboardEmbed() {
+            const dashboardUrlInput = document.getElementById('dashboardUrl');
+            if (dashboardUrlInput) {
+                // Force a stable local default each page load.
+                dashboardUrlInput.value = DEFAULT_DASHBOARD_URL;
+            }
+            const frame = document.getElementById('dashboardFrame');
+            if (frame) {
+                frame.addEventListener('load', () => {
+                    setEmbedStatus('Loaded iframe. If content is blank or JS errors persist, open in new tab and verify app health/build.', 'ok');
+                    if (embedLoadTimer) {
+                        clearTimeout(embedLoadTimer);
+                        embedLoadTimer = null;
+                    }
+                });
+                frame.addEventListener('error', () => {
+                    setEmbedStatus('Failed to load iframe content. Check URL, app availability, and browser console.', 'bad');
+                });
+            }
+            activateNativeDashboard();
+        }
+
+        function setEmbedStatus(message, level) {
+            const el = document.getElementById('embedStatus');
+            if (!el) return;
+            el.classList.remove('ok', 'warn', 'bad');
+            if (level) el.classList.add(level);
+            el.textContent = message;
+        }
+
+        function normalizeDashboardUrl(rawUrl, cacheBust) {
+            const value = (rawUrl || '').trim();
+            if (!value) return '';
+            let url;
+            try {
+                url = new URL(value, window.location.origin);
+            } catch (e) {
+                return '';
+            }
+            if (/\.js($|\?)/i.test(url.pathname)) {
+                // Users sometimes paste a chunk URL (e.g., 6.js/26.js). We need app root HTML.
+                return '__invalid_js_chunk_url__';
+            }
+            if (cacheBust) {
+                url.searchParams.set('_zbus_t', String(Date.now()));
+            }
+            return url.toString();
+        }
+
+        function loadEmbeddedDashboard() {
+            loadEmbeddedDashboardInternal(false);
+        }
+
+        function reloadEmbeddedDashboardNoCache() {
+            loadEmbeddedDashboardInternal(true);
+        }
+
+        function loadEmbeddedDashboardInternal(cacheBust) {
+            const input = document.getElementById('dashboardUrl');
+            const frame = document.getElementById('dashboardFrame');
+            const rawUrl = (input?.value || '').trim() || DEFAULT_DASHBOARD_URL;
+            const normalized = normalizeDashboardUrl(rawUrl, cacheBust);
+            if (!normalized) {
+                showAlert('Please provide a dashboard URL', 'info');
+                setEmbedStatus('Please provide a valid dashboard URL.', 'warn');
+                return;
+            }
+            if (normalized === '__invalid_js_chunk_url__') {
+                showAlert('Use the dashboard app root URL, not a JS chunk file (e.g., not 6.js/26.js).', 'error');
+                setEmbedStatus('Invalid URL: it points to a JS bundle file. Use the app root URL (ending with /).', 'bad');
+                return;
+            }
+            // Browser blocks HTTP iframes inside HTTPS pages (mixed content).
+            if (window.location.protocol === 'https:' && normalized.startsWith('http://')) {
+                setEmbedStatus('Mixed content blocked: open Zerobus on http://127.0.0.1:8097 or serve the dashboard over HTTPS.', 'bad');
+                showAlert('Mixed content blocked by browser (HTTPS page cannot embed HTTP iframe).', 'error');
+                return;
+            }
+            nativeDashboardActive = false;
+            const nativeEl = document.getElementById('nativeDashboard');
+            if (nativeEl) nativeEl.style.display = 'none';
+            try {
+                localStorage.setItem(DASHBOARD_URL_KEY, normalized);
+            } catch (e) {
+                // Ignore storage failures.
+            }
+            if (input) input.value = normalized;
+            setEmbedStatus('Loading dashboard…', 'warn');
+            frame.src = normalized;
+            if (embedLoadTimer) clearTimeout(embedLoadTimer);
+            embedLoadTimer = setTimeout(() => {
+                setEmbedStatus('Still loading. If it stays blank, open in new tab to verify login/auth/CSP and app runtime errors.', 'warn');
+            }, 5000);
+        }
+
+        function fmt(value, digits) {
+            if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+            const n = Number(value);
+            return typeof digits === 'number' ? n.toFixed(digits) : String(n);
+        }
+
+        function asNum(value) {
+            const n = Number(value);
+            return Number.isFinite(n) ? n : 0;
+        }
+
+        function getCanvasContext(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return null;
+            const cssWidth = Math.max(360, canvas.clientWidth || 360);
+            const cssHeight = Math.max(180, canvas.clientHeight || 220);
+            const dpr = window.devicePixelRatio || 1;
+            const width = Math.round(cssWidth * dpr);
+            const height = Math.round(cssHeight * dpr);
+            if (canvas.width !== width || canvas.height !== height) {
+                canvas.width = width;
+                canvas.height = height;
+            }
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return null;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            return { ctx, width: cssWidth, height: cssHeight };
+        }
+
+        function drawNoData(canvasId, message) {
+            const c = getCanvasContext(canvasId);
+            if (!c) return;
+            const { ctx, width, height } = c;
+            ctx.clearRect(0, 0, width, height);
+            ctx.fillStyle = '#5f7389';
+            ctx.font = '12px sans-serif';
+            ctx.fillText(message || 'No data', 12, 22);
+        }
+
+        function drawLineChart(canvasId, labels, series) {
+            const c = getCanvasContext(canvasId);
+            if (!c) return;
+            const { ctx, width, height } = c;
+            ctx.clearRect(0, 0, width, height);
+
+            const margin = { left: 42, right: 12, top: 12, bottom: 28 };
+            const plotW = width - margin.left - margin.right;
+            const plotH = height - margin.top - margin.bottom;
+            if (plotW <= 10 || plotH <= 10) return;
+
+            const pointsCount = Math.max(...series.map(s => s.values.length), 0);
+            if (pointsCount <= 0) {
+                drawNoData(canvasId, 'No data in current window');
+                return;
+            }
+
+            const allVals = series.flatMap(s => s.values.map(asNum));
+            const maxY = Math.max(1, ...allVals);
+            const minY = 0;
+
+            ctx.strokeStyle = '#e2ebf4';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 4; i++) {
+                const y = margin.top + (plotH * i / 4);
+                ctx.beginPath();
+                ctx.moveTo(margin.left, y);
+                ctx.lineTo(width - margin.right, y);
+                ctx.stroke();
+            }
+
+            ctx.fillStyle = '#5f7389';
+            ctx.font = '11px sans-serif';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            for (let i = 0; i <= 4; i++) {
+                const v = maxY - ((maxY - minY) * i / 4);
+                const y = margin.top + (plotH * i / 4);
+                ctx.fillText(String(Math.round(v)), margin.left - 6, y);
+            }
+
+            const xAt = (idx) => margin.left + (pointsCount <= 1 ? plotW / 2 : (plotW * idx / (pointsCount - 1)));
+            const yAt = (v) => margin.top + plotH - ((asNum(v) - minY) / (maxY - minY)) * plotH;
+
+            series.forEach(s => {
+                ctx.strokeStyle = s.color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                s.values.forEach((v, i) => {
+                    const x = xAt(i);
+                    const y = yAt(v);
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            });
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            const tickIdx = [0, Math.floor((pointsCount - 1) / 2), pointsCount - 1].filter((v, i, arr) => arr.indexOf(v) === i);
+            tickIdx.forEach(i => {
+                const label = labels[i] || String(i);
+                ctx.fillText(label, xAt(i), height - margin.bottom + 8);
+            });
+
+            let lx = margin.left;
+            const ly = margin.top + 6;
+            series.forEach(s => {
+                ctx.fillStyle = s.color;
+                ctx.fillRect(lx, ly, 10, 10);
+                ctx.fillStyle = '#334e68';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                ctx.fillText(s.name, lx + 14, ly - 1);
+                lx += 14 + ctx.measureText(s.name).width + 12;
+            });
+        }
+
+        function drawBarChart(canvasId, labels, values) {
+            const c = getCanvasContext(canvasId);
+            if (!c) return;
+            const { ctx, width, height } = c;
+            ctx.clearRect(0, 0, width, height);
+            if (!labels.length || !values.length) {
+                drawNoData(canvasId, 'No top-tag data');
+                return;
+            }
+
+            const margin = { left: 170, right: 12, top: 12, bottom: 12 };
+            const plotW = width - margin.left - margin.right;
+            const rowH = Math.max(18, Math.floor((height - margin.top - margin.bottom) / labels.length));
+            const max = Math.max(1, ...values.map(asNum));
+
+            values.forEach((v, i) => {
+                const y = margin.top + i * rowH + 2;
+                const w = Math.max(1, (asNum(v) / max) * plotW);
+                ctx.fillStyle = '#78abd3';
+                ctx.fillRect(margin.left, y, w, rowH - 6);
+                ctx.fillStyle = '#1f4f78';
+                ctx.font = '11px sans-serif';
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(labels[i], margin.left - 8, y + (rowH - 6) / 2);
+                ctx.textAlign = 'left';
+                ctx.fillText(`${fmt(v, 1)}%`, margin.left + w + 6, y + (rowH - 6) / 2);
+            });
+        }
+
+        function activateNativeDashboard() {
+            nativeDashboardActive = true;
+            const nativeEl = document.getElementById('nativeDashboard');
+            if (nativeEl) nativeEl.style.display = 'block';
+            setEmbedStatus('Using built-in Zerobus dashboard (no external app required).', 'ok');
+            loadNativeDashboard();
+            if (nativeDashboardInterval) {
+                clearInterval(nativeDashboardInterval);
+            }
+            nativeDashboardInterval = setInterval(() => {
+                if (nativeDashboardActive && document.getElementById('tabDashboard')?.classList.contains('active')) {
+                    loadNativeDashboard();
+                }
+            }, 5000);
+        }
+
+        async function loadNativeDashboard() {
+            try {
+                const [metricsResp, sdtResp] = await Promise.all([
+                    fetch(`${apiBase}/metrics/compression`),
+                    fetch(`${apiBase}/diagnostics/sdt`)
+                ]);
+                const metrics = metricsResp.ok ? await metricsResp.json() : {};
+                const sdt = sdtResp.ok ? await sdtResp.json() : {};
+
+                safeText('nativeIncomingTotal', fmt(metrics.incomingTotal));
+                safeText('nativeEmittedTotal', fmt(metrics.emittedTotal));
+                safeText('nativeCompressionRatio', metrics.sdtCompressionRatio !== undefined ? `${fmt((metrics.sdtCompressionRatio || 0) * 100, 1)}%` : '—');
+                safeText('nativeP99E2E', fmt(metrics.endToEndLatencyP99Ms));
+                safeText('nativeP99Queue', fmt(metrics.queueLatencyP99Ms));
+                safeText('nativeP99Ingest', fmt(metrics.ingestLatencyP99Ms));
+
+                const topTags = Array.isArray(metrics.topTags) ? metrics.topTags.slice(0, 8) : [];
+                const topTagsText = topTags.length
+                    ? topTags.map(t => `${t.tagPath}\n  emitted=${t.emitted}, filtered=${t.filteredTotal}, filteredPct=${fmt((t.filteredPct || 0) * 100, 1)}%`).join('\n\n')
+                    : 'No top-tag data yet.';
+                safeText('nativeTopTags', topTagsText);
+
+                const incoming = Array.isArray(metrics.incomingPerMin) ? metrics.incomingPerMin : [];
+                const emitted = Array.isArray(metrics.emittedPerMin) ? metrics.emittedPerMin : [];
+                const filteredSdt = Array.isArray(metrics.filteredSdtPerMin) ? metrics.filteredSdtPerMin : [];
+                const filteredDeadband = Array.isArray(metrics.filteredDeadbandPerMin) ? metrics.filteredDeadbandPerMin : [];
+                const count = Math.max(incoming.length, emitted.length, filteredSdt.length, filteredDeadband.length);
+                const labels = Array.from({ length: count }, (_, idx) => `${idx - (count - 1)}m`);
+
+                drawLineChart('nativeThroughputChart', labels, [
+                    { name: 'Incoming', values: incoming, color: '#0067a5' },
+                    { name: 'Emitted', values: emitted, color: '#1f7a3f' }
+                ]);
+                drawLineChart('nativeFilterChart', labels, [
+                    { name: 'Filtered SDT', values: filteredSdt, color: '#9f5ccf' },
+                    { name: 'Filtered Deadband', values: filteredDeadband, color: '#d2822a' }
+                ]);
+                drawBarChart(
+                    'nativeTopTagsChart',
+                    topTags.map(t => {
+                        const path = String(t.tagPath || '');
+                        const short = path.split('/').pop() || path;
+                        return short.length > 24 ? `${short.slice(0, 24)}…` : short;
+                    }),
+                    topTags.map(t => asNum(t.filteredPct) * 100.0)
+                );
+
+                const sdtSummary = [
+                    `enabled: ${sdt.enabled}`,
+                    `trackedTags: ${sdt.trackedTags}`,
+                    `overallVerdict: ${sdt.overallVerdict}`,
+                    `deviationConfigured: ${sdt.deviationConfigured}`,
+                    `sdtMaxIntervalMs: ${sdt.sdtMaxIntervalMs}`,
+                    `sdtMinIntervalMs: ${sdt.sdtMinIntervalMs}`
+                ].join('\n');
+                safeText('nativeSdtSummary', sdtSummary);
+            } catch (e) {
+                safeText('nativeTopTags', `Failed to load built-in dashboard metrics:\n${e && e.message ? e.message : e}`);
+                safeText('nativeSdtSummary', 'Failed to load SDT summary.');
+                drawNoData('nativeThroughputChart', 'Failed to load data');
+                drawNoData('nativeFilterChart', 'Failed to load data');
+                drawNoData('nativeTopTagsChart', 'Failed to load data');
+                setEmbedStatus('Built-in dashboard failed to refresh. Check /system/zerobus/metrics/compression and /diagnostics/sdt.', 'bad');
+            }
+        }
+
+        function openEmbeddedDashboard() {
+            const url = (document.getElementById('dashboardUrl')?.value || '').trim();
+            if (!url) {
+                showAlert('Please provide a dashboard URL', 'info');
+                return;
+            }
+            window.open(url, '_blank', 'noopener,noreferrer');
         }
 
         function setHealthPill(state) {

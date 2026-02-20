@@ -262,13 +262,20 @@ public class TagSubscriptionService {
         }
 
         // Use global SDT params for the report header.
-        // Note: per-tag overrides may exist; this report is still useful as a "best-effort" proof.
+        // Per-tag overrides are resolved via numericCompressionRules and used as validation thresholds.
         return sdtValidationManager.generateReport(
                 config.getNumericSdtDeviation(),
                 config.getNumericSdtMaxIntervalMs(),
                 config.getNumericSdtMinIntervalMs(),
                 maxTags,
-                samplePoints
+                samplePoints,
+                tagPath -> {
+                    ConfigModel.NumericCompressionPolicy p = config.getNumericCompressionPolicyForTag(tagPath);
+                    if (p != null && p.mode == ConfigModel.NumericCompressionMode.SDT && p.sdtDeviation > 0.0) {
+                        return p.sdtDeviation;
+                    }
+                    return config.getNumericSdtDeviation();
+                }
         );
     }
     

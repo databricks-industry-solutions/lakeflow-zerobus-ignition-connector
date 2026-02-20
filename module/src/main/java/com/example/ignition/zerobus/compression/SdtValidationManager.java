@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 /**
  * Manages per-tag validation buffers and generates SDT validation reports.
@@ -51,7 +52,8 @@ public class SdtValidationManager {
             long sdtMaxIntervalMs,
             long sdtMinIntervalMs,
             int maxTags,
-            int samplePoints
+            int samplePoints,
+            Function<String, Double> deviationResolver
     ) {
         SdtValidationReport report = new SdtValidationReport();
         report.enabled = true;
@@ -72,6 +74,18 @@ public class SdtValidationManager {
 
             SdtValidationReport.TagValidation tv = new SdtValidationReport.TagValidation();
             tv.tagPath = tagPath;
+            double deviationUsed = deviation;
+            if (deviationResolver != null) {
+                try {
+                    Double resolved = deviationResolver.apply(tagPath);
+                    if (resolved != null && resolved > 0.0) {
+                        deviationUsed = resolved;
+                    }
+                } catch (Exception ignored) {
+                    // Keep diagnostics robust even if resolver fails for a tag.
+                }
+            }
+            tv.deviationUsed = deviationUsed;
             tv.rawPointCount = allPoints.size();
             tv.pivotCount = pivots.size();
             tv.compressionRatioPct = allPoints.isEmpty()
@@ -100,7 +114,7 @@ public class SdtValidationManager {
                     maxErr = Math.max(maxErr, err);
                     sumErr += err;
                     errorCount++;
-                    if (err > deviation) {
+                    if (err > deviationUsed) {
                         tagWithinDeviation = false;
                     }
                 }
