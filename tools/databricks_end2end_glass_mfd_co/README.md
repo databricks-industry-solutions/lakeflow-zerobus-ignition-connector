@@ -1,12 +1,12 @@
-## Databricks end-to-end (Saint-Gobain demo): Bronze → Silver → Gold → Dashboards → Genie
+## Databricks end-to-end (Glass Mfd Co demo): Bronze → Silver → Gold → Dashboards → Genie
 
 This pack reuses the **same Bronze** table as other demos:
 
 - **Bronze source**: `ignition_demo.scada_data.tag_events`
 
-and builds Saint-Gobain specific business layers in:
+and builds Glass Mfd Co specific business layers in:
 
-- **Silver/Gold schema**: `ignition_demo.saint_ot`
+- **Silver/Gold schema**: `ignition_demo.glass_mfd_co_ot`
 
 ### Run order
 

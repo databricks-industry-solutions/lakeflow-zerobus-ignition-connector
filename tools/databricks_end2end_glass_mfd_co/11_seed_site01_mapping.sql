@@ -1,8 +1,8 @@
--- Seed asset registry + signal mapping for Saint-Gobain Site01 demo
+-- Seed asset registry + signal mapping for Glass Mfd Co Site01 demo
 
-MERGE INTO ignition_demo.saint_ot.silver_asset_registry t
+MERGE INTO ignition_demo.glass_mfd_co_ot.silver_asset_registry t
 USING (
-  SELECT 'sg_site01' AS asset_id, NULL AS parent_asset_id, 'site' AS asset_type, 'Site01' AS site, 'Saint-Gobain Site01 (Demo)' AS display_name, true AS active
+  SELECT 'sg_site01' AS asset_id, NULL AS parent_asset_id, 'site' AS asset_type, 'Site01' AS site, 'Glass Mfd Co Site01 (Demo)' AS display_name, true AS active
   UNION ALL SELECT 'sg_furnace', 'sg_site01', 'furnace', 'Site01', 'Furnace', true
   UNION ALL SELECT 'sg_conveyor', 'sg_site01', 'conveyor', 'Site01', 'Conveyor', true
   UNION ALL SELECT 'sg_cut', 'sg_site01', 'cutting_station', 'Site01', 'Cutting Station', true
@@ -16,7 +16,7 @@ WHEN MATCHED THEN UPDATE SET
   t.active = s.active
 WHEN NOT MATCHED THEN INSERT *;
 
-MERGE INTO ignition_demo.saint_ot.silver_signal_mapping t
+MERGE INTO ignition_demo.glass_mfd_co_ot.silver_signal_mapping t
 USING (
   -- Plant telemetry ([sg])
   SELECT '[sg]SG/Site01/Furnace/Temperature_Melting_C' AS tag_path, 'sg_furnace' AS asset_id, 'melting_temp' AS signal_name, 'C' AS unit, 1.0 AS scale, 0.0 AS offset, 'plant' AS source_domain, true AS active

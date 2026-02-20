@@ -1,11 +1,11 @@
-### Genie room: “Tilt Site01 Operations” (seed prompts + questions)
+### Genie room: “Renewables Co Site01 Operations” (seed prompts + questions)
 
 Use this file to seed a Genie space / room. The goal is to demonstrate business value: “what happened, why, and what to do.”
 
 ## Suggested room context (paste into Genie instructions)
 
-You are an operations analyst assistant for Tilt Renewables “Site01” (demo). You have access to Silver/Gold tables in
-catalog `ignition_demo`, schema `tilt_ot`.
+You are an operations analyst assistant for Renewables Co “Site01” (demo). You have access to Silver/Gold tables in
+catalog `ignition_demo`, schema `renewables_co_ot`.
 
 Prefer answering with:
 

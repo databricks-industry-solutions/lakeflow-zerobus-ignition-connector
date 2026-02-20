@@ -1,13 +1,13 @@
-## Genie room seed: “Saint-Gobain Site01 Operations”
+## Genie room seed: “Glass Mfd Co Site01 Operations”
 
-This file is a **copy/paste runbook** for setting up a Genie room so you can demo “ask questions about OT data” using the Saint-Gobain Silver/Gold layer.
+This file is a **copy/paste runbook** for setting up a Genie room so you can demo “ask questions about OT data” using the Glass Mfd Co Silver/Gold layer.
 
 ### 1) Create the Genie room
 
 In Databricks:
 
 - Go to **Genie**
-- Create a room named: **Saint-Gobain Site01 Operations**
+- Create a room named: **Glass Mfd Co Site01 Operations**
 - Set the room description to something like:
   - “Operations analytics for a glass line. Use Gold KPIs for answers; drill into Silver signals for root cause.”
 
@@ -18,13 +18,13 @@ Add these as data sources so Genie can query them.
 #### Suggested data sources to add
 
 - Gold:
-  - `ignition_demo.saint_ot.gold_site_kpis_5m`
-  - `ignition_demo.saint_ot.gold_site_kpis_daily`
-  - `ignition_demo.saint_ot.gold_forecast_accuracy_hourly`
+  - `ignition_demo.glass_mfd_co_ot.gold_site_kpis_5m`
+  - `ignition_demo.glass_mfd_co_ot.gold_site_kpis_daily`
+  - `ignition_demo.glass_mfd_co_ot.gold_forecast_accuracy_hourly`
 - Silver (drilldown):
-  - `ignition_demo.saint_ot.silver_signals_1m`
-  - `ignition_demo.saint_ot.silver_signals_latest`
-  - `ignition_demo.saint_ot.silver_maintenance_events`
+  - `ignition_demo.glass_mfd_co_ot.silver_signals_1m`
+  - `ignition_demo.glass_mfd_co_ot.silver_signals_latest`
+  - `ignition_demo.glass_mfd_co_ot.silver_maintenance_events`
 
 Tip: If you want Genie to stay “executive friendly”, add **Gold only** first, then add the Silver drilldown tables once the room is answering well.
 
@@ -33,7 +33,7 @@ Tip: If you want Genie to stay “executive friendly”, add **Gold only** first
 Paste something like this into the Genie room instructions:
 
 ```text
-You are an OT operations analyst for a Saint-Gobain glass line (demo).
+You are an OT operations analyst for a Glass Mfd Co glass line (demo).
 Prefer the Gold KPI views for summaries and trends. Use Silver only for drilldown/root cause.
 Assume all data is for Site01 unless the user asks otherwise.
 When comparing signals, align to the same time grain (5m for gold_site_kpis_5m, 1m for silver_signals_1m).

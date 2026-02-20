@@ -1,9 +1,9 @@
--- Silver scaffolding for Saint-Gobain demo
+-- Silver scaffolding for Glass Mfd Co demo
 CREATE CATALOG IF NOT EXISTS ignition_demo;
 CREATE SCHEMA IF NOT EXISTS ignition_demo.scada_data;
-CREATE SCHEMA IF NOT EXISTS ignition_demo.saint_ot;
+CREATE SCHEMA IF NOT EXISTS ignition_demo.glass_mfd_co_ot;
 
-CREATE TABLE IF NOT EXISTS ignition_demo.saint_ot.silver_asset_registry (
+CREATE TABLE IF NOT EXISTS ignition_demo.glass_mfd_co_ot.silver_asset_registry (
   asset_id STRING,
   parent_asset_id STRING,
   asset_type STRING,
@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS ignition_demo.saint_ot.silver_asset_registry (
 )
 USING DELTA;
 
-CREATE TABLE IF NOT EXISTS ignition_demo.saint_ot.silver_signal_mapping (
+CREATE TABLE IF NOT EXISTS ignition_demo.glass_mfd_co_ot.silver_signal_mapping (
   tag_path STRING,
   asset_id STRING,
   signal_name STRING,
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS ignition_demo.saint_ot.silver_signal_mapping (
 )
 USING DELTA;
 
-CREATE OR REPLACE VIEW ignition_demo.saint_ot.silver_events_normalized AS
+CREATE OR REPLACE VIEW ignition_demo.glass_mfd_co_ot.silver_events_normalized AS
 SELECT
   b.event_time,
   b.ingestion_timestamp,
@@ -46,7 +46,7 @@ SELECT
   b.quality_code,
   b.tag_path
 FROM ignition_demo.scada_data.tag_events b
-LEFT JOIN ignition_demo.saint_ot.silver_signal_mapping m
+LEFT JOIN ignition_demo.glass_mfd_co_ot.silver_signal_mapping m
   ON b.tag_path = m.tag_path AND m.active = true;
 
 

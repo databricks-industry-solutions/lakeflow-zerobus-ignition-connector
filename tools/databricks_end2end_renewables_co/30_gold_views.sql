@@ -1,7 +1,7 @@
 -- Gold KPI views (business story)
 
 -- Helper: site-level 1m pivot
-CREATE OR REPLACE VIEW ignition_demo.tilt_ot._site01_1m AS
+CREATE OR REPLACE VIEW ignition_demo.renewables_co_ot._site01_1m AS
 SELECT
   ts_1m,
   MAX(CASE WHEN asset_id='poi' AND signal_name='net_power' THEN value_last END) AS poi_net_kw,
@@ -20,11 +20,11 @@ SELECT
   MAX(CASE WHEN asset_id='site01' AND signal_name='expected_curtailment_h01' THEN value_last END) AS expected_curtailment_h01_pct,
   MAX(CASE WHEN asset_id='site01' AND signal_name='active_work_orders' THEN value_last END) AS active_work_orders,
   MAX(CASE WHEN asset_id='site01' AND signal_name='high_priority_work_orders' THEN value_last END) AS high_priority_work_orders
-FROM ignition_demo.tilt_ot.silver_signals_1m
+FROM ignition_demo.renewables_co_ot.silver_signals_1m
 GROUP BY ts_1m;
 
 -- 1) Site KPIs (5-minute)
-CREATE OR REPLACE VIEW ignition_demo.tilt_ot.gold_site_kpis_5m AS
+CREATE OR REPLACE VIEW ignition_demo.renewables_co_ot.gold_site_kpis_5m AS
 SELECT
   ts_5m,
   export_kw_avg,
@@ -59,12 +59,12 @@ FROM (
     AVG(high_priority_work_orders) AS high_priority_work_orders_avg,
     AVG(net_forecast_h01_kw) AS net_forecast_h01_kw_avg,
     AVG(forecast_confidence_h01_pct) AS forecast_confidence_h01_pct_avg
-  FROM ignition_demo.tilt_ot._site01_1m
+  FROM ignition_demo.renewables_co_ot._site01_1m
   GROUP BY to_timestamp(from_unixtime(floor(unix_timestamp(ts_1m) / 300) * 300))
 ) agg;
 
 -- 2) Daily KPIs (energy + curtailment + revenue proxy)
-CREATE OR REPLACE VIEW ignition_demo.tilt_ot.gold_site_kpis_daily AS
+CREATE OR REPLACE VIEW ignition_demo.renewables_co_ot.gold_site_kpis_daily AS
 WITH x AS (
   SELECT
     ts_1m,
@@ -72,7 +72,7 @@ WITH x AS (
     dispatch_target_kw,
     curtailment_pct,
     rrp_aud_mwh
-  FROM ignition_demo.tilt_ot._site01_1m
+  FROM ignition_demo.renewables_co_ot._site01_1m
 ),
 daily AS (
   SELECT
@@ -97,13 +97,13 @@ SELECT
 FROM daily;
 
 -- 3) Dispatch performance (5m buckets, pass/fail)
-CREATE OR REPLACE VIEW ignition_demo.tilt_ot.gold_dispatch_performance_5m AS
+CREATE OR REPLACE VIEW ignition_demo.renewables_co_ot.gold_dispatch_performance_5m AS
 WITH x AS (
   SELECT
     ts_1m,
     poi_export_kw,
     dispatch_target_kw
-  FROM ignition_demo.tilt_ot._site01_1m
+  FROM ignition_demo.renewables_co_ot._site01_1m
   WHERE poi_export_kw IS NOT NULL AND dispatch_target_kw IS NOT NULL
 ),
 agg AS (
@@ -127,14 +127,14 @@ SELECT
 FROM agg;
 
 -- 4) Forecast accuracy (hourly)
-CREATE OR REPLACE VIEW ignition_demo.tilt_ot.gold_forecast_accuracy_hourly AS
+CREATE OR REPLACE VIEW ignition_demo.renewables_co_ot.gold_forecast_accuracy_hourly AS
 WITH x AS (
   SELECT
     ts_1m,
     poi_net_kw,
     net_forecast_h01_kw,
     forecast_confidence_h01_pct
-  FROM ignition_demo.tilt_ot._site01_1m
+  FROM ignition_demo.renewables_co_ot._site01_1m
   WHERE poi_net_kw IS NOT NULL AND net_forecast_h01_kw IS NOT NULL
 ),
 agg AS (
@@ -149,7 +149,7 @@ agg AS (
 SELECT * FROM agg;
 
 -- 5) Reliability (daily outages/work orders proxy)
-CREATE OR REPLACE VIEW ignition_demo.tilt_ot.gold_asset_reliability_daily AS
+CREATE OR REPLACE VIEW ignition_demo.renewables_co_ot.gold_asset_reliability_daily AS
 WITH x AS (
   SELECT
     date(ts_1m) AS dt,
@@ -157,16 +157,16 @@ WITH x AS (
     AVG(forced_outage_flag) AS forced_outage_ratio,
     MAX(active_work_orders) AS active_work_orders_max,
     MAX(high_priority_work_orders) AS high_priority_work_orders_max
-  FROM ignition_demo.tilt_ot.silver_maintenance_events
+  FROM ignition_demo.renewables_co_ot.silver_maintenance_events
   GROUP BY date(ts_1m), asset_id
 )
 SELECT * FROM x;
 
 -- 6) Revenue proxy (daily) re-exposed for dashboards
-CREATE OR REPLACE VIEW ignition_demo.tilt_ot.gold_revenue_proxy_daily AS
+CREATE OR REPLACE VIEW ignition_demo.renewables_co_ot.gold_revenue_proxy_daily AS
 SELECT
   dt,
   revenue_proxy_aud
-FROM ignition_demo.tilt_ot.gold_site_kpis_daily;
+FROM ignition_demo.renewables_co_ot.gold_site_kpis_daily;
 
 

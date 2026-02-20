@@ -1,4 +1,4 @@
--- Dashboard query pack (Saint-Gobain)
+-- Dashboard query pack (Glass Mfd Co)
 
 -- Executive overview (last 6 hours)
 SELECT
@@ -13,7 +13,7 @@ SELECT
   elec_price_avg,
   active_wos_avg,
   high_wos_avg
-FROM ignition_demo.saint_ot.gold_site_kpis_5m
+FROM ignition_demo.glass_mfd_co_ot.gold_site_kpis_5m
 WHERE ts_5m >= now() - INTERVAL 6 HOURS
 ORDER BY ts_5m;
 
@@ -25,7 +25,7 @@ SELECT
   MAX_BY(gas_price_avg, ts_5m) AS gas_price_latest,
   MAX_BY(elec_price_avg, ts_5m) AS elec_price_latest,
   MAX_BY(active_wos_avg, ts_5m) AS active_wos_latest
-FROM ignition_demo.saint_ot.gold_site_kpis_5m;
+FROM ignition_demo.glass_mfd_co_ot.gold_site_kpis_5m;
 
 -- Maintenance drilldown (forced outage flags last 24h)
 SELECT
@@ -34,13 +34,13 @@ SELECT
   forced_outage_flag,
   active_work_orders,
   high_priority_work_orders
-FROM ignition_demo.saint_ot.silver_maintenance_events
+FROM ignition_demo.glass_mfd_co_ot.silver_maintenance_events
 WHERE ts_1m >= now() - INTERVAL 24 HOURS
 ORDER BY ts_1m DESC, asset_id;
 
 -- Forecast accuracy (7d)
 SELECT *
-FROM ignition_demo.saint_ot.gold_forecast_accuracy_hourly
+FROM ignition_demo.glass_mfd_co_ot.gold_forecast_accuracy_hourly
 WHERE hr >= now() - INTERVAL 7 DAYS
 ORDER BY hr;
 

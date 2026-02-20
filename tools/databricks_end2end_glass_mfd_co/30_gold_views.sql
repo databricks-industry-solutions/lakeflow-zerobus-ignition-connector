@@ -1,7 +1,7 @@
--- Gold KPI views (Saint-Gobain glass line demo)
+-- Gold KPI views (Glass Mfd Co glass line demo)
 
 -- Pivot key signals to 1m grain
-CREATE OR REPLACE VIEW ignition_demo.saint_ot._sg_site01_1m AS
+CREATE OR REPLACE VIEW ignition_demo.glass_mfd_co_ot._sg_site01_1m AS
 SELECT
   ts_1m,
   MAX(CASE WHEN asset_id='sg_site01' AND signal_name='throughput' THEN value_last END) AS throughput_upm,
@@ -16,11 +16,11 @@ SELECT
   MAX(CASE WHEN asset_id='sg_site01' AND signal_name='throughput_forecast_h01' THEN value_last END) AS thr_forecast_h01,
   MAX(CASE WHEN asset_id='sg_site01' AND signal_name='scrap_forecast_h01' THEN value_last END) AS scrap_forecast_h01,
   MAX(CASE WHEN asset_id='sg_site01' AND signal_name='forecast_confidence_h01' THEN value_last END) AS forecast_confidence_h01
-FROM ignition_demo.saint_ot.silver_signals_1m
+FROM ignition_demo.glass_mfd_co_ot.silver_signals_1m
 GROUP BY ts_1m;
 
 -- 5-minute KPIs
-CREATE OR REPLACE VIEW ignition_demo.saint_ot.gold_site_kpis_5m AS
+CREATE OR REPLACE VIEW ignition_demo.glass_mfd_co_ot.gold_site_kpis_5m AS
 SELECT
   to_timestamp(from_unixtime(floor(unix_timestamp(ts_1m) / 300) * 300)) AS ts_5m,
   AVG(throughput_upm) AS throughput_upm_avg,
@@ -35,11 +35,11 @@ SELECT
   AVG(high_wos) AS high_wos_avg,
   AVG(thr_forecast_h01) AS thr_forecast_h01_avg,
   AVG(forecast_confidence_h01) AS forecast_confidence_h01_avg
-FROM ignition_demo.saint_ot._sg_site01_1m
+FROM ignition_demo.glass_mfd_co_ot._sg_site01_1m
 GROUP BY to_timestamp(from_unixtime(floor(unix_timestamp(ts_1m) / 300) * 300));
 
 -- Daily KPIs + cost proxy
-CREATE OR REPLACE VIEW ignition_demo.saint_ot.gold_site_kpis_daily AS
+CREATE OR REPLACE VIEW ignition_demo.glass_mfd_co_ot.gold_site_kpis_daily AS
 WITH x AS (
   SELECT
     date(ts_1m) AS dt,
@@ -48,7 +48,7 @@ WITH x AS (
     quality_score,
     gas_price_eur_gj,
     elec_price_eur_mwh
-  FROM ignition_demo.saint_ot._sg_site01_1m
+  FROM ignition_demo.glass_mfd_co_ot._sg_site01_1m
 )
 SELECT
   dt,
@@ -64,14 +64,14 @@ FROM x
 GROUP BY dt;
 
 -- Forecast accuracy (hourly)
-CREATE OR REPLACE VIEW ignition_demo.saint_ot.gold_forecast_accuracy_hourly AS
+CREATE OR REPLACE VIEW ignition_demo.glass_mfd_co_ot.gold_forecast_accuracy_hourly AS
 WITH x AS (
   SELECT
     ts_1m,
     throughput_upm,
     thr_forecast_h01,
     forecast_confidence_h01
-  FROM ignition_demo.saint_ot._sg_site01_1m
+  FROM ignition_demo.glass_mfd_co_ot._sg_site01_1m
   WHERE throughput_upm IS NOT NULL AND thr_forecast_h01 IS NOT NULL
 )
 SELECT

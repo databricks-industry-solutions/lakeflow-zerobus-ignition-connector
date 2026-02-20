@@ -1,8 +1,8 @@
-# AGL Tomago Genie Room – Setup Summary
+# Petrol Co Site01 Genie Room – Setup Summary
 
 ## Status: Room Created (Data Sources Need Manual Add)
 
-**Room created successfully** via Databricks CLI. Data sources must be added manually in the Genie UI due to an API validation issue with the `agl_ignition` catalog.
+**Room created successfully** via Databricks CLI. Data sources must be added manually in the Genie UI due to an API validation issue with the `ignition_demo` catalog.
 
 ---
 
@@ -10,8 +10,8 @@
 
 | Field | Value |
 |-------|-------|
-| **Title** | AGL Tomago Battery Operations |
-| **Description** | Asset intelligence for AGL's Tomago BESS (500MW/2000MWh): real-time KPIs, dispatch performance, reliability, and revenue proxy. Ask questions in natural language. |
+| **Title** | Petrol Co Site01 Battery Operations |
+| **Description** | Asset intelligence for Petrol Co's Site01 BESS (500MW/2000MWh): real-time KPIs, dispatch performance, reliability, and revenue proxy. Ask questions in natural language. |
 | **Space ID** | `01f107039f2e19b5a7c9fb17997bfe3e` |
 | **Warehouse** | `862f1d757f0424f7` |
 | **Workspace** | https://e2-demo-field-eng.cloud.databricks.com |
@@ -26,9 +26,9 @@
 
 ## Manual Step: Add Data Sources
 
-The Genie API rejected adding tables from `agl_ignition.agl_ot` with:
+The Genie API rejected adding tables from `ignition_demo.petrol_co_ot` with:
 
-> Catalog 'agl_ignition.agl_ot.gold_site_kpis_5m' does not exist
+> Catalog 'ignition_demo.petrol_co_ot.gold_site_kpis_5m' does not exist
 
 Add these tables manually in the Genie room settings:
 
@@ -36,15 +36,15 @@ Add these tables manually in the Genie room settings:
 2. Click **Settings** (gear icon) → **Data sources**  
 3. Add these tables/views:
 
-   - `agl_ignition.agl_ot.gold_site_kpis_5m`
-   - `agl_ignition.agl_ot.gold_site_kpis_daily`
-   - `agl_ignition.agl_ot.gold_dispatch_performance_5m`
-   - `agl_ignition.agl_ot.gold_asset_reliability_daily`
-   - `agl_ignition.agl_ot.gold_revenue_proxy_daily`
-   - `agl_ignition.agl_ot.silver_signals_latest`
-   - `agl_ignition.agl_ot.silver_signals_1m`
-   - `agl_ignition.agl_ot.silver_grid_events`
-   - `agl_ignition.agl_ot.silver_maintenance_events`
+   - `ignition_demo.petrol_co_ot.gold_site_kpis_5m`
+   - `ignition_demo.petrol_co_ot.gold_site_kpis_daily`
+   - `ignition_demo.petrol_co_ot.gold_dispatch_performance_5m`
+   - `ignition_demo.petrol_co_ot.gold_asset_reliability_daily`
+   - `ignition_demo.petrol_co_ot.gold_revenue_proxy_daily`
+   - `ignition_demo.petrol_co_ot.silver_signals_latest`
+   - `ignition_demo.petrol_co_ot.silver_signals_1m`
+   - `ignition_demo.petrol_co_ot.silver_grid_events`
+   - `ignition_demo.petrol_co_ot.silver_maintenance_events`
 
 ---
 
@@ -53,11 +53,11 @@ Add these tables manually in the Genie room settings:
 The following context from `50_genie_room_seed.md` is already in the room:
 
 ```
-You are an asset intelligence assistant for AGL's Tomago Battery (NSW) demo.
+You are an asset intelligence assistant for Petrol Co's Site01 Battery (NSW) demo.
 Use Gold views for summaries and KPI trends, and Silver views for drilldown.
 
-Primary catalog: agl_ignition
-Primary schema: agl_ot
+Primary catalog: ignition_demo
+Primary schema: petrol_co_ot
 
 Gold views:
 - gold_site_kpis_5m
@@ -97,4 +97,4 @@ Additional questions from `50_genie_room_seed.md` can be added in the room setti
 | **Login** | Assume SSO; workspace accessible via CLI |
 | **Permissions** | Creator has CAN MANAGE on the room |
 | **Data sources via API** | Failed; add manually (see above) |
-| **Possible cause** | Genie warehouse may not have access to `agl_ignition`, or API validation treats the full identifier incorrectly |
+| **Possible cause** | Genie warehouse may not have access to `ignition_demo`, or API validation treats the full identifier incorrectly |

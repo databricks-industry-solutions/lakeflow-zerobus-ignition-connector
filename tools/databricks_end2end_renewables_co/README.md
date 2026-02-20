@@ -1,4 +1,4 @@
-### Databricks end-to-end (Tilt Renewables demo): Bronze → Silver → Gold → Dashboards → Genie
+### Databricks end-to-end (Renewables Co demo): Bronze → Silver → Gold → Dashboards → Genie
 
 This folder contains **copy/paste SQL** you can run in Databricks SQL (or notebooks) to build a business-story demo
 on top of the Ignition Zerobus connector.
@@ -9,7 +9,7 @@ on top of the Ignition Zerobus connector.
   - In your environment, use:
     - Bronze source: `ignition_demo.scada_data.tag_events`
 
-This pack builds Silver/Gold in `ignition_demo.tilt_ot` on top of that Bronze table.
+This pack builds Silver/Gold in `ignition_demo.renewables_co_ot` on top of that Bronze table.
 
 ## Run order
 

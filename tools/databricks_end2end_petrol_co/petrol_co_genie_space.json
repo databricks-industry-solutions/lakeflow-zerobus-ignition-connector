@@ -16,15 +16,15 @@
   },
   "data_sources": {
     "tables": [
-      {"identifier": "agl_ignition.agl_ot.gold_site_kpis_5m"},
-      {"identifier": "agl_ignition.agl_ot.gold_site_kpis_daily"},
-      {"identifier": "agl_ignition.agl_ot.gold_dispatch_performance_5m"},
-      {"identifier": "agl_ignition.agl_ot.gold_asset_reliability_daily"},
-      {"identifier": "agl_ignition.agl_ot.gold_revenue_proxy_daily"},
-      {"identifier": "agl_ignition.agl_ot.silver_signals_latest"},
-      {"identifier": "agl_ignition.agl_ot.silver_signals_1m"},
-      {"identifier": "agl_ignition.agl_ot.silver_grid_events"},
-      {"identifier": "agl_ignition.agl_ot.silver_maintenance_events"}
+      {"identifier": "ignition_demo.petrol_co_ot.gold_site_kpis_5m"},
+      {"identifier": "ignition_demo.petrol_co_ot.gold_site_kpis_daily"},
+      {"identifier": "ignition_demo.petrol_co_ot.gold_dispatch_performance_5m"},
+      {"identifier": "ignition_demo.petrol_co_ot.gold_asset_reliability_daily"},
+      {"identifier": "ignition_demo.petrol_co_ot.gold_revenue_proxy_daily"},
+      {"identifier": "ignition_demo.petrol_co_ot.silver_signals_latest"},
+      {"identifier": "ignition_demo.petrol_co_ot.silver_signals_1m"},
+      {"identifier": "ignition_demo.petrol_co_ot.silver_grid_events"},
+      {"identifier": "ignition_demo.petrol_co_ot.silver_maintenance_events"}
     ]
   },
   "instructions": {
@@ -32,11 +32,11 @@
       {
         "id": "9d39033fdbac4de582b8c7421f3271dd",
         "content": [
-          "You are an asset intelligence assistant for AGL's Tomago Battery (NSW) demo.\n",
+          "You are an asset intelligence assistant for Petrol Co's Site01 Battery (NSW) demo.\n",
           "Use Gold views for summaries and KPI trends, and Silver views for drilldown.\n",
           "\n",
-          "Primary catalog: agl_ignition\n",
-          "Primary schema: agl_ot\n",
+          "Primary catalog: ignition_demo\n",
+          "Primary schema: petrol_co_ot\n",
           "\n",
           "Gold views:\n",
           "- gold_site_kpis_5m\n",
