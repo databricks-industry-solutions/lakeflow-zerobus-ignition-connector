@@ -32,19 +32,28 @@ class QueryError(Exception):
         super().__init__(f"Query {query_name} failed: {message}")
 
 
-_catalog: str = os.environ.get("APP_TARGET_CATALOG", os.environ.get("DATABRICKS_CATALOG", "agl_demo"))
-_schema: str = os.environ.get("APP_TARGET_SCHEMA", os.environ.get("DATABRICKS_SCHEMA", "ot"))
+_catalog: str = os.environ.get(
+    "APP_TARGET_CATALOG", os.environ.get("DATABRICKS_CATALOG", "ot_demo")
+)
+_schema: str = os.environ.get(
+    "APP_TARGET_SCHEMA", os.environ.get("DATABRICKS_SCHEMA", "ot")
+)
 
 _client: WorkspaceClient | None = None
 _warehouse_id: str = ""
 _logger = logging.getLogger(__name__)
 
-# Regex to strip Ignition tag provider prefix, e.g. [agl_bess]
+# Regex to strip Ignition tag provider prefix, e.g. [bess]
 _STRIP_PROVIDER = r"^\[.*?\]"
 
-# When True, queries read from the parsed_tags MV (pre-computed by SDP pipeline)
-# instead of running the CTE inline. Set via USE_PARSED_TAGS=true env var.
-_use_parsed_tags: bool = os.environ.get("USE_PARSED_TAGS", "").lower() in ("true", "1", "yes")
+# When True, queries read from the parsed_tags streaming table (continuously
+# updated by SDP pipeline) instead of running the CTE inline. Set via
+# USE_PARSED_TAGS=true env var.
+_use_parsed_tags: bool = os.environ.get("USE_PARSED_TAGS", "").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 
 def init(catalog: str, schema: str) -> None:
@@ -52,7 +61,9 @@ def init(catalog: str, schema: str) -> None:
     global _catalog, _schema
     _catalog = catalog
     _schema = schema
-    _logger.warning("Query service initialized: catalog=%s, schema=%s", _catalog, _schema)
+    _logger.warning(
+        "Query service initialized: catalog=%s, schema=%s", _catalog, _schema
+    )
 
 
 def _t(table: str, schema_override: str | None = None) -> str:
@@ -64,18 +75,60 @@ def _t(table: str, schema_override: str | None = None) -> str:
 # CTE helpers - transform connector raw_tags to app-expected columns
 # ---------------------------------------------------------------------------
 
+_parsed_tags_available: bool | None = None  # None = not yet checked
+_parsed_tags_check_count: int = 0
+_PARSED_TAGS_RECHECK_EVERY: int = 50  # re-probe after this many calls
+
+
+def _check_parsed_tags() -> bool:
+    """Check whether the parsed_tags table exists (cached after first success).
+
+    Once confirmed, the result is cached permanently. If the table is not
+    found, we re-check every N calls in case the pipeline has started since.
+    """
+    global _parsed_tags_available, _parsed_tags_check_count
+    if _parsed_tags_available is True:
+        return True
+    # Throttle re-checks - only probe every N calls
+    _parsed_tags_check_count += 1
+    if (
+        _parsed_tags_available is False
+        and _parsed_tags_check_count % _PARSED_TAGS_RECHECK_EVERY != 0
+    ):
+        return False
+    try:
+        client = _get_client()
+        client.statement_execution.execute_statement(
+            warehouse_id=_warehouse_id,
+            catalog=_catalog,
+            schema=_schema,
+            statement=f"SELECT 1 FROM {_t('parsed_tags')} LIMIT 0",
+            wait_timeout="10s",
+        )
+        _parsed_tags_available = True
+        _logger.info("parsed_tags table confirmed available")
+        return True
+    except Exception:
+        _parsed_tags_available = False
+        _logger.info(
+            "parsed_tags not available yet, falling back to inline CTE on raw_tags"
+        )
+        return False
+
+
 def _event_cte() -> str:
     """CTE: connector raw_tags -> app event columns.
 
-    When USE_PARSED_TAGS=true, reads directly from the parsed_tags MV
-    (pre-computed by SDP pipeline) - much faster for the app.
+    When USE_PARSED_TAGS=true AND the parsed_tags streaming table exists,
+    reads directly from it (continuously updated by SDP pipeline - much
+    faster for the app).
 
-    Otherwise falls back to inline CTE parsing.
+    Otherwise falls back to inline CTE parsing against raw_tags.
     Tag path structure:
-      [provider]AGL/Australia/NSW/{Site}/Site01/{Asset}/{Subsystem}/{Signal}
+      [provider]Demo/Region/{Site}/Site01/{Asset}/{Subsystem}/{Signal}
     Extracts asset_id as lower(site_asset), tag_name as lower(subsystem/signal).
     """
-    if _use_parsed_tags:
+    if _use_parsed_tags and _check_parsed_tags():
         return f"WITH events AS (SELECT * FROM {_t('parsed_tags')})"
 
     pat = _STRIP_PROVIDER
@@ -90,10 +143,10 @@ def _event_cte() -> str:
         "    CASE WHEN SIZE(_p) >= 6 THEN LOWER(CONCAT(_p[3], '_', _p[5]))"
         "         ELSE COALESCE(LOWER(tag_provider), 'unknown') END AS asset_id,"
         "    CASE"
-        "      WHEN tag_provider = 'agl_bess' THEN 'battery_bess'"
-        "      WHEN tag_provider = 'agl_grid' THEN 'grid_infrastructure'"
-        "      WHEN tag_provider = 'agl_market' THEN 'market_data'"
-        "      WHEN tag_provider = 'agl_cmms' THEN 'maintenance'"
+        "      WHEN tag_provider RLIKE '(?i)(^|_)bess$' THEN 'battery_bess'"
+        "      WHEN tag_provider RLIKE '(?i)(^|_)grid$' THEN 'grid_infrastructure'"
+        "      WHEN tag_provider RLIKE '(?i)(^|_)market$' THEN 'market_data'"
+        "      WHEN tag_provider RLIKE '(?i)(^|_)cmms$' THEN 'maintenance'"
         "      ELSE COALESCE(tag_provider, 'unknown')"
         "    END AS asset_type,"
         "    CASE WHEN SIZE(_p) >= 7 THEN LOWER(ARRAY_JOIN(SLICE(_p, 7, SIZE(_p) - 6), '/'))"
@@ -139,14 +192,14 @@ def _metrics_cte(lookback_minutes: int = 60, source: str = "raw_tags") -> str:
         "  SELECT"
         "    TIMESTAMP_MICROS(CAST(FLOOR(event_time / 5000000) * 5000000 AS BIGINT)) AS window_start,"
         "    TIMESTAMP_MICROS(CAST(FLOOR(event_time / 5000000) * 5000000 + 5000000 AS BIGINT)) AS window_end,"
-        "    CAST(ROUND(COUNT(*) * GREATEST(1.0, COALESCE(AVG(compression_ratio), 0))) AS BIGINT) AS records_raw,"
+        "    CAST(ROUND(COUNT(*) / GREATEST(0.01, 1.0 - COALESCE(AVG(compression_ratio), 0) / 100.0)) AS BIGINT) AS records_raw,"
         "    COUNT(*) AS records_after_sdt,"
         "    COUNT(*) * 100 AS bytes_estimate,"
         "    AVG(CAST(ingestion_timestamp - event_time AS DOUBLE) / 1000.0) AS avg_latency_ms,"
         "    PERCENTILE_APPROX(CAST(ingestion_timestamp - event_time AS DOUBLE) / 1000.0, 0.99) AS p99_latency_ms,"
         "    COUNT(DISTINCT tag_path) AS tags_active,"
-        "    AVG(COALESCE(compression_ratio, 0)) AS sdt_compression_ratio,"
-        "    FALSE AS sdt_enabled"
+        "    COALESCE(AVG(NULLIF(compression_ratio, 0)), 0) AS sdt_compression_ratio,"
+        "    BOOL_OR(COALESCE(sdt_enabled, sdt_compressed, false)) AS sdt_enabled"
         f"  FROM {_t(table)}"
         f"  WHERE TIMESTAMP_MICROS(event_time) >= TIMESTAMPADD(MINUTE, -{lookback_minutes}, CURRENT_TIMESTAMP())"
         "    AND event_time IS NOT NULL"
@@ -161,6 +214,7 @@ def _metrics_cte(lookback_minutes: int = 60, source: str = "raw_tags") -> str:
 # ---------------------------------------------------------------------------
 # Metric queries (derived from raw_tags inline)
 # ---------------------------------------------------------------------------
+
 
 def _throughput(minutes: int = 5, source: str = "raw_tags") -> tuple[str, list[Any]]:
     return (
@@ -196,7 +250,7 @@ def _latency_e2e(minutes: int = 5) -> tuple[str, list[Any]]:
     return (
         "WITH cdf AS ("
         "  SELECT event_time, _commit_timestamp"
-        f"  FROM table_changes('{table_name}', TIMESTAMPADD(MINUTE, -:p_lookback, CURRENT_TIMESTAMP()), CURRENT_TIMESTAMP())"
+        f"  FROM table_changes('{table_name}', TIMESTAMPADD(MINUTE, -:p_lookback, CURRENT_TIMESTAMP()))"
         "  WHERE _change_type != 'update_preimage'"
         "    AND event_time IS NOT NULL"
         "    AND _commit_timestamp IS NOT NULL"
@@ -243,6 +297,7 @@ def _compression() -> tuple[str, list[Any]]:
 # Event queries (from raw_tags via CTE)
 # ---------------------------------------------------------------------------
 
+
 def _events_latest(limit: int = 50) -> tuple[str, list[Any]]:
     return (
         f"{_event_cte()} "
@@ -258,6 +313,7 @@ def _events_latest(limit: int = 50) -> tuple[str, list[Any]]:
 # ---------------------------------------------------------------------------
 # Asset queries
 # ---------------------------------------------------------------------------
+
 
 def _assets() -> tuple[str, list[Any]]:
     return (
@@ -319,6 +375,7 @@ def _asset_tags(
 # Compression / SDT config
 # ---------------------------------------------------------------------------
 
+
 def _compression_comparison() -> tuple[str, list[Any]]:
     return (
         f"{_metrics_cte(60)} "
@@ -338,6 +395,11 @@ def _raw_tags_storage_metrics() -> tuple[str, list[Any]]:
     """
     table = f"{_catalog}.{_schema}.raw_tags"
     return (f"DESCRIBE DETAIL {table}", [])
+
+
+def _raw_tags_total_count() -> tuple[str, list[Any]]:
+    """Total row count in raw_tags (used to scale Delta size to a time window)."""
+    return (f"SELECT COUNT(*) AS total_rows FROM {_t('raw_tags')}", [])
 
 
 def _sdt_config() -> tuple[str, list[Any]]:
@@ -446,17 +508,18 @@ def _revenue_summary() -> tuple[str, list[Any]]:
 # Asset Framework queries
 # ---------------------------------------------------------------------------
 
+
 def _hierarchy() -> tuple[str, list[Any]]:
     """Recursive CTE to get full asset tree with depth and child count."""
     return (
         "WITH RECURSIVE tree AS ("
         f"  SELECT asset_id, parent_asset_id, asset_name, asset_type, template_id, "
-        "    site_name, description, active, 0 AS depth "
+        "    site_name, description, capacity_mw, latitude, longitude, tag_count, active, 0 AS depth "
         f"  FROM {_t('asset_hierarchy')} "
         "  WHERE parent_asset_id IS NULL AND active = true "
         "  UNION ALL "
         "  SELECT h.asset_id, h.parent_asset_id, h.asset_name, h.asset_type, h.template_id, "
-        "    h.site_name, h.description, h.active, t.depth + 1 "
+        "    h.site_name, h.description, h.capacity_mw, h.latitude, h.longitude, h.tag_count, h.active, t.depth + 1 "
         f"  FROM {_t('asset_hierarchy')} h "
         "  JOIN tree t ON h.parent_asset_id = t.asset_id "
         "  WHERE h.active = true"
@@ -466,7 +529,8 @@ def _hierarchy() -> tuple[str, list[Any]]:
         "  GROUP BY parent_asset_id"
         ") "
         "SELECT tree.asset_id, tree.parent_asset_id, tree.asset_name, tree.asset_type, "
-        "tree.template_id, tree.site_name, tree.description, tree.depth, "
+        "tree.template_id, tree.site_name, tree.description, "
+        "tree.capacity_mw, tree.latitude, tree.longitude, tree.tag_count, tree.depth, "
         "COALESCE(cc.child_count, 0) AS child_count "
         "FROM tree "
         "LEFT JOIN child_counts cc ON tree.asset_id = cc.parent_asset_id "
@@ -479,7 +543,8 @@ def _hierarchy_asset(asset_id: str) -> tuple[str, list[Any]]:
     """Single asset with template info."""
     return (
         "SELECT h.asset_id, h.parent_asset_id, h.asset_name, h.asset_type, "
-        "h.template_id, h.site_name, h.description, h.active, "
+        "h.template_id, h.site_name, h.description, "
+        "h.capacity_mw, h.latitude, h.longitude, h.tag_count, h.active, "
         "t.template_name, t.base_asset_type AS template_base_type "
         f"FROM {_t('asset_hierarchy')} h "
         f"LEFT JOIN {_t('asset_templates')} t ON h.template_id = t.template_id "
@@ -496,12 +561,30 @@ def _hierarchy_create(
     template_id: str | None = None,
     site_name: str | None = None,
     description: str | None = None,
+    capacity_mw: float | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    tag_count: int | None = None,
 ) -> tuple[str, list[Any]]:
     return (
         f"INSERT INTO {_t('asset_hierarchy')} "
-        "(asset_id, parent_asset_id, asset_name, asset_type, template_id, site_name, description) "
-        "VALUES (:p_id, :p_parent, :p_name, :p_type, :p_template, :p_site, :p_desc)",
-        [asset_id, parent_asset_id, asset_name, asset_type, template_id, site_name, description],
+        "(asset_id, parent_asset_id, asset_name, asset_type, template_id, site_name, description, "
+        "capacity_mw, latitude, longitude, tag_count) "
+        "VALUES (:p_id, :p_parent, :p_name, :p_type, :p_template, :p_site, :p_desc, "
+        ":p_capacity, :p_lat, :p_lon, :p_tags)",
+        [
+            asset_id,
+            parent_asset_id,
+            asset_name,
+            asset_type,
+            template_id,
+            site_name,
+            description,
+            capacity_mw,
+            latitude,
+            longitude,
+            tag_count,
+        ],
     )
 
 
@@ -512,6 +595,10 @@ def _hierarchy_update(
     template_id: str | None = None,
     site_name: str | None = None,
     description: str | None = None,
+    capacity_mw: float | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    tag_count: int | None = None,
 ) -> tuple[str, list[Any]]:
     return (
         f"MERGE INTO {_t('asset_hierarchy')} AS target "
@@ -523,8 +610,23 @@ def _hierarchy_update(
         "template_id = COALESCE(:p_template, target.template_id), "
         "site_name = COALESCE(:p_site, target.site_name), "
         "description = COALESCE(:p_desc, target.description), "
+        "capacity_mw = COALESCE(:p_capacity, target.capacity_mw), "
+        "latitude = COALESCE(:p_lat, target.latitude), "
+        "longitude = COALESCE(:p_lon, target.longitude), "
+        "tag_count = COALESCE(:p_tags, target.tag_count), "
         "updated_at = CURRENT_TIMESTAMP()",
-        [asset_id, asset_name, asset_type, template_id, site_name, description],
+        [
+            asset_id,
+            asset_name,
+            asset_type,
+            template_id,
+            site_name,
+            description,
+            capacity_mw,
+            latitude,
+            longitude,
+            tag_count,
+        ],
     )
 
 
@@ -545,7 +647,9 @@ def _hierarchy_delete(asset_id: str) -> tuple[str, list[Any]]:
     )
 
 
-def _hierarchy_move(asset_id: str, new_parent_id: str | None = None) -> tuple[str, list[Any]]:
+def _hierarchy_move(
+    asset_id: str, new_parent_id: str | None = None
+) -> tuple[str, list[Any]]:
     return (
         f"UPDATE {_t('asset_hierarchy')} "
         "SET parent_asset_id = :p_parent, updated_at = CURRENT_TIMESTAMP() "
@@ -574,7 +678,7 @@ def _template_by_id(template_id: str) -> tuple[str, list[Any]]:
     return (
         "SELECT t.template_id, t.template_name, t.description, t.base_asset_type, "
         "ta.attribute_id, ta.attribute_name, ta.data_type, ta.unit, "
-        "ta.default_value, ta.is_required, ta.sort_order "
+        "ta.default_value, ta.is_required, ta.sort_order, ta.tag_pattern "
         f"FROM {_t('asset_templates')} t "
         f"LEFT JOIN {_t('template_attributes')} ta ON t.template_id = ta.template_id "
         "WHERE t.template_id = :p_id "
@@ -646,12 +750,23 @@ def _template_attr_create(
     default_value: str | None = None,
     is_required: bool = False,
     sort_order: int = 0,
+    tag_pattern: str | None = None,
 ) -> tuple[str, list[Any]]:
     return (
         f"INSERT INTO {_t('template_attributes')} "
-        "(attribute_id, template_id, attribute_name, data_type, unit, default_value, is_required, sort_order) "
-        "VALUES (:p_id, :p_tpl, :p_name, :p_dtype, :p_unit, :p_default, :p_required, :p_sort)",
-        [attribute_id, template_id, attribute_name, data_type, unit, default_value, is_required, sort_order],
+        "(attribute_id, template_id, attribute_name, data_type, unit, default_value, is_required, sort_order, tag_pattern) "
+        "VALUES (:p_id, :p_tpl, :p_name, :p_dtype, :p_unit, :p_default, :p_required, :p_sort, :p_tag_pattern)",
+        [
+            attribute_id,
+            template_id,
+            attribute_name,
+            data_type,
+            unit,
+            default_value,
+            is_required,
+            sort_order,
+            tag_pattern,
+        ],
     )
 
 
@@ -663,6 +778,7 @@ def _template_attr_update(
     default_value: str | None = None,
     is_required: bool | None = None,
     sort_order: int | None = None,
+    tag_pattern: str | None = None,
 ) -> tuple[str, list[Any]]:
     return (
         f"MERGE INTO {_t('template_attributes')} AS target "
@@ -674,8 +790,18 @@ def _template_attr_update(
         "unit = COALESCE(:p_unit, target.unit), "
         "default_value = COALESCE(:p_default, target.default_value), "
         "is_required = COALESCE(:p_required, target.is_required), "
-        "sort_order = COALESCE(:p_sort, target.sort_order)",
-        [attribute_id, attribute_name, data_type, unit, default_value, is_required, sort_order],
+        "sort_order = COALESCE(:p_sort, target.sort_order), "
+        "tag_pattern = COALESCE(:p_tag_pattern, target.tag_pattern)",
+        [
+            attribute_id,
+            attribute_name,
+            data_type,
+            unit,
+            default_value,
+            is_required,
+            sort_order,
+            tag_pattern,
+        ],
     )
 
 
@@ -705,7 +831,7 @@ def _asset_attr_values(asset_id: str) -> tuple[str, list[Any]]:
     """Get attribute values for an asset, joined with attribute metadata."""
     return (
         "SELECT av.attribute_id, ta.attribute_name, ta.data_type, ta.unit, "
-        "ta.is_required, av.value, av.updated_at "
+        "ta.is_required, av.value, av.updated_at, ta.tag_pattern "
         f"FROM {_t('asset_attribute_values')} av "
         f"JOIN {_t('template_attributes')} ta ON av.attribute_id = ta.attribute_id "
         "WHERE av.asset_id = :p_id "
@@ -726,7 +852,177 @@ def _asset_attr_values_update(
         "WHEN MATCHED THEN UPDATE SET value = :p_value, updated_at = CURRENT_TIMESTAMP() "
         "WHEN NOT MATCHED THEN INSERT (asset_id, attribute_id, value) "
         "VALUES (:p_asset2, :p_attr2, :p_value2)",
-        [asset_id, attribute_id, asset_id, attribute_id, value, asset_id, attribute_id, value],
+        [asset_id, attribute_id, value, asset_id, attribute_id, value],
+    )
+
+
+def _asset_live_attr_values(asset_id: str) -> tuple[str, list[Any]]:
+    """Resolve live tag values for an asset's bound template attributes."""
+    return (
+        f"{_event_cte()}, "
+        "latest AS ( "
+        "  SELECT asset_id, tag_name, tag_value, event_timestamp, "
+        "    ROW_NUMBER() OVER (PARTITION BY asset_id, tag_name ORDER BY event_timestamp DESC) AS rn "
+        "  FROM events "
+        "  WHERE asset_id = :p_id "
+        "    AND event_timestamp >= current_timestamp() - INTERVAL 10 MINUTES "
+        ") "
+        "SELECT ta.attribute_id, ta.attribute_name, ta.tag_pattern, "
+        "  l.tag_value AS live_value, l.event_timestamp AS live_at "
+        f"FROM {_t('asset_attribute_values')} av "
+        f"JOIN {_t('template_attributes')} ta ON av.attribute_id = ta.attribute_id "
+        "LEFT JOIN latest l ON l.asset_id = :p_id2 AND l.tag_name = ta.tag_pattern AND l.rn = 1 "
+        "WHERE av.asset_id = :p_id3 AND ta.tag_pattern IS NOT NULL "
+        "ORDER BY ta.sort_order",
+        [asset_id, asset_id, asset_id],
+    )
+
+
+def _hierarchy_asset_tags(
+    asset_id: str,
+    minutes: int = 60,
+    include_unmapped: bool = True,
+) -> tuple[str, list[Any]]:
+    """Catalog tags for one hierarchy asset with latest live values."""
+    return (
+        f"{_event_cte()}, "
+        "latest_events AS ( "
+        "  SELECT asset_id, tag_name, tag_value, tag_value_str, quality, event_timestamp, "
+        "    sdt_compressed, compression_ratio, "
+        "    ROW_NUMBER() OVER (PARTITION BY asset_id, tag_name ORDER BY event_timestamp DESC) AS rn "
+        "  FROM events "
+        "  WHERE asset_id = :p_asset_id "
+        "    AND event_timestamp >= TIMESTAMPADD(MINUTE, -:p_minutes, CURRENT_TIMESTAMP()) "
+        "), mapped_tags AS ( "
+        "  SELECT hierarchy_asset_id AS asset_id, normalized_tag_name AS tag_name, "
+        "    MIN(tag_path) AS tag_path, MAX(unit) AS unit, MAX(source_domain) AS source_domain "
+        f"  FROM {_t('silver_signal_mapping_normalized')} "
+        "  WHERE COALESCE(active, true) = true AND hierarchy_asset_id = :p_asset_id2 "
+        "  GROUP BY hierarchy_asset_id, normalized_tag_name "
+        "), mapped_rows AS ( "
+        "  SELECT m.asset_id, m.tag_name, m.tag_path, m.unit, m.source_domain, "
+        "    true AS is_mapped, "
+        "    l.tag_value AS live_value, l.tag_value_str AS live_value_str, "
+        "    l.quality, l.event_timestamp AS live_at, "
+        "    l.sdt_compressed, l.compression_ratio "
+        "  FROM mapped_tags m "
+        "  LEFT JOIN latest_events l "
+        "    ON l.asset_id = m.asset_id AND l.tag_name = m.tag_name AND l.rn = 1 "
+        "), unmapped_rows AS ( "
+        "  SELECT l.asset_id, l.tag_name, CAST(NULL AS STRING) AS tag_path, "
+        "    CAST(NULL AS STRING) AS unit, CAST(NULL AS STRING) AS source_domain, "
+        "    false AS is_mapped, "
+        "    l.tag_value AS live_value, l.tag_value_str AS live_value_str, "
+        "    l.quality, l.event_timestamp AS live_at, "
+        "    l.sdt_compressed, l.compression_ratio "
+        "  FROM latest_events l "
+        "  WHERE l.rn = 1 "
+        "    AND NOT EXISTS ("
+        "      SELECT 1 FROM mapped_tags m "
+        "      WHERE m.asset_id = l.asset_id AND m.tag_name = l.tag_name"
+        "    ) "
+        ") "
+        "SELECT asset_id, tag_name, tag_path, unit, source_domain, is_mapped, "
+        "  live_value, live_value_str, quality, live_at, sdt_compressed, compression_ratio "
+        "FROM mapped_rows "
+        "UNION ALL "
+        "SELECT asset_id, tag_name, tag_path, unit, source_domain, is_mapped, "
+        "  live_value, live_value_str, quality, live_at, sdt_compressed, compression_ratio "
+        "FROM unmapped_rows "
+        "WHERE :p_include_unmapped = true "
+        "ORDER BY tag_name",
+        [asset_id, minutes, asset_id, include_unmapped],
+    )
+
+
+def _hierarchy_asset_tag_summary(minutes: int = 60) -> tuple[str, list[Any]]:
+    """Per-asset mapped/unmapped tag summary for hierarchy badges."""
+    return (
+        f"{_event_cte()}, "
+        "latest_events AS ( "
+        "  SELECT asset_id, tag_name, "
+        "    ROW_NUMBER() OVER (PARTITION BY asset_id, tag_name ORDER BY event_timestamp DESC) AS rn "
+        "  FROM events "
+        "  WHERE event_timestamp >= TIMESTAMPADD(MINUTE, -:p_minutes, CURRENT_TIMESTAMP()) "
+        "), event_tags AS ( "
+        "  SELECT asset_id, tag_name FROM latest_events WHERE rn = 1 "
+        "), mapped_tags AS ( "
+        "  SELECT hierarchy_asset_id AS asset_id, normalized_tag_name AS tag_name "
+        f"  FROM {_t('silver_signal_mapping_normalized')} "
+        "  WHERE COALESCE(active, true) = true "
+        "  GROUP BY hierarchy_asset_id, normalized_tag_name "
+        "), mapped_counts AS ( "
+        "  SELECT asset_id, COUNT(*) AS mapped_tag_count "
+        "  FROM mapped_tags "
+        "  GROUP BY asset_id "
+        "), live_counts AS ( "
+        "  SELECT asset_id, COUNT(*) AS live_tag_count "
+        "  FROM event_tags "
+        "  GROUP BY asset_id "
+        "), mapped_live_counts AS ( "
+        "  SELECT e.asset_id, COUNT(*) AS mapped_live_tag_count "
+        "  FROM event_tags e "
+        "  JOIN mapped_tags m ON e.asset_id = m.asset_id AND e.tag_name = m.tag_name "
+        "  GROUP BY e.asset_id "
+        "), unmapped_counts AS ( "
+        "  SELECT e.asset_id, COUNT(*) AS unmapped_tag_count "
+        "  FROM event_tags e "
+        "  WHERE NOT EXISTS ("
+        "    SELECT 1 FROM mapped_tags m "
+        "    WHERE m.asset_id = e.asset_id AND m.tag_name = e.tag_name"
+        "  ) "
+        "  GROUP BY e.asset_id "
+        ") "
+        "SELECT h.asset_id, "
+        "  COALESCE(mc.mapped_tag_count, 0) AS mapped_tag_count, "
+        "  COALESCE(lc.live_tag_count, 0) AS live_tag_count, "
+        "  COALESCE(mlc.mapped_live_tag_count, 0) AS mapped_live_tag_count, "
+        "  COALESCE(uc.unmapped_tag_count, 0) AS unmapped_tag_count "
+        f"FROM {_t('asset_hierarchy')} h "
+        "LEFT JOIN mapped_counts mc ON h.asset_id = mc.asset_id "
+        "LEFT JOIN live_counts lc ON h.asset_id = lc.asset_id "
+        "LEFT JOIN mapped_live_counts mlc ON h.asset_id = mlc.asset_id "
+        "LEFT JOIN unmapped_counts uc ON h.asset_id = uc.asset_id "
+        "WHERE h.active = true "
+        "ORDER BY h.asset_id",
+        [minutes],
+    )
+
+
+def _hierarchy_child_aggregation(
+    asset_id: str, minutes: int = 10,
+) -> tuple[str, list[Any]]:
+    """Aggregate latest tag values across all direct children of an asset.
+
+    For each tag_name that appears across child assets, returns AVG/MIN/MAX
+    of the most recent value per child. Useful for site-level roll-ups like
+    "average SoC across all BESS units".
+    """
+    return (
+        f"{_event_cte()}, "
+        "child_ids AS ( "
+        "  SELECT asset_id "
+        f"  FROM {_t('asset_hierarchy')} "
+        "  WHERE parent_asset_id = :p_asset_id AND active = true "
+        "), recent AS ( "
+        "  SELECT e.asset_id, e.tag_name, e.tag_value, "
+        "    ROW_NUMBER() OVER (PARTITION BY e.asset_id, e.tag_name ORDER BY e.event_timestamp DESC) AS rn "
+        "  FROM events e "
+        "  JOIN child_ids c ON e.asset_id = c.asset_id "
+        "  WHERE e.event_timestamp >= TIMESTAMPADD(MINUTE, -:p_minutes, CURRENT_TIMESTAMP()) "
+        "    AND e.tag_value IS NOT NULL "
+        ") "
+        "SELECT tag_name, "
+        "  ROUND(AVG(tag_value), 2) AS avg_value, "
+        "  ROUND(MIN(tag_value), 2) AS min_value, "
+        "  ROUND(MAX(tag_value), 2) AS max_value, "
+        "  COUNT(DISTINCT asset_id) AS asset_count "
+        "FROM recent "
+        "WHERE rn = 1 "
+        "GROUP BY tag_name "
+        "HAVING COUNT(DISTINCT asset_id) > 1 "
+        "ORDER BY tag_name",
+        [asset_id, minutes],
     )
 
 
@@ -753,6 +1049,190 @@ def _diagnostic() -> tuple[str, list[Any]]:
     )
 
 
+def _bom_current_conditions() -> tuple[str, list[Any]]:
+    """Current weather conditions per BOM station."""
+    return (
+        "SELECT station_name, air_temp_c, apparent_temp_c, "
+        "relative_humidity_pct, wind_speed_kmh, wind_direction, "
+        "rainfall_mm, observation_timestamp "
+        f"FROM {_t('bom_current_conditions')} "
+        "ORDER BY station_name",
+        [],
+    )
+
+
+def _bom_daily_summary() -> tuple[str, list[Any]]:
+    """Daily weather summary per BOM station."""
+    return (
+        "SELECT station_name, observation_date, min_temp_c, max_temp_c, "
+        "avg_humidity_pct, max_gust_kmh, total_rainfall_mm, observation_count "
+        f"FROM {_t('bom_station_daily_summary')} "
+        "ORDER BY observation_date DESC, station_name "
+        "LIMIT 50",
+        [],
+    )
+
+
+def _nem_market_snapshot() -> tuple[str, list[Any]]:
+    """Latest NEM market snapshot per region."""
+    return (
+        "SELECT region_id, price_timestamp, rrp, "
+        "total_demand_mw, available_generation_mw, net_interchange_mw "
+        f"FROM {_t('nem_market_snapshot')} "
+        "ORDER BY region_id",
+        [],
+    )
+
+
+def _nem_dispatch_prices_history(hours: int = 6) -> tuple[str, list[Any]]:
+    """Recent NEM dispatch prices for all regions."""
+    return (
+        "SELECT dispatch_timestamp, region_id, rrp "
+        f"FROM {_t('nem_dispatch_prices')} "
+        "WHERE dispatch_timestamp >= TIMESTAMPADD(HOUR, -:p_hours, CURRENT_TIMESTAMP()) "
+        "ORDER BY dispatch_timestamp DESC",
+        [hours],
+    )
+
+
+# === Time Travel / Historical Replay queries ===
+
+
+def _asset_tags_range(
+    asset_id: str,
+    from_ts: str,
+    to_ts: str,
+    resolution: str | None = None,
+    tags: list[str] | None = None,
+) -> tuple[str, list[Any]]:
+    """Tag history for an asset between from_ts and to_ts with optional downsampling.
+
+    Auto-selects resolution from the time span when resolution is None:
+      <= 1h   -> raw (capped at 10,000 rows)
+      <= 6h   -> 1-minute averages
+      <= 24h  -> 5-minute averages
+      <= 7d   -> 15-minute averages
+      <= 30d  -> 1-hour averages
+    """
+    from datetime import datetime  # noqa: PLC0415
+
+    if resolution is None:
+        try:
+            dt_from = datetime.fromisoformat(from_ts.replace("Z", "+00:00"))
+            dt_to = datetime.fromisoformat(to_ts.replace("Z", "+00:00"))
+            span_hours = (dt_to - dt_from).total_seconds() / 3600
+        except ValueError:
+            span_hours = 1.0
+        if span_hours <= 1:
+            resolution = "raw"
+        elif span_hours <= 6:
+            resolution = "1m"
+        elif span_hours <= 24:
+            resolution = "5m"
+        elif span_hours <= 168:
+            resolution = "15m"
+        else:
+            resolution = "1h"
+
+    tag_filter = ""
+    tag_params: list[Any] = []
+    if tags:
+        placeholders = ", ".join([f":p_tag_{i}" for i in range(len(tags))])
+        tag_filter = f" AND tag_name IN ({placeholders})"
+        tag_params = list(tags)
+
+    if resolution == "raw":
+        return (
+            f"{_event_cte()} "
+            "SELECT event_timestamp, tag_name, tag_value, quality, sdt_compressed "
+            "FROM events "
+            "WHERE asset_id = :p_asset_id "
+            f"AND event_timestamp >= :p_from AND event_timestamp <= :p_to{tag_filter} "
+            "ORDER BY event_timestamp "
+            "LIMIT 10000",
+            [asset_id, from_ts, to_ts, *tag_params],
+        )
+
+    if resolution == "1m":
+        bucket_expr = "DATE_TRUNC('minute', event_timestamp)"
+    elif resolution == "5m":
+        bucket_expr = "TIMESTAMP_SECONDS(FLOOR(UNIX_TIMESTAMP(event_timestamp) / 300) * 300)"
+    elif resolution == "15m":
+        bucket_expr = "TIMESTAMP_SECONDS(FLOOR(UNIX_TIMESTAMP(event_timestamp) / 900) * 900)"
+    else:  # 1h
+        bucket_expr = "DATE_TRUNC('hour', event_timestamp)"
+
+    return (
+        f"{_event_cte()}, "
+        "bucketed AS ("
+        f"  SELECT {bucket_expr} AS bucket, tag_name, "
+        "  AVG(tag_value) AS tag_value, MAX(quality) AS quality, "
+        "  BOOL_OR(sdt_compressed) AS sdt_compressed "
+        "  FROM events "
+        "  WHERE asset_id = :p_asset_id "
+        f"  AND event_timestamp >= :p_from AND event_timestamp <= :p_to{tag_filter} "
+        "  GROUP BY 1, 2"
+        ") "
+        "SELECT bucket AS event_timestamp, tag_name, tag_value, quality, sdt_compressed "
+        "FROM bucketed "
+        "ORDER BY event_timestamp",
+        [asset_id, from_ts, to_ts, *tag_params],
+    )
+
+
+def _fleet_snapshot(timestamp: str) -> tuple[str, list[Any]]:
+    """Point-in-time fleet health — latest score per asset at or before the requested timestamp.
+
+    Reads from health_score_history (append-only streaming table) which accumulates
+    a row per asset per pipeline refresh. QUALIFY ROW_NUMBER picks the most recent
+    score at or before the requested timestamp.
+    """
+    return (
+        "SELECT scored_at, asset_id, health_score, primary_risk_tag, "
+        "risk_description, anomaly_tags, estimated_hours_to_failure "
+        f"FROM {_t('health_score_history')} "
+        "WHERE scored_at <= :p_timestamp "
+        "QUALIFY ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY scored_at DESC) = 1 "
+        "ORDER BY health_score ASC",
+        [timestamp],
+    )
+
+
+def _asset_tags_export(
+    asset_id: str,
+    from_ts: str,
+    to_ts: str,
+) -> tuple[str, list[Any]]:
+    """All tag events for CSV export — no downsampling, row-count checked by caller."""
+    return (
+        f"{_event_cte()} "
+        "SELECT event_timestamp, tag_name, tag_value, quality, sdt_compressed "
+        "FROM events "
+        "WHERE asset_id = :p_asset_id "
+        "AND event_timestamp >= :p_from AND event_timestamp <= :p_to "
+        "ORDER BY event_timestamp",
+        [asset_id, from_ts, to_ts],
+    )
+
+
+def _asset_forensics(
+    asset_id: str,
+    event_time: str,
+    window_minutes: int = 30,
+) -> tuple[str, list[Any]]:
+    """Raw tag events for ±window_minutes around an event timestamp."""
+    return (
+        f"{_event_cte()} "
+        "SELECT event_timestamp, tag_name, tag_value, quality, sdt_compressed "
+        "FROM events "
+        "WHERE asset_id = :p_asset_id "
+        "AND event_timestamp >= TIMESTAMPADD(MINUTE, -:p_window, CAST(:p_event_time AS TIMESTAMP)) "
+        "AND event_timestamp <= TIMESTAMPADD(MINUTE, :p_window2, CAST(:p_event_time2 AS TIMESTAMP)) "
+        "ORDER BY event_timestamp",
+        [asset_id, window_minutes, event_time, window_minutes, event_time],
+    )
+
+
 QUERY_BUILDERS: dict[str, Any] = {
     "diagnostic": _diagnostic,
     "throughput": _throughput,
@@ -765,6 +1245,7 @@ QUERY_BUILDERS: dict[str, Any] = {
     "assetTags": _asset_tags,
     "compressionComparison": _compression_comparison,
     "rawTagsStorageMetrics": _raw_tags_storage_metrics,
+    "rawTagsTotalCount": _raw_tags_total_count,
     "sdtConfig": _sdt_config,
     "sdtConfigUpdate": _sdt_config_update,
     # Analytics queries (APP-PRD)
@@ -773,6 +1254,11 @@ QUERY_BUILDERS: dict[str, Any] = {
     "nemPrices": _nem_prices,
     "priceForecast": _price_forecast,
     "revenueSummary": _revenue_summary,
+    # Databricks 101: BOM + NEMWEB live data
+    "bomCurrentConditions": _bom_current_conditions,
+    "bomDailySummary": _bom_daily_summary,
+    "nemMarketSnapshot": _nem_market_snapshot,
+    "nemDispatchPricesHistory": _nem_dispatch_prices_history,
     # Asset Framework queries
     "hierarchy": _hierarchy,
     "hierarchyAsset": _hierarchy_asset,
@@ -792,6 +1278,15 @@ QUERY_BUILDERS: dict[str, Any] = {
     "applyTemplate": _apply_template,
     "assetAttrValues": _asset_attr_values,
     "assetAttrValuesUpdate": _asset_attr_values_update,
+    "assetLiveAttrValues": _asset_live_attr_values,
+    "hierarchyAssetTags": _hierarchy_asset_tags,
+    "hierarchyAssetTagSummary": _hierarchy_asset_tag_summary,
+    "hierarchyChildAggregation": _hierarchy_child_aggregation,
+    # Time Travel / Historical Replay
+    "assetTagsRange": _asset_tags_range,
+    "fleetSnapshot": _fleet_snapshot,
+    "assetTagsExport": _asset_tags_export,
+    "assetForensics": _asset_forensics,
 }
 
 
@@ -867,7 +1362,10 @@ async def execute(name: str, **kwargs: Any) -> list[dict[str, Any]]:
     # type_name is an enum (ColumnInfoTypeName), use .value to get string like "INT"
     schema_cols = response.manifest.schema.columns
     columns = [col.name for col in schema_cols]
-    col_types = [col.type_name.value if hasattr(col.type_name, "value") else str(col.type_name) for col in schema_cols]
+    col_types = [
+        col.type_name.value if hasattr(col.type_name, "value") else str(col.type_name)
+        for col in schema_cols
+    ]
 
     def convert_value(val: Any, type_name: str) -> Any:
         """Convert string values from data_array to proper Python types."""

@@ -17,7 +17,7 @@ This branch adds a **business-story demo** on top of the Ignition Zerobus Connec
   - Added per-source `Diagnostics/*` tags and scripts update them (tick count, last run, last error).
 - **Databricks business layer**: `tools/databricks_end2end_tilt/`
   - Uses **Bronze source**: `ignition_demo.scada_data.tag_events`
-  - Builds Silver/Gold in: `ignition_demo.tilt_ot`
+  - Builds Silver/Gold in: `ignition_demo.ot`
 
 ### Dashboards available (from `tools/databricks_end2end_tilt/40_dashboard_queries.sql`)
 
@@ -44,8 +44,8 @@ Create one dashboard with these pages/sections:
 
 Recommended data sources to add to the Genie space:
 
-- Gold: `ignition_demo.tilt_ot.gold_*`
-- Silver drilldown: `ignition_demo.tilt_ot.silver_signals_1m`, `silver_grid_events`, `silver_maintenance_events`
+- Gold: `ignition_demo.ot.gold_*`
+- Silver drilldown: `ignition_demo.ot.silver_signals_1m`, `silver_grid_events`, `silver_maintenance_events`
 
 High-signal demo questions:
 
@@ -64,8 +64,8 @@ As long as `ignition_demo.scada_data.tag_events` continues to ingest events, das
 
 The only things you update manually when you add new tags are:
 
-- `ignition_demo.tilt_ot.silver_asset_registry` (table)
-- `ignition_demo.tilt_ot.silver_signal_mapping` (table)
+- `ignition_demo.ot.silver_asset_registry` (table)
+- `ignition_demo.ot.silver_signal_mapping` (table)
 
 ### “How to tell the business story” (2–3 minute live demo)
 

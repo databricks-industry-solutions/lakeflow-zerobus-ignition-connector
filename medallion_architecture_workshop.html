@@ -1,0 +1,2023 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Medallion Architecture — Building a Lakehouse Step by Step — Databricks</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ================================================================
+       DATABRICKS BRAND SYSTEM v1.1.4 + MEDALLION WORKSHOP EXTENSIONS
+       ================================================================ */
+    :root {
+      --db-lava: #FF3621; --db-lava-light: #FF5F46; --db-lava-warm: #FE6046;
+      --db-navy: #1B3139; --db-ink: #0B2026; --db-teal: #1B5162; --db-green: #00A972;
+      --db-oat: #F9F7F4; --db-oat-medium: #EEEDE9; --db-oat-dark: #DBD7CE;
+      --db-white: #FFFFFF; --db-black: #000000;
+      --db-burgundy: #970F29; --db-amber: #FEAB03; --db-muted-teal: #618693; --db-indigo: #4259FE;
+      --bg-primary: var(--db-oat); --bg-secondary: var(--db-white); --bg-dark: var(--db-navy); --bg-black: var(--db-black);
+      --text-primary: var(--db-ink); --text-secondary: #4A5E68; --text-on-dark: var(--db-white);
+      --accent: var(--db-lava); --accent-hover: #E02E1A; --accent-glow: rgba(255,54,33,0.15); --divider: var(--db-oat-medium);
+      --font-display: 'DM Sans', sans-serif; --font-body: 'DM Sans', sans-serif; --font-mono: 'DM Mono', monospace;
+      --bronze: #CD7F32; --silver: #C0C0C0; --gold-layer: #FFD700;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: auto; overflow-y: scroll; scroll-snap-type: y mandatory; }
+    body { font-family: var(--font-body); background: var(--bg-primary); color: var(--text-primary); overflow-x: hidden; }
+
+    /* === SLIDE BASE (v1.1.4: wider content, generous padding) === */
+    .slide { height: 100vh; height: 100dvh; scroll-snap-align: start; padding: clamp(1.5rem, 3vw, 4rem) clamp(2rem, 5vw, 6rem); display: flex; flex-direction: column; align-items: center; position: relative; opacity: 1; overflow-y: auto; }
+    .slide-content { width: 90%; max-width: 2200px; margin: auto; }
+    .slide-light { background: var(--db-oat); color: var(--db-ink); }
+    .slide-dark  { background: var(--db-navy); color: var(--db-white); }
+    .slide-black { background: var(--db-black); color: var(--db-white); }
+    .slide-ink   { background: var(--db-ink); color: var(--db-white); }
+    .slide-white { background: var(--db-white); color: var(--db-ink); }
+
+    /* === PROGRESS BAR + NAV === */
+    .progress-bar { position: fixed; top: 0; left: 0; height: 3px; background: var(--accent); z-index: 100; transition: width 0.3s ease; }
+    .nav-dots { position: fixed; right: 1.5rem; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 100; }
+    .nav-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--db-oat-medium); border: none; cursor: pointer; transition: all 0.3s ease; padding: 0; }
+    .nav-dot.active { background: var(--accent); transform: scale(1.4); }
+
+    /* === TYPOGRAPHY (v1.1.4: 4K-ready ceilings) === */
+    h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(2.5rem, 4.5vw, 7rem); letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 0.5em; }
+    h2 { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.8rem, 3vw, 4.5rem); letter-spacing: -0.01em; line-height: 1.2; margin-bottom: 0.5em; }
+    h3 { font-family: var(--font-display); font-weight: 500; font-size: clamp(1.2rem, 2vw, 2.5rem); line-height: 1.3; margin-bottom: 0.4em; }
+    p, li { font-family: var(--font-body); font-weight: 400; font-size: clamp(1.1rem, 1.5vw, 2rem); line-height: 1.6; }
+    code, .mono { font-family: var(--font-mono); font-weight: 400; font-size: 0.9em; }
+    strong { font-weight: 700; }
+    ul, ol { margin-left: 1.2em; margin-bottom: 0.8em; }
+    li { margin-bottom: 0.35em; }
+    .dark-bg h1, .dark-bg h2, .dark-bg h3, .dark-bg p, .dark-bg li, .dark-bg strong { color: white; }
+
+    /* === EXECUTIVE POLISH: EYEBROW === */
+    .eyebrow { font-family: var(--font-body); font-weight: 500; font-size: clamp(0.75rem, 0.9vw, 1.1rem); letter-spacing: 0.15em; text-transform: uppercase; color: var(--db-lava); margin-bottom: 0.75rem; display: block; }
+    .dark-bg .eyebrow { color: var(--db-lava-light); }
+
+    /* === EXECUTIVE POLISH: LEAD PARAGRAPH === */
+    .lead { font-size: clamp(1.2rem, 1.8vw, 2rem); font-weight: 400; line-height: 1.6; color: var(--text-secondary); max-width: 80%; margin-bottom: 2rem; }
+    .dark-bg .lead { color: rgba(255,255,255,0.7); }
+
+    /* === EXECUTIVE POLISH: ACCENT LINE === */
+    .accent-line { width: 60px; height: 3px; background: linear-gradient(90deg, var(--db-lava), var(--db-lava-warm)); border-radius: 2px; margin: 1rem 0 1.5rem; }
+    .accent-line.wide { width: 120px; }
+    .accent-line.center { margin-left: auto; margin-right: auto; }
+
+    /* === TABLES === */
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: clamp(0.85rem, 1.2vw, 1.1rem); }
+    th { background: var(--db-lava); color: white; padding: 0.65em 0.9em; text-align: left; font-weight: 600; }
+    td { padding: 0.55em 0.9em; border-bottom: 1px solid var(--db-oat-medium); vertical-align: top; }
+    tr:nth-child(even) td { background: rgba(0,0,0,0.02); }
+    .dark-bg th { background: rgba(255,255,255,0.15); }
+    .dark-bg td { border-bottom-color: rgba(255,255,255,0.1); color: rgba(255,255,255,0.9); }
+    .dark-bg tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
+
+    /* === CODE BLOCKS === */
+    pre { background: var(--db-ink); color: #e0e0e0; border-radius: 10px; padding: 1.2em 1.5em; overflow-x: auto; margin: 1rem 0; font-size: clamp(0.78rem, 1vw, 0.95rem); line-height: 1.55; }
+    pre code { font-family: var(--font-mono); color: inherit; background: none; }
+    code { background: rgba(0,0,0,0.06); padding: 0.15em 0.4em; border-radius: 4px; }
+    .dark-bg code { background: rgba(255,255,255,0.1); }
+    .dark-bg pre { background: rgba(0,0,0,0.4); }
+    .kw { color: #82AAFF; } .fn { color: #C3E88D; } .str { color: #C3E88D; } .cm { color: #546E7A; } .num { color: #F78C6C; } .op { color: #89DDFF; }
+
+    /* === CARDS (v1.1.4: shadow + glass) === */
+    .card { padding: 2rem; border-radius: 12px; background: var(--db-white); border: 1px solid var(--db-oat-medium); box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03); transition: transform 0.3s ease, box-shadow 0.3s ease; }
+    .card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+    .dark-bg .card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 4px 24px rgba(0,0,0,0.2); color: white; }
+    .dark-bg .card:hover { background: rgba(255,255,255,0.09); box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+    .dark-bg .card h3 { color: white; }
+    .dark-bg .card p, .dark-bg .card li { color: rgba(255,255,255,0.7); }
+
+    /* === LAYOUTS === */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start; margin: 1rem 0; }
+    .card-grid { display: grid; gap: 1.2rem; margin: 1.5rem 0; }
+    .grid-cols-2 { grid-template-columns: 1fr 1fr; }
+    .grid-cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .grid-wide-narrow { display: grid; grid-template-columns: 3fr 2fr; gap: 2.5rem; align-items: start; margin: 2rem auto; }
+    .grid-narrow-wide { display: grid; grid-template-columns: 2fr 3fr; gap: 2.5rem; align-items: start; margin: 2rem auto; }
+    .comparison-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 1.5rem 0; }
+    .comparison-card { padding: 1.8rem; border-radius: 12px; transition: transform 0.3s ease; }
+    .comparison-card:hover { transform: translateY(-3px); }
+    .comparison-card.before { background: rgba(151,15,41,0.08); border: 1px solid rgba(151,15,41,0.2); }
+    .comparison-card.after  { background: rgba(0,169,114,0.08); border: 1px solid rgba(0,169,114,0.2); }
+    .comparison-card.before h3 { color: var(--db-burgundy); }
+    .comparison-card.after h3  { color: var(--db-green); }
+    .dark-bg .comparison-card.before { background: rgba(151,15,41,0.2); border-color: rgba(151,15,41,0.4); }
+    .dark-bg .comparison-card.after  { background: rgba(0,169,114,0.2); border-color: rgba(0,169,114,0.4); }
+    .dark-bg .comparison-card.before h3 { color: #ff6b7a; }
+    .dark-bg .comparison-card.after h3  { color: #5cd6a8; }
+
+    /* === ASYMMETRIC LAYOUTS === */
+    .offset-heading { padding-left: 2rem; border-left: 4px solid var(--db-lava); max-width: 600px; }
+    .offset-heading h2 { font-size: clamp(2rem, 4vw, 3.5rem); line-height: 1.1; }
+    .dark-bg .offset-heading { border-left-color: var(--db-lava-light); }
+    .card-overlap { margin-top: -2rem; position: relative; z-index: 2; box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
+    .pull-quote { font-family: var(--font-display); font-size: clamp(1.8rem, 3vw, 4.5rem); font-weight: 700; line-height: 1.25; color: var(--db-ink); max-width: 80%; position: relative; padding-left: 2rem; }
+    .pull-quote::before { content: '\201C'; position: absolute; left: -0.5rem; top: -0.5rem; font-size: 5rem; line-height: 1; color: var(--db-lava); opacity: 0.3; font-family: Georgia, serif; }
+    .dark-bg .pull-quote { color: white; }
+    .stat-hero { font-family: var(--font-display); font-weight: 700; font-size: clamp(4rem, 10vw, 14rem); line-height: 0.9; color: var(--db-lava); letter-spacing: -0.03em; }
+    .stat-hero-label { font-size: clamp(1.2rem, 1.8vw, 2.2rem); color: var(--text-secondary); margin-top: 0.5rem; }
+    .dark-bg .stat-hero { color: var(--db-lava-light); }
+    .dark-bg .stat-hero-label { color: rgba(255,255,255,0.6); }
+
+    /* === DIAGRAMS === */
+    .diagram { display: flex; flex-direction: column; align-items: center; gap: 0.8rem; margin: 1.5rem auto; }
+    .diagram-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; justify-content: center; }
+    .diagram-node { padding: 0.9rem 1.3rem; border-radius: 10px; font-weight: 500; font-size: 1.05rem; text-align: center; min-width: 130px; transition: transform 0.3s ease, box-shadow 0.3s ease; }
+    .diagram-node:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.15); }
+    .diagram-node.primary { background: var(--db-lava); color: white; }
+    .diagram-node.secondary { background: var(--db-navy); color: white; }
+    .diagram-node.accent { background: var(--db-teal); color: white; }
+    .diagram-node.green { background: var(--db-green); color: white; }
+    .diagram-node.amber { background: var(--db-amber); color: var(--db-ink); }
+    .diagram-node.outline { background: transparent; border: 2px solid var(--db-oat-dark); color: var(--db-ink); }
+    .dark-bg .diagram-node.outline { border-color: rgba(255,255,255,0.3); color: white; }
+    .diagram-arrow { font-size: 1.3rem; color: var(--db-oat-dark); line-height: 1; }
+    .dark-bg .diagram-arrow { color: rgba(255,255,255,0.4); }
+    .diagram-connector { width: 2px; height: 1.5rem; background: var(--db-oat-dark); position: relative; }
+    .diagram-connector::after { content: '\25BC'; position: absolute; bottom: -0.6rem; left: 50%; transform: translateX(-50%); font-size: 0.6rem; color: var(--db-oat-dark); }
+    .dark-bg .diagram-connector, .dark-bg .diagram-connector::after { background: rgba(255,255,255,0.3); color: rgba(255,255,255,0.4); }
+
+    /* === TEXTURES (v1.1.4: atmospheric depth) === */
+    .texture-noise::after { content: ''; position: absolute; inset: 0; opacity: 0.03; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); background-repeat: repeat; background-size: 256px 256px; pointer-events: none; z-index: 0; }
+    .texture-noise .slide-content { position: relative; z-index: 1; }
+    .texture-dots::after { content: ''; position: absolute; inset: 0; opacity: 0.06; background-image: radial-gradient(circle, var(--db-oat-dark) 0.5px, transparent 0.5px); background-size: 20px 20px; pointer-events: none; z-index: 0; }
+    .texture-dots .slide-content { position: relative; z-index: 1; }
+    .texture-lines::after { content: ''; position: absolute; inset: 0; opacity: 0.04; background-image: repeating-linear-gradient(-45deg, transparent, transparent 10px, rgba(255,255,255,0.5) 10px, rgba(255,255,255,0.5) 11px); pointer-events: none; z-index: 0; }
+    .texture-lines .slide-content { position: relative; z-index: 1; }
+    .texture-spotlight::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, rgba(255,255,255,0.03) 0%, transparent 55%); pointer-events: none; z-index: 0; }
+    .texture-spotlight .slide-content { position: relative; z-index: 1; }
+
+    /* === STAGGER ANIMATIONS (v1.1.4) === */
+    .stagger-fade > * { opacity: 0; transform: translateY(12px); animation: stagger-in 0.5s ease forwards; animation-play-state: paused; }
+    .slide.visible .stagger-fade > * { animation-play-state: running; }
+    .stagger-fade > :nth-child(1) { animation-delay: 0.1s; } .stagger-fade > :nth-child(2) { animation-delay: 0.2s; }
+    .stagger-fade > :nth-child(3) { animation-delay: 0.3s; } .stagger-fade > :nth-child(4) { animation-delay: 0.4s; }
+    .stagger-fade > :nth-child(5) { animation-delay: 0.5s; } .stagger-fade > :nth-child(6) { animation-delay: 0.6s; }
+    @keyframes stagger-in { to { opacity: 1; transform: translateY(0); } }
+
+    /* === COUNTERS + ANIMATIONS === */
+    .counter-group { display: flex; gap: 3rem; justify-content: center; flex-wrap: wrap; margin: 2rem 0; }
+    .counter-item { text-align: center; }
+    .counter-value { font-family: var(--font-display); font-weight: 700; font-size: clamp(2.5rem, 7vw, 5rem); line-height: 1; color: var(--db-lava); }
+    .counter-label { font-size: 1rem; color: var(--text-secondary); margin-top: 0.5rem; }
+    .dark-bg .counter-label { color: rgba(255,255,255,0.6); }
+    @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px) rotate(1deg); } }
+    @keyframes pulse-glow { 0%, 100% { opacity: 0.4; transform: scale(1); } 50% { opacity: 0.8; transform: scale(1.05); } }
+    .float { animation: float 4s ease-in-out infinite; }
+    .pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
+    .anim-slide-left, .anim-slide-right, .anim-fade-up, .anim-fade-in, .anim-scale-in { opacity: 1; }
+
+    /* === TIMELINE === */
+    .timeline { position: relative; max-width: 900px; margin: 1.5rem auto; padding-left: 2rem; }
+    .timeline::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--db-oat-dark); }
+    .dark-bg .timeline::before { background: rgba(255,255,255,0.2); }
+    .timeline-item { position: relative; padding: 0 0 1.5rem 2rem; }
+    .timeline-item::before { content: ''; position: absolute; left: -0.45rem; top: 0.25rem; width: 12px; height: 12px; border-radius: 50%; background: var(--db-lava); border: 2px solid var(--db-oat); }
+    .dark-bg .timeline-item::before { border-color: var(--db-navy); }
+
+    /* === TAG PILLS === */
+    .tag { display: inline-block; font-family: var(--font-body); font-size: 0.75rem; font-weight: 500; letter-spacing: 0.05em; padding: 0.2em 0.7em; border-radius: 100px; text-transform: uppercase; }
+    .tag.lava { background: rgba(255,54,33,0.1); color: var(--db-lava); }
+    .tag.green { background: rgba(0,169,114,0.1); color: #007a53; }
+    .tag.teal { background: rgba(27,81,98,0.1); color: var(--db-teal); }
+    .tag.amber { background: rgba(254,171,3,0.15); color: #9a6800; }
+    .dark-bg .tag.lava { background: rgba(255,54,33,0.2); color: var(--db-lava-light); }
+    .dark-bg .tag.green { background: rgba(0,169,114,0.15); color: #5cd6a8; }
+
+    /* === SLIDE FOOTER === */
+    .slide-footer { position: absolute; bottom: 1.5rem; right: 2rem; font-family: var(--font-mono); font-size: 0.7rem; color: var(--db-oat-dark); letter-spacing: 0.05em; opacity: 0.6; }
+    .dark-bg .slide-footer { color: rgba(255,255,255,0.25); }
+
+    /* === SLIDE DIVIDER === */
+    .slide-divider { width: 100%; height: 1px; background: var(--db-oat-medium); margin: 1.5rem 0; }
+    .dark-bg .slide-divider { background: rgba(255,255,255,0.1); }
+
+    /* === LOGO === */
+    .db-logo { height: 28px; width: auto; }
+    .title-slide .db-logo { height: 36px; }
+    .logo-bar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 2rem; }
+
+    /* ================================================================
+       MEDALLION-SPECIFIC STYLES
+       ================================================================ */
+    .layer-card { border-radius: 12px; padding: 1rem 1.4rem; margin: 0.5rem 0; }
+    .layer-card.bronze { background: rgba(205,127,50,0.1); border-left: 4px solid var(--bronze); }
+    .layer-card.silver { background: rgba(192,192,192,0.1); border-left: 4px solid var(--silver); }
+    .layer-card.gold   { background: rgba(255,215,0,0.1); border-left: 4px solid var(--gold-layer); }
+    .layer-card.bronze h3 { color: var(--bronze); }
+    .layer-card.silver h3 { color: var(--silver); }
+    .layer-card.gold h3   { color: var(--gold-layer); }
+    .dark-bg .layer-card.bronze { background: rgba(205,127,50,0.15); }
+    .dark-bg .layer-card.silver { background: rgba(192,192,192,0.12); }
+    .dark-bg .layer-card.gold   { background: rgba(255,215,0,0.12); }
+    .dark-bg .layer-card p { color: rgba(255,255,255,0.7); }
+    .layer-arrow { text-align: center; color: var(--text-secondary); font-size: 0.9rem; margin: 0.2rem 0; }
+    .dark-bg .layer-arrow { color: rgba(255,255,255,0.4); }
+
+    .file-tree { background: var(--db-ink); border-radius: 10px; padding: 1.2em 1.6em; font-family: var(--font-mono); font-size: clamp(0.72rem, 0.9vw, 0.88rem); line-height: 1.8; white-space: pre; color: #e0e0e0; overflow-x: auto; margin: 1rem 0; }
+    .ft-folder { color: var(--db-lava); font-weight: 600; } .ft-log { color: var(--gold-layer); } .ft-data { color: #4FC3F7; } .ft-comment { color: #546E7A; font-style: italic; }
+
+    .expect-row { display: flex; justify-content: space-between; align-items: center; background: var(--db-white); border-radius: 8px; padding: 0.6em 1em; margin: 0.4rem 0; font-size: 0.95rem; border: 1px solid var(--db-oat-medium); }
+    .expect-row.pass { border-left: 4px solid var(--db-green); }
+    .expect-row.warn { border-left: 4px solid var(--db-amber); }
+    .expect-row.drop { border-left: 4px solid var(--db-burgundy); }
+    .expect-mode.green { color: var(--db-green); font-weight: 600; font-size: 0.85em; }
+    .expect-mode.amber { color: var(--db-amber); font-weight: 600; font-size: 0.85em; }
+    .expect-mode.red   { color: var(--db-burgundy); font-weight: 600; font-size: 0.85em; }
+
+    .demo-badge { display: inline-block; background: var(--db-lava); color: white; font-family: var(--font-mono); font-weight: 700; font-size: 0.75rem; letter-spacing: 0.1em; padding: 0.3em 0.9em; border-radius: 20px; margin-bottom: 1rem; text-transform: uppercase; }
+    .callout-box { background: rgba(255,54,33,0.06); border-left: 4px solid var(--db-lava); padding: 0.9em 1.3em; margin: 1rem 0; border-radius: 0 10px 10px 0; font-size: clamp(0.9rem, 1.2vw, 1.1rem); }
+    .dark-bg .callout-box { background: rgba(255,54,33,0.12); }
+    .callout-box.subtle { background: rgba(0,0,0,0.03); border-left-color: var(--db-muted-teal); }
+    .dark-bg .callout-box.subtle { background: rgba(255,255,255,0.05); border-left-color: rgba(255,255,255,0.3); }
+    .num-badge { display: inline-flex; align-items: center; justify-content: center; width: 1.6em; height: 1.6em; border-radius: 50%; background: var(--db-lava); color: white; font-weight: 700; font-size: 0.85em; margin-right: 0.5em; flex-shrink: 0; }
+
+    .section-divider { text-align: center; }
+    .section-divider h2 { font-size: clamp(2rem, 5vw, 4.5rem); margin-bottom: 0.3em; }
+    .section-meta { color: var(--db-lava-light); font-size: clamp(0.85rem, 1.1vw, 1.1rem); font-weight: 500; }
+
+    .title-slide { text-align: center; }
+    .title-slide h1 { font-size: clamp(2.4rem, 6vw, 5rem); margin-bottom: 0.2em; }
+    .title-slide .subtitle { color: var(--db-lava-light); font-size: clamp(1.1rem, 2vw, 1.6rem); font-weight: 500; margin-bottom: 1em; }
+    .title-slide .meta { color: rgba(255,255,255,0.5); font-size: 0.9rem; }
+
+    .demo-slide { text-align: center; }
+    .demo-slide ol { text-align: left; max-width: 700px; margin: 1rem auto; }
+    .demo-slide li { margin-bottom: 0.5em; }
+    .break-slide { text-align: center; }
+    .break-slide h2 { color: rgba(255,255,255,0.6); }
+    .closing-slide { text-align: center; }
+
+    .pipeline-flow { display: flex; justify-content: center; align-items: flex-start; gap: 0.8rem; flex-wrap: wrap; margin: 1.5rem 0; }
+    .pipeline-stage { flex: 1; min-width: 180px; max-width: 260px; }
+    .pipeline-arrow { display: flex; align-items: center; font-size: 1.8rem; color: var(--db-oat-dark); padding-top: 2rem; }
+
+    .vs-layout { display: grid; grid-template-columns: 1fr auto 1fr; gap: 1rem; align-items: center; margin: 1rem 0; }
+    .vs-card { background: var(--db-white); border-radius: 12px; padding: 1.4rem; border: 1px solid var(--db-oat-medium); }
+    .vs-label { color: var(--db-lava); font-weight: 700; font-size: 1.3rem; text-align: center; }
+
+    .stack-diagram { display: flex; flex-direction: column; gap: 0.3rem; max-width: 700px; margin: 1rem auto; }
+    .stack-row { display: flex; justify-content: space-between; align-items: center; background: rgba(255,54,33,0.08); border: 1px solid rgba(255,54,33,0.2); border-radius: 10px; padding: 0.7em 1.2em; }
+    .stack-name { color: var(--db-lava); font-weight: 600; }
+    .stack-desc { color: var(--text-secondary); font-size: 0.9rem; }
+    .stack-arrow { text-align: center; color: var(--text-secondary); font-size: 0.85rem; }
+
+    .ascii-pipeline { font-family: var(--font-mono); font-size: clamp(0.7rem, 0.9vw, 0.85rem); line-height: 1.5; white-space: pre; background: var(--db-ink); color: #e0e0e0; border-radius: 10px; padding: 1.5em; margin: 1rem auto; max-width: 800px; overflow-x: auto; }
+    .ascii-pipeline .bronze-text { color: var(--bronze); font-weight: 700; }
+    .ascii-pipeline .silver-text { color: var(--silver); font-weight: 700; }
+    .ascii-pipeline .gold-text   { color: var(--gold-layer); font-weight: 700; }
+
+    /* === RESPONSIVE === */
+    @media (max-width: 768px) {
+      .nav-dots { display: none; }
+      .slide { padding: 1.5rem; }
+      .two-col, .comparison-grid, .vs-layout, .grid-wide-narrow, .grid-narrow-wide { grid-template-columns: 1fr; }
+      .pipeline-flow { flex-direction: column; align-items: center; }
+      .pipeline-arrow { transform: rotate(90deg); padding: 0; }
+      .grid-cols-2, .grid-cols-3 { grid-template-columns: 1fr; }
+      .pull-quote { font-size: 1.5rem; }
+      .stat-hero { font-size: 4rem; }
+    }
+    @media (prefers-reduced-motion: reduce) { .float, .pulse-glow { animation: none; } .stagger-fade > * { opacity: 1; transform: none; animation: none; } }
+
+    /* === PRINT === */
+    @media print {
+      html { scroll-snap-type: none; overflow: visible; }
+      .slide { height: auto; min-height: 100vh; scroll-snap-align: none; page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; overflow: visible; padding: 2rem 2.5rem; }
+      .slide:last-child { page-break-after: auto; }
+      .progress-bar, .nav-dots, .slide-footer { display: none !important; }
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+      .stagger-fade > * { opacity: 1 !important; transform: none !important; animation: none !important; }
+      .slide, .reveal-item, .timeline-item { opacity: 1 !important; transform: none !important; }
+      .texture-noise::after, .texture-dots::after, .texture-lines::after, .texture-spotlight::before { display: none; }
+      .slide-dark, .slide-ink { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
+      .dark-bg .card { backdrop-filter: none; -webkit-backdrop-filter: none; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.1); }
+    }
+  </style>
+</head>
+<body>
+  <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+  <nav class="nav-dots" aria-label="Slide navigation"></nav>
+
+<!-- ============================================================ -->
+<!-- SLIDE 1: TITLE — The Medallion Architecture                -->
+<!-- ============================================================ -->
+<section class="slide slide-dark dark-bg title-slide texture-noise" aria-label="Slide 1: The Medallion Architecture">
+  <div class="slide-content">
+    <div style="display: flex; align-items: center; justify-content: center; gap: 2rem; margin-bottom: 2rem;">
+      <svg class="db-logo" viewBox="0 0 713 113" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Databricks">
+        <g clip-path="url(#clip0_dark)">
+          <path d="M98.9 46.5996L52.3 72.8996L2.4 44.7996L0 46.0996V66.4996L52.3 95.8996L98.9 69.6996V80.4996L52.3 106.8L2.4 78.6996L0 79.9996V83.4996L52.3 112.9L104.5 83.4996V63.0996L102.1 61.7996L52.3 89.7996L5.6 63.5996V52.7996L52.3 78.9996L104.5 49.5996V29.4996L101.9 27.9996L52.3 55.8996L8 31.0996L52.3 6.19961L88.7 26.6996L91.9 24.8996V22.3996L52.3 0.0996094L0 29.4996V32.6996L52.3 62.0996L98.9 35.7996V46.5996Z" fill="#FF3621"/>
+          <path d="M202.2 96.1994V6.39941H188.4V39.9994C188.4 40.4994 188.1 40.8994 187.6 41.0994C187.1 41.2994 186.6 41.0994 186.3 40.7994C181.6 35.2994 174.3 32.1994 166.3 32.1994C149.2 32.1994 135.8 46.5994 135.8 64.9994C135.8 73.9994 138.9 82.2994 144.6 88.3994C150.3 94.4994 158 97.7994 166.3 97.7994C174.2 97.7994 181.5 94.4994 186.3 88.7994C186.6 88.3994 187.2 88.2994 187.6 88.3994C188.1 88.5994 188.4 88.9994 188.4 89.4994V96.1994H202.2ZM169.3 85.2994C158.3 85.2994 149.7 76.3994 149.7 64.9994C149.7 53.5994 158.3 44.6994 169.3 44.6994C180.3 44.6994 188.9 53.5994 188.9 64.9994C188.9 76.3994 180.3 85.2994 169.3 85.2994Z" fill="white"/>
+          <path d="M276 96.0996V33.6996H262.3V39.9996C262.3 40.4996 262 40.8996 261.5 41.0996C261 41.2996 260.5 41.0996 260.2 40.6996C255.6 35.1996 248.4 32.0996 240.2 32.0996C223.1 32.0996 209.7 46.4996 209.7 64.8996C209.7 83.2996 223.1 97.6996 240.2 97.6996C248.1 97.6996 255.4 94.3996 260.2 88.5996C260.5 88.1996 261.1 88.0996 261.5 88.1996C262 88.3996 262.3 88.7996 262.3 89.2996V96.0996H276ZM243.3 85.2996C232.3 85.2996 223.7 76.3996 223.7 64.9996C223.7 53.5996 232.3 44.6996 243.3 44.6996C254.3 44.6996 262.9 53.5996 262.9 64.9996C262.9 76.3996 254.3 85.2996 243.3 85.2996Z" fill="white"/>
+          <path d="M314.4 97.1994C318.8 97.1994 322.7 96.7994 324.9 96.4994V84.4994C323.1 84.6994 319.9 84.8994 318 84.8994C312.4 84.8994 308.1 83.8994 308.1 71.7994V46.0994C308.1 45.3994 308.6 44.8994 309.3 44.8994H322.8V33.5994H309.3C308.6 33.5994 308.1 33.0994 308.1 32.3994V14.3994H294.3V32.4994C294.3 33.1994 293.8 33.6994 293.1 33.6994H283.5V44.9994H293.1C293.8 44.9994 294.3 45.4994 294.3 46.1994V75.2994C294.3 97.1994 308.9 97.1994 314.4 97.1994Z" fill="white"/>
+          <path d="M393.3 96.1996V33.6996H379.6V39.9996C379.6 40.4996 379.3 40.8996 378.8 41.0996C378.3 41.2996 377.8 41.0996 377.5 40.6996C372.9 35.1996 365.7 32.0996 357.5 32.0996C340.3 32.0996 327 46.4996 327 64.9996C327 83.4996 340.4 97.7996 357.5 97.7996C365.4 97.7996 372.7 94.4996 377.5 88.6996C377.8 88.2996 378.4 88.1996 378.8 88.2996C379.3 88.4996 379.6 88.8996 379.6 89.3996V96.1996H393.3ZM360.6 85.2996C349.6 85.2996 341 76.3996 341 64.9996C341 53.5996 349.6 44.6996 360.6 44.6996C371.6 44.6996 380.2 53.5996 380.2 64.9996C380.2 76.3996 371.6 85.2996 360.6 85.2996Z" fill="white"/>
+          <path d="M418.4 88.7994C418.5 88.7994 418.7 88.6994 418.8 88.6994C419.1 88.6994 419.5 88.8994 419.7 89.0994C424.4 94.5994 431.7 97.6994 439.7 97.6994C456.8 97.6994 470.2 83.2994 470.2 64.8994C470.2 55.8994 467.1 47.5994 461.4 41.4994C455.7 35.3994 448 32.0994 439.7 32.0994C431.8 32.0994 424.5 35.3994 419.7 41.0994C419.4 41.4994 418.9 41.5994 418.4 41.4994C417.9 41.2994 417.6 40.8994 417.6 40.3994V6.39941H403.8V96.1994H417.6V89.8994C417.6 89.3994 417.9 88.9994 418.4 88.7994ZM417 64.9994C417 53.5994 425.6 44.6994 436.6 44.6994C447.6 44.6994 456.2 53.5994 456.2 64.9994C456.2 76.3994 447.6 85.2994 436.6 85.2994C425.6 85.2994 417 76.2994 417 64.9994Z" fill="white"/>
+          <path d="M510.1 46.4994C511.4 46.4994 512.6 46.5994 513.4 46.7994V32.5994C512.9 32.4994 512 32.3994 511.1 32.3994C503.9 32.3994 497.3 36.0994 493.8 41.9994C493.5 42.4994 493 42.6994 492.5 42.4994C492 42.3994 491.6 41.8994 491.6 41.3994V33.6994H477.9V96.2994H491.7V68.6994C491.7 54.9994 498.7 46.4994 510.1 46.4994Z" fill="white"/>
+          <path d="M536.1 33.6992H522.1V96.2992H536.1V33.6992Z" fill="white"/>
+          <path d="M528.9 6.49902C524.2 6.49902 520.4 10.299 520.4 14.999C520.4 19.699 524.2 23.499 528.9 23.499C533.6 23.499 537.4 19.699 537.4 14.999C537.4 10.299 533.6 6.49902 528.9 6.49902Z" fill="white"/>
+          <path d="M577.1 32.0996C557.9 32.0996 544 45.8996 544 64.9996C544 74.2996 547.3 82.5996 553.2 88.5996C559.2 94.5996 567.6 97.8996 577 97.8996C584.8 97.8996 590.8 96.3996 602.2 87.9996L594.3 79.6996C588.7 83.3996 583.5 85.1996 578.4 85.1996C566.8 85.1996 558.1 76.4996 558.1 64.9996C558.1 53.4996 566.8 44.7996 578.4 44.7996C583.9 44.7996 589 46.5996 594.1 50.2996L602.9 41.9996C592.6 33.1996 583.3 32.0996 577.1 32.0996Z" fill="white"/>
+          <path d="M626.5 68.699C626.7 68.499 627 68.399 627.3 68.399H627.4C627.7 68.399 628 68.599 628.3 68.799L650.4 96.199H667.4L638.8 61.599C638.4 61.099 638.4 60.399 638.9 59.999L665.2 33.699H648.3L625.6 56.499C625.3 56.799 624.8 56.899 624.3 56.799C623.9 56.599 623.6 56.199 623.6 55.699V6.49902H609.7V96.299H623.5V71.899C623.5 71.599 623.6 71.199 623.9 70.999L626.5 68.699Z" fill="white"/>
+          <path d="M689.9 97.799C701.2 97.799 712.7 90.899 712.7 77.799C712.7 69.199 707.3 63.299 696.3 59.699L688.8 57.199C683.7 55.499 681.3 53.099 681.3 49.799C681.3 45.999 684.7 43.399 689.5 43.399C694.1 43.399 698.2 46.399 700.8 51.599L711.9 45.599C707.8 37.199 699.3 31.999 689.5 31.999C677.1 31.999 668.1 39.999 668.1 50.899C668.1 59.599 673.3 65.399 684 68.799L691.7 71.299C697.1 72.999 699.4 75.199 699.4 78.699C699.4 83.999 694.5 85.899 690.3 85.899C684.7 85.899 679.7 82.299 677.3 76.399L666 82.399C669.7 91.899 678.8 97.799 689.9 97.799Z" fill="white"/>
+        </g>
+        <defs><clipPath id="clip0_dark"><rect width="712.8" height="113" fill="white"/></clipPath></defs>
+      </svg>
+    </div>
+    <div style="margin-bottom: 1.5rem;">
+      <svg width="64" height="64" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="Medallion diamond">
+        <path d="M50 5 L90 28 L50 51 L10 28 Z" fill="#CD7F32" opacity="0.9"/>
+        <path d="M50 25 L90 48 L50 71 L10 48 Z" fill="#C0C0C0" opacity="0.8"/>
+        <path d="M50 45 L90 68 L50 91 L10 68 Z" fill="#FFD700" opacity="0.9"/>
+      </svg>
+    </div>
+    <h1 style="color: white; margin-bottom: 0.5rem;">The Medallion Architecture</h1>
+    <p style="color: rgba(255,255,255,0.8); font-size: 1.25rem; margin-bottom: 1rem;">From PI Historian to Business Decisions</p>
+    <p style="color: rgba(255,255,255,0.5); font-size: 0.95rem;">
+      2-Hour Workshop &nbsp;|&nbsp; Energy OT Data &bull; BESS Fleet Analytics<br>
+      Databricks &bull; Delta Lake &bull; Unity Catalog
+    </p>
+  </div>
+  <!-- NOTES: Welcome everyone. You all know PI and SCADA — they're the backbone of your OT monitoring. Over the next two hours, we're going to build something on top of that: a data platform that takes your PI historian data and turns it into fleet-wide health scores, revenue-at-risk calculations, and predictive maintenance insights. We'll start with what actually happens when data leaves PI and lands on disk, and work our way up to a live dashboard answering "should we bid this battery into the next dispatch interval?" We'll look at actual files in Azure storage, write real SQL, and watch data flow through in real time. -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 2: AGENDA — What We'll Cover                         -->
+<!-- ============================================================ -->
+<section class="slide slide-light texture-dots" aria-label="Slide 2: What We'll Cover">
+  <div class="slide-content">
+    <span class="eyebrow">WORKSHOP AGENDA</span>
+    <h2>What We'll Cover</h2>
+    <div class="accent-line"></div>
+    <div class="timeline">
+      <div class="timeline-item">
+        <h3>1. The OT Data Challenge</h3>
+        <p>Why PI alone isn't enough</p>
+        <span class="tag">0:00</span>
+      </div>
+      <div class="timeline-item">
+        <h3>2. Open Table Formats</h3>
+        <p>What's actually on disk?</p>
+        <span class="tag">0:10</span>
+      </div>
+      <div class="timeline-item">
+        <h3>3. Under the Hood</h3>
+        <p>Live: browse files in portal</p>
+        <span class="tag teal">0:25</span>
+      </div>
+      <div class="timeline-item">
+        <h3>4. The Medallion Pattern</h3>
+        <p>Bronze / Silver / Gold</p>
+        <span class="tag">0:40</span>
+      </div>
+      <div class="timeline-item">
+        <h3>5. Bronze &mdash; Land Everything</h3>
+        <p>Live: watch data stream in</p>
+        <span class="tag teal">0:50</span>
+      </div>
+      <div class="timeline-item">
+        <h3>Break</h3>
+        <p>&nbsp;</p>
+        <span class="tag amber">1:05</span>
+      </div>
+      <div class="timeline-item">
+        <h3>6. Silver &mdash; Clean &amp; Enrich</h3>
+        <p>Live: data quality rules</p>
+        <span class="tag teal">1:15</span>
+      </div>
+      <div class="timeline-item">
+        <h3>7. Gold &mdash; Answer the Question</h3>
+        <p>Live: dashboard from gold</p>
+        <span class="tag teal">1:35</span>
+      </div>
+      <div class="timeline-item">
+        <h3>8. Recap &amp; Q&amp;A</h3>
+        <p>&nbsp;</p>
+        <span class="tag">1:50</span>
+      </div>
+    </div>
+    <span class="slide-footer">2</span>
+  </div>
+  <!-- NOTES: I've structured this in two halves. First half: foundations — what are these files, why Delta Lake, what's the pattern. Second half: building it layer by layer with live demos. We'll take a break in the middle. Ask questions anytime. -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 3: SECTION — 1. The Problem                          -->
+<!-- ============================================================ -->
+<section class="slide slide-ink dark-bg section-divider texture-noise texture-spotlight" aria-label="Slide 3: 1. The OT Data Challenge">
+  <div class="slide-content">
+    <h2 style="color: white;">1. The OT Data Challenge</h2>
+    <p class="section-meta">10 minutes</p>
+  </div>
+  <!-- NOTES: Before we talk about solutions, let's make sure we agree on the problem. You're collecting data — PI historians, SCADA, Ignition gateways — but there's a gap between collecting sensor readings and answering business questions. Let's look at where that gap comes from. -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 4: THE DATA REALITY — 4 V's                          -->
+<!-- ============================================================ -->
+<section class="slide slide-light" aria-label="Slide 4: Your PI Data Is Trapped">
+  <div class="slide-content">
+    <span class="eyebrow">THE OT DATA GAP</span>
+    <h2>Your PI Data Is Trapped</h2>
+    <div class="accent-line"></div>
+    <div class="grid-wide-narrow" style="align-items: center;">
+      <div>
+        <div class="stat-hero" style="color: var(--db-lava);">2,700+</div>
+        <p class="stat-hero-label">tags/sec per BESS site &mdash; PI collects it all, but the data stays locked inside</p>
+      </div>
+      <div class="card-grid" style="grid-template-columns: 1fr; gap: 0.8rem;">
+        <div class="card" style="padding: 1rem 1.4rem;">
+          <span class="tag lava">SILOED</span>
+          <p style="margin: 0.3em 0 0;">Each site has its own historian &mdash; no fleet-wide query</p>
+        </div>
+        <div class="card" style="padding: 1rem 1.4rem;">
+          <span class="tag teal">SINGLE-DOMAIN</span>
+          <p style="margin: 0.3em 0 0;">Can't join sensors with market prices or weather</p>
+        </div>
+        <div class="card" style="padding: 1rem 1.4rem;">
+          <span class="tag amber">NO ML</span>
+          <p style="margin: 0.3em 0 0;">No compute for anomaly detection or predictive models</p>
+        </div>
+        <div class="card" style="padding: 1rem 1.4rem;">
+          <span class="tag green">EXCEL BRIDGE</span>
+          <p style="margin: 0.3em 0 0;">Engineers export to CSV &mdash; ungoverned, manual</p>
+        </div>
+      </div>
+    </div>
+    <span class="slide-footer">4</span>
+  </div>
+  <!-- NOTES: PI historians are great at what they do — real-time monitoring, trend displays, PI Vision dashboards for operators watching individual sites. But the data stays trapped inside PI. Each site has its own historian — there's no single query that spans Tomago, Liddell, and Bayswater simultaneously. You can't join sensor data with NEM spot prices or weather forecasts. There's no compute for ML. When engineers need analysis PI can't do, they export to Excel. That's your "data platform" today — PI plus spreadsheets. The medallion architecture replaces the spreadsheets with governed Delta tables. -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 5: THE TRADITIONAL APPROACHES                        -->
+<!-- ============================================================ -->
+<section class="slide slide-dark dark-bg texture-noise" aria-label="Slide 5: The Revenue Question">
+  <div class="slide-content">
+    <span class="eyebrow" style="color: var(--db-lava-light);">THE BUSINESS CASE</span>
+    <h2 style="color: white;">The Question PI Can't Answer</h2>
+    <div class="accent-line"></div>
+    <p class="lead" style="color: rgba(255,255,255,0.8); max-width: 90%; font-size: clamp(1.4rem, 2.5vw, 2.2rem); font-weight: 500; font-style: italic; margin: 1rem auto 1.5rem;">"Should we bid this battery into the next 5-minute dispatch interval?"</p>
+    <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1.5rem;">
+      <span class="tag lava">OT SENSORS (PI)</span>
+      <span style="color: rgba(255,255,255,0.3);">+</span>
+      <span class="tag amber">SPOT PRICE (AEMO)</span>
+      <span style="color: rgba(255,255,255,0.3);">+</span>
+      <span class="tag teal">WEATHER (BOM)</span>
+      <span style="color: rgba(255,255,255,0.3);">+</span>
+      <span class="tag green">MAINTENANCE (SAP)</span>
+    </div>
+    <p style="text-align: center; color: rgba(255,255,255,0.6); font-size: clamp(1rem, 1.3vw, 1.2rem);">4 sources, 4 systems, 1 decision &mdash; today this lives in a spreadsheet.<br>The <strong style="color: white;">medallion architecture</strong> makes it explicit and governed.</p>
+    <span class="slide-footer" style="color: rgba(255,255,255,0.25);">5</span>
+  </div>
+  <!-- NOTES: This is the real business question. In the NEM, BESS dispatch decisions happen every 5 minutes. The difference between optimal and suboptimal dispatch is millions per year. To answer this question you need asset health from OT sensors, spot prices from AEMO, weather forecasts for solar/wind generation, and maintenance schedules from CMMS. These four data sources live in four different systems — PI, market feeds, BOM weather, SAP. The only place they come together today is in an engineer's head or in a spreadsheet. That's the gap. The medallion architecture makes this cross-domain fusion explicit, governed, and queryable. -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 6: THE LAKEHOUSE — Stack Diagram                     -->
+<!-- ============================================================ -->
+<section class="slide slide-dark dark-bg texture-noise" aria-label="Slide 6: The Lakehouse">
+  <div class="slide-content">
+    <span class="eyebrow" style="color: var(--db-lava-light);">THE ANSWER</span>
+    <h2 style="color: white;">The Lakehouse</h2>
+    <div class="accent-line"></div>
+    <div class="grid-wide-narrow" style="align-items: center;">
+      <div class="diagram" style="max-width: 500px; margin: 0 auto;">
+        <div class="diagram-row">
+          <div class="diagram-node primary" style="width: 100%;">
+            <strong>Fleet Dashboard &bull; ML Scoring &bull; Dispatch API</strong>
+          </div>
+        </div>
+        <div class="diagram-connector"></div>
+        <div class="diagram-row">
+          <div class="diagram-node accent" style="width: 100%;">
+            <strong>Unity Catalog</strong> &mdash; Governance &bull; Lineage
+          </div>
+        </div>
+        <div class="diagram-connector"></div>
+        <div class="diagram-row">
+          <div class="diagram-node secondary" style="width: 100%;">
+            <strong>Delta Lake</strong> &mdash; ACID &bull; Time Travel &bull; Schema
+          </div>
+        </div>
+        <div class="diagram-connector"></div>
+        <div class="diagram-row">
+          <div class="diagram-node outline" style="width: 100%;">
+            <strong>Azure Storage (ADLS)</strong> &mdash; Parquet, open format
+          </div>
+        </div>
+      </div>
+      <div>
+        <h3 style="color: white; margin-bottom: 1rem;">Data sources flowing in:</h3>
+        <ul style="color: rgba(255,255,255,0.8); list-style: none; margin: 0; padding: 0;">
+          <li style="margin-bottom: 0.6em;"><span style="color: var(--db-lava-light); font-weight: 700;">PI / Ignition</span> &rarr; sensor tags via Zerobus</li>
+          <li style="margin-bottom: 0.6em;"><span style="color: var(--db-amber); font-weight: 700;">AEMO</span> &rarr; spot prices, dispatch targets</li>
+          <li style="margin-bottom: 0.6em;"><span style="color: var(--db-green); font-weight: 700;">BOM / Weather</span> &rarr; solar, wind, temperature</li>
+          <li style="margin-bottom: 0.6em;"><span style="color: var(--db-muted-teal); font-weight: 700;">CMMS / SAP</span> &rarr; maintenance schedules</li>
+        </ul>
+        <p style="color: rgba(255,255,255,0.5); font-size: 0.9rem; margin-top: 1.5rem;">All land in your ADLS account. Databricks adds the intelligence.</p>
+      </div>
+    </div>
+    <span class="slide-footer" style="color: rgba(255,255,255,0.4);">6</span>
+  </div>
+  <!-- NOTES: This is the stack we're building today. Your PI data flows out via Zerobus — no Kafka, no middleware — straight into Azure storage as Parquet files you own. Delta Lake adds the transaction log that makes those files behave like a database. Unity Catalog adds governance — who can see what, full lineage from PI tag to dashboard. And on top: your fleet dashboard, ML health scoring, dispatch optimisation APIs. The critical difference from PI: this platform can join all four data sources — OT sensors, market prices, weather, maintenance — in one governed place. No more Excel bridges. Let's look at what "Delta Lake on Parquet files" actually means on disk. -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 7: SECTION — 2. Open Table Formats                   -->
+<!-- ============================================================ -->
+<section class="slide slide-dark dark-bg section-divider texture-lines" aria-label="Slide 7: 2. Open Table Formats">
+  <div class="slide-content">
+    <h2 style="color: white;">2. Open Table Formats</h2>
+    <p style="color: rgba(255,255,255,0.6); font-size: 1.1rem;">15 minutes</p>
+  </div>
+  <!-- NOTES: Now let's go deeper. What are open table formats, and why does Delta Lake exist? -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 8: STARTING POINT: PARQUET FILES                     -->
+<!-- ============================================================ -->
+<section class="slide slide-light" aria-label="Slide 8: Starting Point: Parquet Files">
+  <div class="slide-content">
+    <span class="eyebrow">OPEN FORMATS</span>
+    <h2>Starting Point: Parquet Files</h2>
+    <div class="accent-line"></div>
+    <div class="grid-wide-narrow">
+      <div>
+        <h3>What is Parquet?</h3>
+        <ul>
+          <li>Open-source <strong>columnar</strong> file format</li>
+          <li>Stores data by column, not by row</li>
+          <li>Built-in compression (Snappy, ZSTD)</li>
+          <li>Self-describing &mdash; schema is in the file</li>
+          <li>Language-agnostic (Java, Python, Rust)</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Why columnar?</h3>
+        <ul>
+          <li>Analytics reads few columns, many rows</li>
+          <li><code>SELECT AVG(temperature)</code> reads one column</li>
+          <li>Skips everything else &mdash; massive I/O savings</li>
+          <li>Compression is better within one data type</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout-box" style="margin-top: 1.5rem;">
+      Parquet is the foundation. But a pile of Parquet files isn't a table &mdash; it's just files.
+    </div>
+    <span class="slide-footer">8</span>
+  </div>
+  <!-- NOTES: Parquet is the file format that stores the actual data. It's columnar — instead of storing complete rows together, it stores each column contiguously. When your query only needs the temperature column, it literally only reads those bytes from disk. This is why analytical queries on Parquet are orders of magnitude faster than on row-based formats like CSV. But here's the thing: Parquet files are just files. They don't know about each other. There are no transactions. If your write crashes halfway, you get a corrupted table. That's where Delta Lake comes in. -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 9: WHAT PARQUET ALONE CAN'T DO                       -->
+<!-- ============================================================ -->
+<section class="slide slide-white" aria-label="Slide 9: What Parquet Alone Can't Do">
+  <div class="slide-content">
+    <span class="eyebrow">THE GAP</span>
+    <h2>What Parquet Alone Can't Do</h2>
+    <div class="accent-line"></div>
+    <table>
+      <thead>
+        <tr><th>Requirement</th><th>Parquet files alone</th><th>With Delta Lake</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Read while writing</td>
+          <td>Readers may see partial/corrupt data</td>
+          <td>ACID isolation &mdash; always complete state</td>
+        </tr>
+        <tr>
+          <td>Update a single row</td>
+          <td>Rewrite the entire file</td>
+          <td>MERGE, UPDATE, DELETE at row level</td>
+        </tr>
+        <tr>
+          <td>"What did this look like yesterday?"</td>
+          <td>Keep manual backups</td>
+          <td>Time travel &mdash; query any past version</td>
+        </tr>
+        <tr>
+          <td>Enforce data types</td>
+          <td>Hope every writer uses same schema</td>
+          <td>Schema enforcement on every write</td>
+        </tr>
+        <tr>
+          <td>Audit changes</td>
+          <td>No change history</td>
+          <td>Full transaction log (who/when/what)</td>
+        </tr>
+      </tbody>
+    </table>
+    <span class="slide-footer">9</span>
+  </div>
+  <!-- NOTES: This table is the whole reason Delta Lake exists. Parquet files alone give you great read performance, but no reliability guarantees. Delta Lake wraps Parquet files with a transaction log that provides all the database-like features: ACID transactions, row-level updates, time travel, schema enforcement, and a full audit trail. The key insight: Delta Lake doesn't replace Parquet — it adds a metadata layer on top. Your data is still Parquet files. Let's see what that looks like on disk. -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 10: DELTA LAKE = PARQUET + TRANSACTION LOG            -->
+<!-- ============================================================ -->
+<section class="slide slide-light" aria-label="Slide 10: Delta Lake = Parquet + Transaction Log">
+  <div class="slide-content">
+    <span class="eyebrow">DELTA LAKE</span>
+    <h2>Parquet + Transaction Log</h2>
+    <div class="accent-line"></div>
+    <div class="grid-narrow-wide">
+      <div>
+        <div class="file-tree"><span class="ft-folder">raw_tags/</span>
+  <span class="ft-log">_delta_log/</span>                  <span class="ft-comment">&larr; the brain</span>
+    <span class="ft-log">00000000000000000000.json</span>  <span class="ft-comment">&larr; version 0</span>
+    <span class="ft-log">00000000000000000001.json</span>  <span class="ft-comment">&larr; version 1</span>
+    <span class="ft-log">00000000000000000002.json</span>  <span class="ft-comment">&larr; version 2</span>
+    <span class="ft-log">00000000000000000010.checkpoint.parquet</span>
+  <span class="ft-data">part-00000-abc123.parquet</span>   <span class="ft-comment">&larr; data</span>
+  <span class="ft-data">part-00001-def456.parquet</span>   <span class="ft-comment">&larr; data</span>
+  <span class="ft-data">part-00002-ghi789.parquet</span>   <span class="ft-comment">&larr; data</span></div>
+      </div>
+      <div>
+        <h3>Two parts:</h3>
+        <ul>
+          <li><strong style="color: #FFD700;">_delta_log/</strong> &mdash; JSON files recording every transaction</li>
+          <li><strong style="color: var(--db-teal);">*.parquet</strong> &mdash; The actual data files</li>
+        </ul>
+        <h3>Every write creates:</h3>
+        <ul>
+          <li>New Parquet file(s) with the data</li>
+          <li>New JSON entry in <code>_delta_log</code> declaring file membership</li>
+        </ul>
+      </div>
+    </div>
+    <span class="slide-footer">10</span>
+  </div>
+  <!-- NOTES: This is the key mental model. A Delta table is a directory. Inside that directory, you have Parquet data files and a special _delta_log subdirectory. The _delta_log contains numbered JSON files — each one is a transaction. Version 0 is the CREATE TABLE. Version 1 is the first INSERT. And so on. To read the table, you replay the log to figure out which Parquet files are currently valid, then read those files. To time-travel, you replay the log only up to a specific version. That's it. No magic. Just files. And we're going to go look at them right now in Azure. -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 11: INSIDE A TRANSACTION LOG ENTRY                    -->
+<!-- ============================================================ -->
+<section class="slide slide-dark dark-bg texture-noise" aria-label="Slide 11: Inside a Transaction Log Entry">
+  <div class="slide-content">
+    <span class="eyebrow" style="color: var(--db-lava);">FILE STRUCTURE</span>
+    <h2 style="color: white;">Inside a Transaction Log Entry</h2>
+    <div class="accent-line"></div>
+    <pre><code>{
+  "commitInfo": {
+    "timestamp": 1712700000000,
+    "operation": "WRITE",
+    "operationParameters": { "mode": "Append" }
+  }
+}
+{
+  "add": {
+    "path": "part-00000-abc123.snappy.parquet",
+    "size": 48291,
+    "modificationTime": 1712700000000,
+    "dataChange": true,
+    "stats": "{\"numRecords\":1024,
+              \"minValues\":{\"event_time\":1712699000},
+              \"maxValues\":{\"event_time\":1712700000}}"
+  }
+}</code></pre>
+    <ul style="color: rgba(255,255,255,0.85);">
+      <li><strong style="color: white;">commitInfo</strong> &mdash; who did what, when</li>
+      <li><strong style="color: white;">add / remove</strong> &mdash; which Parquet files changed</li>
+      <li><strong style="color: white;">stats</strong> &mdash; min/max per column (enables <em>data skipping</em>)</li>
+    </ul>
+    <span class="slide-footer" style="color: rgba(255,255,255,0.4);">11</span>
+  </div>
+  <!-- NOTES: Each JSON file in the delta log contains one or more actions. The most common are "add" (a new Parquet file is part of the table) and "remove" (a file is no longer valid — happens after UPDATE or DELETE). Notice the stats field — it records min and max values for each column in that Parquet file. When you query WHERE event_time > X, Delta can skip entire files whose max event_time is below X. This is called data skipping, and it makes queries much faster without any manual partitioning. -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 12: TIME TRAVEL                                       -->
+<!-- ============================================================ -->
+<section class="slide slide-light" aria-label="Slide 12: Time Travel: Just Read an Older Log">
+  <div class="slide-content">
+    <span class="eyebrow">DELTA LAKE</span>
+    <h2>Time Travel</h2>
+    <div class="accent-line"></div>
+    <div class="grid-wide-narrow">
+      <div>
+        <h3>How it works</h3>
+        <ul>
+          <li><strong>Version 0:</strong> Created table (empty)</li>
+          <li><strong>Version 1:</strong> Added file A</li>
+          <li><strong>Version 2:</strong> Added files B, C</li>
+          <li><strong>Version 3:</strong> Removed A, added D</li>
+        </ul>
+        <p style="font-size: 0.85rem; margin-top: 1em;"><strong>Current</strong> state (replay 0&rarr;3): files <strong>B, C, D</strong></p>
+        <p style="font-size: 0.85rem;"><strong>Version 2</strong> (replay 0&rarr;2): files <strong>A, B, C</strong></p>
+      </div>
+      <div>
+        <h3>In SQL</h3>
+        <pre><code>-- Current data
+SELECT * FROM raw_tags;
+
+-- Data as of yesterday
+SELECT * FROM raw_tags
+  TIMESTAMP AS OF '2026-04-09';
+
+-- A specific version
+SELECT * FROM raw_tags
+  VERSION AS OF 42;
+
+-- Undo a bad write
+RESTORE TABLE raw_tags
+  TO VERSION AS OF 41;</code></pre>
+      </div>
+    </div>
+    <span class="slide-footer">12</span>
+  </div>
+  <!-- NOTES: Time travel is one of those features that sounds magical until you understand how it works — then it's obvious. Each version of the table is just a different set of Parquet files. To read an older version, you simply stop replaying the transaction log earlier. No copies, no snapshots, no backups. The old Parquet files are still sitting right there in storage. This is incredibly powerful for debugging: "what did the data look like before that bad load?" Just query version N-1. And RESTORE TABLE literally rolls the metadata back — the data files were never deleted. -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 13: SECTION — 3. Under the Hood                      -->
+<!-- ============================================================ -->
+<section class="slide slide-ink dark-bg section-divider texture-spotlight" aria-label="Slide 13: 3. Under the Hood">
+  <div class="slide-content">
+    <h2 style="color: white;">3. Under the Hood</h2>
+    <p style="color: rgba(255,255,255,0.6); font-size: 1.1rem;">15 minutes &mdash; Live Demo</p>
+  </div>
+  <!-- NOTES: Now we leave the slides. We're going to open Azure portal and look at the actual files that make up a Delta table. Then we'll use SQL to explore the same thing from the Databricks side. -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 14: LIVE DEMO — Files in Azure Storage                -->
+<!-- ============================================================ -->
+<section class="slide slide-dark dark-bg" aria-label="Slide 14: LIVE DEMO: Files in Azure Storage">
+  <div class="slide-content">
+    <span class="demo-badge">LIVE DEMO</span>
+    <h2 style="color: white;">Files in Azure Storage</h2>
+    <div class="accent-line"></div>
+    <ol style="color: rgba(255,255,255,0.85); line-height: 2;">
+      <li>Open <strong style="color: white;">Azure Portal</strong> &rarr; Storage Account &rarr; Container</li>
+      <li>Navigate to <code>medallion/bronze/raw_tags/</code></li>
+      <li>Show the <strong style="color: white;">_delta_log/</strong> folder &mdash; open a JSON commit</li>
+      <li>Show the <strong style="color: white;">*.parquet</strong> data files alongside</li>
+      <li>Navigate to <code>medallion/silver/</code> and <code>medallion/gold/</code></li>
+      <li>In Databricks &mdash; run <code>DESCRIBE DETAIL</code> to see the path</li>
+      <li>Run <code>DESCRIBE HISTORY</code> to see the transaction log</li>
+    </ol>
+    <p style="text-align: center; margin-top: 1.5em; font-size: 0.85rem; color: rgba(255,255,255,0.5);">
+      Storage path: <code style="color: rgba(255,255,255,0.7);">abfss://medallion@&lt;storage&gt;.dfs.core.windows.net/bronze/raw_tags/</code>
+    </p>
+  </div>
+  <!-- NOTES: DEMO SCRIPT:
+1. Open Azure portal -> Storage accounts -> pick the account -> Containers -> medallion container.
+2. Click into bronze/raw_tags/ — show the folder listing. Point out _delta_log/ and the .parquet files.
+3. Click into _delta_log/ — show the numbered JSON files. Click on one (e.g. 00000000000000000001.json), download and open in a text editor or use the Azure portal preview. Show the "add" and "commitInfo" sections.
+4. Go back up, point at the .parquet files — "these are the actual data, just columnar files sitting in your storage account."
+5. Navigate up to silver/ — show aggregated_tags/, enriched_tags/. Navigate to gold/ — show health_scores/. "See? The medallion layers are literally folders in your storage account."
+6. Switch to Databricks notebook:
+   DESCRIBE DETAIL medallion.bronze.raw_tags;
+   — Point at the "location" column in the output, it matches the Azure portal path.
+7. DESCRIBE HISTORY medallion.bronze.raw_tags LIMIT 10;
+   — Show version numbers, timestamps, operations, who did it.
+8. Optional: SELECT * FROM medallion.bronze.raw_tags VERSION AS OF 0 LIMIT 5; — show time travel. -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 15: EXPLORING A DELTA TABLE                           -->
+<!-- ============================================================ -->
+<section class="slide slide-light" aria-label="Slide 15: Exploring a Delta Table">
+  <div class="slide-content">
+    <span class="eyebrow">LIVE DEMO</span>
+    <h2>Exploring a Delta Table</h2>
+    <div class="accent-line"></div>
+    <pre><code>-- Where are the files?
+DESCRIBE DETAIL medallion.bronze.raw_tags;
+-- Returns: location = abfss://medallion@storage.dfs.core.windows.net/bronze/raw_tags
+
+-- What happened to this table?
+DESCRIBE HISTORY medallion.bronze.raw_tags LIMIT 5;
+-- Returns: version, timestamp, operation, operationParameters, userName
+
+-- How big is it?
+DESCRIBE DETAIL medallion.bronze.raw_tags;
+-- Returns: numFiles, sizeInBytes, partitionColumns, clusteringColumns</code></pre>
+    <div class="callout-box" style="margin-top: 1.5rem;">
+      <strong>Key takeaway:</strong> The SQL table and the files in Azure are the <em>same thing</em>.<br>
+      Unity Catalog maps the name <code>medallion.bronze.raw_tags</code> to a storage path.
+    </div>
+    <span class="slide-footer">15</span>
+  </div>
+  <!-- NOTES: This is the "aha" moment for most people. DESCRIBE DETAIL returns a location column that is literally the ADLS path you just saw in the Azure portal. Unity Catalog is essentially a mapping: "the table called medallion.bronze.raw_tags lives at this ADLS path." The data doesn't live in some proprietary store. It's files in your Azure account that you own and can access directly. This is what "open format" means in practice. -->
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 16: SECTION — 4. The Medallion Architecture           -->
+<!-- ============================================================ -->
+<section class="slide slide-dark dark-bg section-divider texture-lines" aria-label="Slide 16: 4. The Medallion Architecture">
+  <div class="slide-content">
+    <h2 style="color: white;">4. The Medallion Architecture</h2>
+    <p style="color: rgba(255,255,255,0.6); font-size: 1.1rem;">10 minutes</p>
+  </div>
+  <!-- NOTES: Now that we know what's on disk, let's talk about how to organise that data. This is the medallion architecture — probably the most important pattern in modern data engineering. -->
+</section>
+<!-- ================================================================ -->
+<!-- Slide 17: Three Layers, One Purpose                             -->
+<!-- ================================================================ -->
+<section class="slide slide-light" aria-label="Slide 17: Three Layers, One Purpose">
+  <div class="slide-content">
+    <span class="eyebrow">MEDALLION PATTERN</span>
+    <h2>Three Layers, One Purpose</h2>
+    <div class="accent-line"></div>
+
+    <div class="card-grid grid-cols-3 stagger-fade" style="margin-top: 1.5rem;">
+      <div>
+        <div class="layer-card bronze">
+          <h3>Bronze</h3>
+          <p>"Land everything, trust nothing"</p>
+          <p style="font-size: 0.85rem;">Raw data as-is. Append-only. No transforms. The system of record.</p>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 0.5rem;">
+        <div class="layer-arrow" style="font-size: 0.85rem; color: var(--text-secondary);">&darr; clean, validate, parse &darr;</div>
+        <div class="layer-card silver">
+          <h3>Silver</h3>
+          <p>"Cleaned, validated, enriched"</p>
+          <p style="font-size: 0.85rem;">Deduped. Schema enforced. Business keys extracted. Quality rules applied.</p>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 0.5rem;">
+        <div class="layer-arrow" style="font-size: 0.85rem; color: var(--text-secondary);">&darr; aggregate, model, serve &darr;</div>
+        <div class="layer-card gold">
+          <h3>Gold</h3>
+          <p>"Ready for the business question"</p>
+          <p style="font-size: 0.85rem;">Pre-aggregated for dashboards. One row per entity. CEO-readable.</p>
+        </div>
+      </div>
+    </div>
+
+    <span class="slide-footer">17</span>
+  </div>
+  <!-- NOTES: Think of it like refining crude oil. Bronze is crude — raw, unprocessed, but preserved exactly as it arrived. You never throw away bronze because it's your audit trail. Silver is refined — cleaned, typed, validated. This is where most of the engineering work happens. Gold is the finished product — aggregated to the business grain, ready for consumption by dashboards, APIs, or ML models. Each layer has a clear contract: bronze guarantees completeness, silver guarantees correctness, gold guarantees usability. Let's see what this looks like as folders in Azure. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 18: Medallion in Azure Storage                            -->
+<!-- ================================================================ -->
+<section class="slide slide-light texture-dots" aria-label="Slide 18: Medallion in Azure Storage">
+  <div class="slide-content">
+    <span class="eyebrow">AZURE STORAGE</span>
+    <h2>Medallion in Azure Storage</h2>
+    <div class="accent-line"></div>
+
+    <div class="grid-wide-narrow" style="margin-top: 1.2rem;">
+      <div>
+        <div class="file-tree">
+<span class="ft-folder">abfss://medallion@storage.dfs.core.windows.net/</span>
+<span class="ft-folder">bronze/</span>
+  <span class="ft-folder">raw_tags/</span>
+    <span class="ft-log">_delta_log/</span>
+    <span class="ft-data">*.parquet</span>
+
+<span class="ft-folder">silver/</span>
+  <span class="ft-folder">parsed_tags/</span>
+    <span class="ft-log">_delta_log/</span>
+    <span class="ft-data">*.parquet</span>
+  <span class="ft-folder">aggregated_tags/</span>
+    <span class="ft-log">_delta_log/</span>
+    <span class="ft-data">*.parquet</span>
+  <span class="ft-folder">enriched_tags/</span>
+    <span class="ft-log">_delta_log/</span>
+    <span class="ft-data">*.parquet</span>
+
+<span class="ft-folder">gold/</span>
+  <span class="ft-folder">health_scores/</span>
+    <span class="ft-log">_delta_log/</span>
+    <span class="ft-data">*.parquet</span>
+  <span class="ft-folder">revenue_risk/</span>
+    <span class="ft-log">_delta_log/</span>
+    <span class="ft-data">*.parquet</span>
+        </div>
+      </div>
+      <div>
+        <h3>Unity Catalog mapping</h3>
+        <pre><code><span class="cm">-- Catalog.Schema.Table &rarr; ADLS path</span>
+medallion.bronze.raw_tags
+  &rarr; /bronze/raw_tags/
+
+medallion.silver.parsed_tags
+  &rarr; /silver/parsed_tags/
+
+medallion.gold.health_scores
+  &rarr; /gold/health_scores/</code></pre>
+        <h3 style="margin-top: 0.8em;">Why external tables?</h3>
+        <ul>
+          <li>Clean, predictable paths</li>
+          <li>Browseable in Azure portal</li>
+          <li>You own the storage layout</li>
+          <li>Easy backup and DR reasoning</li>
+        </ul>
+      </div>
+    </div>
+
+    <span class="slide-footer">18</span>
+  </div>
+  <!-- NOTES: We've set up our tables as external tables in Unity Catalog. That means we chose where the files live. Bronze tables under bronze/, silver under silver/, gold under gold/. When you open Azure portal and navigate to the medallion container, you can literally see these folders. Each one is a Delta table — a collection of Parquet files plus a transaction log. The three-letter schema names in Unity Catalog (bronze, silver, gold) map directly to these folder paths. This is intentional — it makes the architecture visible and tangible. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 19: Why Not Just One Table?                               -->
+<!-- ================================================================ -->
+<section class="slide slide-dark dark-bg texture-noise" aria-label="Slide 19: Why Not Just One Table?">
+  <div class="slide-content">
+    <span class="eyebrow">SCHEMA DESIGN</span>
+    <h2 style="color: white;">Why Not Just One Table?</h2>
+    <div class="accent-line"></div>
+
+    <table style="margin-top: 1.2rem;">
+      <thead>
+        <tr><th style="color: white;">Without Medallion</th><th style="color: white;">With Medallion</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="color: rgba(255,255,255,0.8);">One monolithic table with all transforms</td>
+          <td style="color: rgba(255,255,255,0.8);">Each layer has a clear contract and owner</td>
+        </tr>
+        <tr>
+          <td style="color: rgba(255,255,255,0.8);">Bad source data corrupts reports immediately</td>
+          <td style="color: rgba(255,255,255,0.8);">Bronze preserves raw; quality gates block bad data</td>
+        </tr>
+        <tr>
+          <td style="color: rgba(255,255,255,0.8);">Can't debug &mdash; original data is lost</td>
+          <td style="color: rgba(255,255,255,0.8);">Always replay from bronze to investigate</td>
+        </tr>
+        <tr>
+          <td style="color: rgba(255,255,255,0.8);">Schema change breaks everything downstream</td>
+          <td style="color: rgba(255,255,255,0.8);">Silver absorbs changes; gold is insulated</td>
+        </tr>
+        <tr>
+          <td style="color: rgba(255,255,255,0.8);">Everyone queries raw data differently</td>
+          <td style="color: rgba(255,255,255,0.8);">Gold provides a <em>single source of truth</em></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout-box" style="margin-top: 1rem;">
+      Medallion is an <strong>isolation pattern</strong>. Each layer shields the next from upstream problems.
+    </div>
+
+    <span class="slide-footer">19</span>
+  </div>
+  <!-- NOTES: The most common pushback is "why not just clean the data on the way in?" The answer is isolation. If your cleaning logic has a bug, and you only have one table, you've corrupted your data and lost the original. With medallion, bronze always has the raw truth. You can fix your silver logic and replay. Gold consumers — dashboards, APIs, data scientists — never see the mess. They see a clean, pre-aggregated table that's always ready. The layers are a shock absorber for the real world. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 20: Our Demo Pipeline                                     -->
+<!-- ================================================================ -->
+<section class="slide slide-light" aria-label="Slide 20: Our Demo Pipeline">
+  <div class="slide-content">
+    <span class="eyebrow">DATA PIPELINE</span>
+    <h2>Our Demo Pipeline</h2>
+    <div class="accent-line"></div>
+
+    <div class="pipeline-flow" style="margin-top: 1.5rem;">
+      <div class="pipeline-stage">
+        <div class="layer-card bronze">
+          <strong style="font-size: 1.1em;">BRONZE</strong><br>
+          <span>raw_tags</span><br>
+          <span style="font-size: 0.85rem; color: var(--text-secondary);">2,700 events/sec<br>every sensor reading<br>messy, duplicated, raw</span>
+        </div>
+      </div>
+      <div class="pipeline-arrow">&rarr;</div>
+      <div class="pipeline-stage" style="flex: 1.5;">
+        <div class="layer-card silver">
+          <strong style="font-size: 1.1em;">SILVER</strong><br>
+          <span>parsed_tags</span> <span style="font-size: 0.85rem; color: var(--text-secondary);">extract asset + signal</span><br>
+          <span>aggregated_tags</span> <span style="font-size: 0.85rem; color: var(--text-secondary);">1-min windows</span><br>
+          <span>enriched_tags</span> <span style="font-size: 0.85rem; color: var(--text-secondary);">+ units, names</span>
+        </div>
+      </div>
+      <div class="pipeline-arrow">&rarr;</div>
+      <div class="pipeline-stage">
+        <div class="layer-card gold">
+          <strong style="font-size: 1.1em;">GOLD</strong><br>
+          <span>health_scores</span><br>
+          <span>revenue_risk</span><br>
+          <span style="font-size: 0.85rem; color: var(--text-secondary);">one row per asset<br>ready for dashboard</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout-box" style="margin-top: 1rem;">
+      <strong>Data domain:</strong> Battery energy storage systems (BESS) at power generation sites.<br>
+      Temperature, voltage, power output, state of charge &mdash; data everyone can relate to.
+    </div>
+
+    <span class="slide-footer">20</span>
+  </div>
+  <!-- NOTES: Here's our specific pipeline for today. Raw sensor data from battery energy storage systems streams into bronze at about 2,700 events per second. Silver parses the tag paths to extract which asset and which signal, aggregates into 1-minute windows, and enriches with metadata like units and signal names. Gold produces two tables the business cares about: health scores per asset and revenue at risk. We're going to build each layer now, starting with bronze. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 21: Section Divider — 5. Bronze                           -->
+<!-- ================================================================ -->
+<section class="slide slide-ink dark-bg texture-spotlight" aria-label="Slide 21: Section 5 — Bronze">
+  <div class="slide-content" style="text-align: center;">
+    <p style="color: var(--bronze-color, #CD7F32); font-size: 1rem; letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 0.5rem;">Section 5</p>
+    <h2 style="color: white; font-size: 3rem;">Bronze</h2>
+    <p class="section-meta" style="color: rgba(255,255,255,0.6);">15 minutes</p>
+  </div>
+  <!-- NOTES: Let's build the first layer. Bronze is the simplest layer — but also the most important. Get this wrong and nothing downstream works. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 22: Bronze Principles                                     -->
+<!-- ================================================================ -->
+<section class="slide slide-light" aria-label="Slide 22: Bronze Principles">
+  <div class="slide-content">
+    <div class="offset-heading">
+      <span class="eyebrow">BRONZE LAYER</span>
+      <h2>Bronze Principles</h2>
+      <div class="accent-line"></div>
+    </div>
+
+    <ul style="margin-top: 1.2rem;">
+      <li><span class="num-badge">1</span> <strong>Append-only</strong> &mdash; never update or delete raw data</li>
+      <li><span class="num-badge">2</span> <strong>Source schema</strong> &mdash; keep original column names and types</li>
+      <li><span class="num-badge">3</span> <strong>Add metadata</strong> &mdash; ingestion timestamp, source system, file name</li>
+      <li><span class="num-badge">4</span> <strong>Multiple landing patterns</strong> &mdash; streaming via Zerobus, batch via Auto Loader (CSV/JSON/Parquet)</li>
+      <li><span class="num-badge">5</span> <strong>Enable Change Data Feed</strong> &mdash; downstream reads changes incrementally</li>
+      <li><span class="num-badge">6</span> <strong>No business logic</strong> &mdash; that's silver's job</li>
+    </ul>
+
+    <div class="callout-box" style="margin-top: 1rem;">
+      Bronze is your <strong>insurance policy</strong>. When silver logic has a bug, you replay from bronze.
+    </div>
+
+    <span class="slide-footer">22</span>
+  </div>
+  <!-- NOTES: Five rules. Append-only: you never delete a raw event. Source schema: don't rename or reformat on the way in — preserve the original. Add metadata: always record when data arrived and where it came from. Enable Change Data Feed: this lets downstream streaming tables read only the new changes instead of scanning the whole table. No business logic: raw_tags has a packed tag_path string like "[agl_bess]AGL/Australia/NSW/Tomago/Site01/bess_01/thermal/rack_temp_c" — we don't parse that in bronze. That's silver's job. Bronze just stores it faithfully. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 23: Our Bronze Table: raw_tags                            -->
+<!-- ================================================================ -->
+<section class="slide slide-dark dark-bg" aria-label="Slide 23: Our Bronze Table — raw_tags">
+  <div class="slide-content">
+    <span class="eyebrow">BRONZE LAYER</span>
+    <h2 style="color: white;">Our Bronze Table: <code style="color: var(--db-amber);">raw_tags</code></h2>
+    <div class="accent-line"></div>
+
+    <pre style="margin-top: 1.2rem;"><code><span class="kw">CREATE TABLE</span> medallion.bronze.raw_tags (
+  event_id          <span class="kw">STRING</span>      <span class="kw">NOT NULL</span>,   <span class="cm">-- UUID per event</span>
+  event_time        <span class="kw">BIGINT</span>      <span class="kw">NOT NULL</span>,   <span class="cm">-- microseconds since epoch</span>
+  tag_path          <span class="kw">STRING</span>      <span class="kw">NOT NULL</span>,   <span class="cm">-- packed path from source</span>
+  tag_provider      <span class="kw">STRING</span>      <span class="kw">NOT NULL</span>,   <span class="cm">-- e.g. "agl_bess"</span>
+  numeric_value     <span class="kw">DOUBLE</span>,                 <span class="cm">-- sensor reading</span>
+  string_value      <span class="kw">STRING</span>,                 <span class="cm">-- text values</span>
+  quality           <span class="kw">STRING</span>,                 <span class="cm">-- "GOOD", "BAD", "UNCERTAIN"</span>
+  quality_code      <span class="kw">INT</span>,                    <span class="cm">-- OPC quality code</span>
+  source_system     <span class="kw">STRING</span>      <span class="kw">NOT NULL</span>,   <span class="cm">-- which gateway sent this</span>
+  ingestion_timestamp <span class="kw">BIGINT</span>               <span class="cm">-- when we received it</span>
+)
+<span class="kw">LOCATION</span> <span class="str">'abfss://medallion@storage.dfs.core.windows.net/bronze/raw_tags'</span>
+<span class="kw">TBLPROPERTIES</span> (
+  <span class="str">'delta.enableChangeDataFeed'</span> = <span class="str">'true'</span>
+);</code></pre>
+
+    <div class="callout-box" style="margin-top: 0.8rem;">
+      <strong>Schema-on-read:</strong> <code style="color: var(--db-amber);">event_time</code> stored as BIGINT, <code style="color: var(--db-amber);">tag_path</code> as an opaque string. We don't interpret them yet &mdash; that's silver's job.
+    </div>
+
+    <span class="slide-footer">23</span>
+  </div>
+  <!-- NOTES: Here's the actual DDL. Notice the LOCATION clause — this is what makes it an external table. We control where the files live. The path is clean and predictable: medallion container, bronze folder, raw_tags subfolder. This is "schema-on-read" — we store the data in the source's native format and only interpret it when we read it in the silver layer. event_time stays as a BIGINT microsecond timestamp, tag_path stays as a packed string. Silver will apply "schema-on-write" — enforcing proper types, extracting business keys, validating ranges. This distinction matters: schema-on-read preserves fidelity, schema-on-write enforces trust. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 24: What Bronze Data Looks Like                           -->
+<!-- ================================================================ -->
+<section class="slide slide-light" aria-label="Slide 24: What Bronze Data Looks Like">
+  <div class="slide-content">
+    <span class="eyebrow">BRONZE LAYER</span>
+    <h2>What Bronze Data Looks Like</h2>
+    <div class="accent-line"></div>
+
+    <pre style="margin-top: 1rem;"><code><span class="kw">SELECT</span> event_time, tag_path, numeric_value, quality
+<span class="kw">FROM</span> medallion.bronze.raw_tags
+<span class="kw">ORDER BY</span> ingestion_timestamp <span class="kw">DESC LIMIT</span> <span class="num">5</span>;</code></pre>
+
+    <table style="margin-top: 0.8rem; font-size: 0.75rem;">
+      <thead>
+        <tr><th>event_time</th><th>tag_path</th><th>numeric_value</th><th>quality</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>1712700123456789</code></td>
+          <td><code>[agl_bess]AGL/AU/NSW/Tomago/Site01/bess_01/thermal/rack_temp_c</code></td>
+          <td>34.7</td>
+          <td>GOOD</td>
+        </tr>
+        <tr>
+          <td><code>1712700123456790</code></td>
+          <td><code>[agl_bess]AGL/AU/NSW/Tomago/Site01/bess_01/power/soc_pct</code></td>
+          <td>72.3</td>
+          <td>GOOD</td>
+        </tr>
+        <tr>
+          <td><code>1712700123456791</code></td>
+          <td><code>[agl_grid]AGL/AU/NSW/Tomago/Site01/substation/poi/net_mw</code></td>
+          <td>245.8</td>
+          <td>GOOD</td>
+        </tr>
+        <tr>
+          <td><code>1712700123456792</code></td>
+          <td><code>[agl_market]AGL/AU/NSW/Tomago/Site01/market/rrp_aud_mwh</code></td>
+          <td>87.50</td>
+          <td>GOOD</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout-box" style="margin-top: 0.8rem;">
+      This is <strong>raw</strong>. Timestamps are microsecond integers. Tag paths are packed strings. Accurate, but not useful yet.
+    </div>
+
+    <span class="slide-footer">24</span>
+  </div>
+  <!-- NOTES: This is what lands in bronze. The event_time is a 16-digit microsecond timestamp — meaningless to a human. The tag_path contains the provider, country, state, site, asset, subsystem, and signal all jammed into one string. This data is correct and complete, but useless for analytics. You can't GROUP BY asset. You can't filter by signal name. You can't chart it without parsing. That's exactly what silver does. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 25: LIVE DEMO — Watch Data Land                           -->
+<!-- ================================================================ -->
+<section class="slide slide-dark dark-bg" aria-label="Slide 25: LIVE DEMO — Watch Data Land">
+  <div class="slide-content" style="text-align: center;">
+    <span class="demo-badge">LIVE DEMO</span>
+    <h2 style="color: white;">Watch Data Land</h2>
+
+    <ol style="color: rgba(255,255,255,0.85); text-align: left; max-width: 700px; margin: 1.5rem auto 0; line-height: 1.8;">
+      <li>Start the simulator: <code style="color: var(--db-amber);">make simulate-83</code></li>
+      <li>Query <code style="color: var(--db-amber);">SELECT COUNT(*) FROM medallion.bronze.raw_tags</code> &mdash; watch it grow</li>
+      <li>Query latest events &mdash; show the raw tag_path values</li>
+      <li>Switch to Azure portal &mdash; watch new Parquet files appear</li>
+      <li>Show <code style="color: var(--db-amber);">DESCRIBE HISTORY</code> &mdash; new versions accumulating</li>
+    </ol>
+
+    <p style="font-size: 0.85rem; color: rgba(255,255,255,0.5); text-align: center; margin-top: 1.2em;">
+      ~2,700 events/sec from 4 battery units + grid + market + maintenance sensors
+    </p>
+  </div>
+  <!-- NOTES: DEMO SCRIPT:
+1. In a terminal: make simulate-83 (or it may already be running).
+2. In Databricks SQL editor: SELECT COUNT(*) FROM medallion.bronze.raw_tags; — run it twice, 30 seconds apart, show the count growing.
+3. SELECT event_time, tag_path, numeric_value, quality FROM medallion.bronze.raw_tags ORDER BY ingestion_timestamp DESC LIMIT 10; — walk through a few rows, point at the packed tag_path.
+4. Flip to Azure portal (already open) — refresh the bronze/raw_tags/ folder — show new .parquet files appearing. "Every few seconds, a new file lands."
+5. Back to Databricks: DESCRIBE HISTORY medallion.bronze.raw_tags LIMIT 5; — show the versions incrementing. "Each version is a batch of new data arriving."
+6. Optional: SELECT * FROM medallion.bronze.raw_tags VERSION AS OF 0 LIMIT 5; — "This is the very first batch that ever landed." -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 26: Break                                                 -->
+<!-- ================================================================ -->
+<section class="slide slide-ink dark-bg texture-spotlight" aria-label="Slide 26: Break">
+  <div class="slide-content" style="text-align: center;">
+    <h2 style="color: white; font-size: 2.5rem;">Break</h2>
+    <p style="color: rgba(255,255,255,0.5); font-size: 0.95rem; margin-top: 0.5rem;">10 minutes &mdash; back at 1:15</p>
+    <p style="color: rgba(255,255,255,0.5); font-size: 0.8rem; margin-top: 2.5rem;">So far: Open formats &rarr; Delta Lake files &rarr; Bronze layer<br>Next: Silver (cleaning) &rarr; Gold (business value) &rarr; Live dashboard</p>
+  </div>
+  <!-- NOTES: 10-minute break. When we come back, we'll take that messy bronze data and turn it into something clean and useful. The second hour is where the architecture really pays off. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 27: Section Divider — 6. Silver                           -->
+<!-- ================================================================ -->
+<section class="slide slide-dark dark-bg texture-lines" aria-label="Slide 27: Section 6 — Silver">
+  <div class="slide-content" style="text-align: center;">
+    <p style="color: var(--db-oat-medium, #C0C0C0); font-size: 1rem; letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 0.5rem;">Section 6</p>
+    <h2 style="color: white; font-size: 3rem;">Silver</h2>
+    <p class="section-meta" style="color: rgba(255,255,255,0.6);">20 minutes</p>
+  </div>
+  <!-- NOTES: Welcome back. Silver is where the real engineering happens. We take messy raw data and make it trustworthy. Three operations: parse, aggregate, enrich. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 28: Silver = Schema-on-Write                              -->
+<!-- ================================================================ -->
+<section class="slide slide-light" aria-label="Slide 28: Silver = Schema-on-Write">
+  <div class="slide-content">
+    <span class="eyebrow">SILVER LAYER</span>
+    <h2>Silver = Schema-on-Write</h2>
+    <div class="accent-line"></div>
+
+    <div class="comparison-grid" style="margin-top: 1.2rem;">
+      <div>
+        <div class="layer-card bronze">
+          <h3>Bronze: Schema-on-Read</h3>
+          <ul style="font-size: 0.85rem;">
+            <li>Store data in source format</li>
+            <li>Interpret when you read it</li>
+            <li>BIGINT timestamps, packed strings</li>
+            <li>No validation at write time</li>
+          </ul>
+        </div>
+      </div>
+      <div>
+        <div class="layer-card silver">
+          <h3>Silver: Schema-on-Write</h3>
+          <ul style="font-size: 0.85rem;">
+            <li>Enforce types before storing</li>
+            <li>Validate every row on write</li>
+            <li>Proper TIMESTAMP, extracted keys</li>
+            <li>Bad data caught, not hoped away</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout-box" style="margin-top: 1rem;">
+      Bronze preserves <strong>fidelity</strong>. Silver enforces <strong>trust</strong>. The boundary between them is where schema-on-read becomes schema-on-write.
+    </div>
+
+    <span class="slide-footer">28</span>
+  </div>
+  <!-- NOTES: This is a foundational concept. In a traditional data lake, everything is schema-on-read — you dump files in and hope whoever reads them applies the right schema. That's how you get data swamps. The medallion architecture draws a clear line: bronze is schema-on-read (preserve the source), silver is schema-on-write (enforce the contract). Everything downstream of silver can trust the types, the keys, the ranges. That trust boundary is what makes the whole architecture work. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 29: What Silver Actually Does — 13 Cleaning Operations    -->
+<!-- ================================================================ -->
+<section class="slide slide-light" aria-label="Slide 29: What Silver Actually Does">
+  <div class="slide-content">
+    <span class="eyebrow">SILVER LAYER</span>
+    <h2>What Silver Actually Does</h2>
+    <div class="accent-line"></div>
+    <h3 style="margin-top: 0.5rem;">The 13 cleaning operations</h3>
+
+    <table style="font-size: 0.65rem; margin-top: 0.5rem;">
+      <thead>
+        <tr><th>#</th><th>Operation</th><th>Our demo</th><th></th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>Noise reduction (drop irrelevant columns)</td><td>14 bronze cols &rarr; 9 silver cols</td><td style="color: var(--db-green);">&#10003;</td></tr>
+        <tr><td>2</td><td>Missing value handling</td><td><code>EXPECT has_asset_id</code></td><td style="color: var(--db-green);">&#10003;</td></tr>
+        <tr><td>3</td><td>Deduplication</td><td>CDC Type 1 on (event_time, tag_path)</td><td style="color: var(--db-green);">&#10003;</td></tr>
+        <tr><td>4</td><td>Whitespace trimming</td><td style="color: var(--text-secondary);">&mdash; not needed (numeric data)</td><td></td></tr>
+        <tr><td>5</td><td>Error correction</td><td>Tag path parsing &amp; normalization</td><td style="color: var(--db-green);">&#10003;</td></tr>
+        <tr><td>6</td><td>Consistency standardization</td><td><code>agl_bess</code> &rarr; <code>battery_bess</code></td><td style="color: var(--db-green);">&#10003;</td></tr>
+        <tr><td>7</td><td>Format standardization</td><td>BIGINT &micro;s &rarr; TIMESTAMP</td><td style="color: var(--db-green);">&#10003;</td></tr>
+        <tr><td>8</td><td>Type correction</td><td>String/Double coalescing</td><td style="color: var(--db-green);">&#10003;</td></tr>
+        <tr><td>9</td><td>Range validation</td><td><code>quality_code BETWEEN 0 AND 255</code></td><td style="color: var(--db-green);">&#10003;</td></tr>
+        <tr><td>10</td><td>Uniqueness enforcement</td><td>CDC dedup by composite key</td><td style="color: var(--db-green);">&#10003;</td></tr>
+        <tr><td>11</td><td>Constraint validation</td><td><code>not_future_event</code> expectation</td><td style="color: var(--db-green);">&#10003;</td></tr>
+        <tr><td>12</td><td>PII masking</td><td style="color: var(--text-secondary);">&mdash; no PII in sensor data</td><td></td></tr>
+        <tr><td>13</td><td>Anomaly detection</td><td>Z-score flagging (done in gold)</td><td style="color: var(--db-green);">&#10003;</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout-box" style="margin-top: 0.6rem;">
+      Silver's contract: <em>"If the data is here, you can trust it."</em> &mdash; 11 of 13 operations active in our pipeline.
+    </div>
+
+    <span class="slide-footer">29</span>
+  </div>
+  <!-- NOTES: This taxonomy comes from data architecture literature — there are 13 discrete cleaning operations that silver is responsible for. I've mapped each one to what our pipeline actually does. We're covering 11 of 13 — the only ones we skip are whitespace trimming (irrelevant for numeric sensor data) and PII masking (no personally identifiable information in OT telemetry). The point is: silver isn't just "clean the data." It's a systematic process with specific, nameable operations. When you're designing your own silver layer, use this checklist to make sure you haven't missed anything. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 30: Silver Step 1 — Parse                                 -->
+<!-- ================================================================ -->
+<section class="slide slide-light" aria-label="Slide 30: Silver Step 1 — Parse">
+  <div class="slide-content">
+    <span class="eyebrow">SILVER LAYER</span>
+    <h2>Silver Step 1: Parse</h2>
+    <div class="accent-line"></div>
+
+    <div class="grid-wide-narrow" style="margin-top: 1rem;">
+      <div>
+        <h3>Before (Bronze)</h3>
+        <pre><code>tag_path =
+  [agl_bess]AGL/AU/NSW/Tomago
+  /Site01/bess_01/thermal
+  /rack_temp_c
+
+event_time = 1712700123456789</code></pre>
+      </div>
+      <div>
+        <h3>After (Silver: parsed_tags)</h3>
+        <pre><code>asset_id   = "tomago_bess_01"
+asset_type = "battery_bess"
+tag_name   = "thermal/rack_temp_c"
+tag_value  = 34.7
+
+event_timestamp =
+  2026-04-10 03:22:03.456</code></pre>
+      </div>
+    </div>
+
+    <pre style="margin-top: 0.8rem;"><code><span class="cm">-- The transformation (simplified)</span>
+<span class="kw">SELECT</span>
+  to_timestamp(event_time / <span class="num">1000000</span>)        <span class="kw">AS</span> event_timestamp,
+  lower(concat(location, <span class="str">'_'</span>, asset))       <span class="kw">AS</span> asset_id,
+  concat(subsystem, <span class="str">'/'</span>, signal)            <span class="kw">AS</span> tag_name,
+  COALESCE(numeric_value, string_value)     <span class="kw">AS</span> tag_value
+<span class="kw">FROM</span> medallion.bronze.raw_tags</code></pre>
+
+    <span class="slide-footer">30</span>
+  </div>
+  <!-- NOTES: The first transformation is parsing. That packed tag_path string gets broken apart into meaningful columns: which asset, what type, which signal. The microsecond BIGINT becomes a proper TIMESTAMP. Now we can GROUP BY asset_id, filter by tag_name, and chart by event_timestamp. This is a streaming table — it continuously processes new bronze data as it arrives, not batch. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 31: Silver Step 2 — Aggregate                             -->
+<!-- ================================================================ -->
+<section class="slide slide-dark dark-bg texture-noise" aria-label="Slide 31: Silver Step 2 — Aggregate">
+  <div class="slide-content">
+    <span class="eyebrow">SILVER LAYER</span>
+    <h2 style="color: white;">Silver Step 2: Aggregate</h2>
+    <div class="accent-line"></div>
+
+    <div class="grid-wide-narrow" style="margin-top: 1rem;">
+      <div>
+        <pre><code><span class="cm">-- 1-minute tumbling window aggregation</span>
+<span class="kw">CREATE OR REFRESH STREAMING TABLE</span>
+  medallion.silver.aggregated_tags
+<span class="kw">AS SELECT</span>
+  window(event_timestamp, <span class="str">'1 minute'</span>).start
+    <span class="kw">AS</span> window_start,
+  window(event_timestamp, <span class="str">'1 minute'</span>).end
+    <span class="kw">AS</span> window_end,
+  tag_name, asset_id,
+  <span class="kw">AVG</span>(tag_value)     <span class="kw">AS</span> avg_value,
+  <span class="kw">MIN</span>(tag_value)     <span class="kw">AS</span> min_value,
+  <span class="kw">MAX</span>(tag_value)     <span class="kw">AS</span> max_value,
+  <span class="kw">STDDEV</span>(tag_value)  <span class="kw">AS</span> stddev_value,
+  <span class="kw">COUNT</span>(*)           <span class="kw">AS</span> sample_count
+<span class="kw">FROM STREAM</span>(medallion.silver.parsed_tags)
+<span class="kw">GROUP BY</span>
+  window(event_timestamp, <span class="str">'1 minute'</span>),
+  tag_name, asset_id;</code></pre>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem;">
+        <div>
+          <div class="stat-hero" style="color: var(--db-lava);">99%</div>
+          <div class="stat-hero-label" style="color: rgba(255,255,255,0.7);">volume reduction</div>
+        </div>
+        <div class="callout-box" style="font-size: 0.8rem;">
+          <strong style="color: white;">Bronze:</strong> <span style="color: rgba(255,255,255,0.8);">162,000 rows/min</span><br>
+          <strong style="color: white;">Silver:</strong> <span style="color: rgba(255,255,255,0.8);">~1,350 rows/min</span>
+        </div>
+      </div>
+    </div>
+
+    <span class="slide-footer">31</span>
+  </div>
+  <!-- NOTES: This is where the data volume drops dramatically. Instead of 162,000 raw events per minute, we produce about 1,350 rows — one per tag per minute, with avg, min, max, standard deviation, and sample count. 99% data reduction while preserving the statistical properties. This is a streaming table using a 1-minute tumbling window. As new events arrive in bronze, they flow through to silver automatically. The window function handles late-arriving data gracefully. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 32: Silver Step 3 — Data Quality Rules                    -->
+<!-- ================================================================ -->
+<section class="slide slide-light" aria-label="Slide 32: Silver Step 3 — Data Quality Rules">
+  <div class="slide-content">
+    <span class="eyebrow">DATA QUALITY</span>
+    <h2>Silver Step 3: Data Quality</h2>
+    <div class="accent-line"></div>
+    <h3 style="margin-top: 0.5rem;">Lakeflow Pipeline Expectations</h3>
+
+    <div style="margin-top: 0.8rem; display: flex; flex-direction: column; gap: 0.5rem;">
+      <div class="expect-row pass">
+        <span class="expect-label"><strong>valid_event_timestamp</strong> &mdash; <code>event_timestamp IS NOT NULL</code></span>
+        <span class="expect-mode green">EXPECT (warn)</span>
+      </div>
+
+      <div class="expect-row pass">
+        <span class="expect-label"><strong>has_asset_id</strong> &mdash; <code>asset_id IS NOT NULL AND asset_id != ''</code></span>
+        <span class="expect-mode green">EXPECT (warn)</span>
+      </div>
+
+      <div class="expect-row warn">
+        <span class="expect-label"><strong>valid_quality_code</strong> &mdash; <code>quality_code BETWEEN 0 AND 255</code></span>
+        <span class="expect-mode amber">EXPECT (warn)</span>
+      </div>
+
+      <div class="expect-row drop">
+        <span class="expect-label"><strong>not_future_event</strong> &mdash; <code>event_timestamp &lt;= now() + INTERVAL 5 MINUTES</code></span>
+        <span class="expect-mode red">EXPECT OR DROP</span>
+      </div>
+    </div>
+
+    <div class="callout-box" style="margin-top: 0.8rem;">
+      Three modes: <strong>EXPECT</strong> (warn but keep) &bull; <strong>EXPECT OR DROP</strong> (silently remove) &bull; <strong>EXPECT OR FAIL</strong> (stop the pipeline)
+    </div>
+
+    <div class="callout-box subtle" style="margin-top: 0.5rem; font-size: 0.75rem;">
+      <strong>Production pattern &mdash; quarantine tables:</strong> Route bad rows to a sibling <code>_quarantine</code> table for investigation instead of dropping. Data isn't lost &mdash; it's isolated. We use DROP today for simplicity; in production you'd quarantine.
+    </div>
+
+    <span class="slide-footer">32</span>
+  </div>
+  <!-- NOTES: This is one of the most powerful features of Lakeflow declarative pipelines. You declare quality rules as constraints on each table. There are three enforcement modes. EXPECT logs a warning but keeps the row — useful for monitoring trends without losing data. EXPECT OR DROP silently removes rows that fail — we use this for future-dated events which are clearly garbage. EXPECT OR FAIL stops the entire pipeline if the rule is violated — use this for critical invariants. In production, instead of DROP you'd typically route bad rows to a quarantine table — same schema, different table name. The data doesn't disappear, it's just isolated for investigation. Think of it as the "holding cell" pattern: bad data can't contaminate downstream tables, but a data engineer can still investigate what went wrong. All of these metrics are tracked in the pipeline UI. You can see exactly how many rows passed, warned, and were dropped. -->
+</section>
+<!-- ================================================================ -->
+<!-- Slide 33: Silver Step 4 — Enrich                               -->
+<!-- ================================================================ -->
+<section class="slide slide-light" aria-label="Slide 33: Silver Step 4 — Enrich">
+  <div class="slide-content">
+    <span class="eyebrow">SILVER LAYER</span>
+    <h2>Silver Step 4: Enrich</h2>
+    <div class="accent-line"></div>
+    <pre><code class="language-sql">-- Stream-static join: streaming data + static reference table
+CREATE OR REFRESH STREAMING TABLE medallion.silver.enriched_tags
+AS SELECT
+  a.window_start, a.window_end,
+  a.tag_name, a.asset_id,
+  a.avg_value, a.min_value, a.max_value, a.sample_count,
+  -- From reference table:
+  m.signal_name,       -- e.g. "Rack Temperature"
+  m.unit,              -- e.g. "°C"
+  m.source_domain      -- e.g. "battery_thermal"
+FROM STREAM(medallion.silver.aggregated_tags) a
+LEFT JOIN medallion.silver.signal_mapping m
+  ON a.tag_name = m.tag_path;</code></pre>
+    <div class="callout-box">
+      <strong>Before:</strong> <code>tag_name = "thermal/rack_temp_c"</code><br>
+      <strong>After:</strong> <code>signal_name = "Rack Temperature"</code>, <code>unit = "°C"</code>, <code>domain = "battery_thermal"</code>
+    </div>
+    <span class="slide-footer">33</span>
+    <!-- NOTES: The final silver step: enrichment. We join the streaming aggregated data with a static reference table that maps technical tag names to human-readable signal names, units, and domains. "thermal/rack_temp_c" becomes "Rack Temperature in °C in the battery_thermal domain." This is a stream-static join — the aggregated data is streaming, but the signal mapping is a regular table that changes rarely. Now the data is ready for business consumption. -->
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 33b: PI AF Replacement — Silver + UC Metadata             -->
+<!-- ================================================================ -->
+<section class="slide slide-dark dark-bg texture-noise" aria-label="Slide 33b: Replacing PI Asset Framework">
+  <div class="slide-content">
+    <span class="eyebrow" style="color: var(--db-lava-light);">PI AF REPLACEMENT</span>
+    <h2 style="color: white;">Silver + Unity Catalog = Your New Asset Framework</h2>
+    <div class="accent-line"></div>
+    <div class="comparison-grid" style="margin-top: 1.5rem;">
+      <div class="comparison-card before" style="background: rgba(151,15,41,0.15); border-color: rgba(151,15,41,0.3);">
+        <h3 style="color: #ff6b7a;">PI Asset Framework</h3>
+        <ul style="color: rgba(255,255,255,0.8);">
+          <li>Element templates for asset hierarchy</li>
+          <li>Attribute metadata (units, ranges)</li>
+          <li>PI AF SDK for navigation</li>
+          <li>Single-site, single-historian</li>
+          <li>No SQL access, no ML integration</li>
+        </ul>
+      </div>
+      <div class="comparison-card after" style="background: rgba(0,169,114,0.15); border-color: rgba(0,169,114,0.3);">
+        <h3 style="color: #5cd6a8;">Silver Layer + Unity Catalog</h3>
+        <ul style="color: rgba(255,255,255,0.8);">
+          <li>Silver parsing: tag_path &rarr; asset_id + signal</li>
+          <li>Enrichment: signal_name, unit, domain</li>
+          <li><code style="color: #82AAFF;">COMMENT ON</code> for business descriptions</li>
+          <li>Fleet-wide, multi-site, governed</li>
+          <li>SQL + Python + ML + Genie</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout-box" style="margin-top: 1rem;">
+      The silver enrichment step we just built <strong>is</strong> the AF replacement. UC column descriptions and tags provide the business context that PI AF element templates used to own.
+    </div>
+    <span class="slide-footer" style="color: rgba(255,255,255,0.25);">33b</span>
+  </div>
+  <!-- NOTES: This is the slide that connects PI AF to the medallion architecture. PI AF's element templates define a hierarchy: Site > Unit > Subsystem > Signal, with attributes like units and ranges. Our silver layer does exactly this — parsed_tags extracts the hierarchy from tag_path, enriched_tags adds units, signal names, and domains. Unity Catalog adds the business layer: COMMENT ON TABLE and COMMENT ON COLUMN provide descriptions that are discoverable by Genie and human users. The key difference: PI AF is single-site, proprietary, and can't be queried with SQL. Silver + UC is fleet-wide, open format, and accessible to SQL, Python, ML models, and natural language via Genie. This is the path from PI AF to a governed data platform. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 34: LIVE DEMO — Bronze vs. Silver                        -->
+<!-- ================================================================ -->
+<section class="slide slide-dark dark-bg" aria-label="Slide 34: LIVE DEMO — Bronze vs. Silver">
+  <div class="slide-content">
+    <span class="demo-badge">LIVE DEMO</span>
+    <h2 style="color: white;">Bronze vs. Silver</h2>
+    <div class="accent-line"></div>
+    <ol style="color: rgba(255,255,255,0.85); max-width: 720px; margin: 1.5em auto 0; line-height: 2;">
+      <li>Show the <strong style="color: white;">Lakeflow pipeline graph</strong> in the Databricks UI</li>
+      <li>Click <code>parsed_tags</code> &mdash; show data quality metrics</li>
+      <li>Query silver: <code>SELECT * FROM medallion.silver.enriched_tags LIMIT 10</code></li>
+      <li>Compare row counts: bronze (162K/min) vs. silver (1,350/min)</li>
+      <li>Show enrichment: <code>tag_name</code> &rarr; <code>signal_name</code> + <code>unit</code></li>
+      <li>Azure portal: show silver/ folder &mdash; different files from bronze/</li>
+    </ol>
+    <!-- NOTES: DEMO SCRIPT:
+1. Open Workflows → Lakeflow Pipelines → the pipeline. Show the DAG graph — point at bronze on the left, silver in the middle, gold on the right.
+2. Click on the parsed_tags node. Show the quality metrics panel — how many rows passed each expectation. "4 rules, all passing at 99.8%+ — the 0.2% are warnings, not drops."
+3. In SQL editor: SELECT window_start, asset_id, signal_name, unit, avg_value, sample_count FROM medallion.silver.enriched_tags ORDER BY window_start DESC LIMIT 10;
+4. Compare: SELECT COUNT(*) FROM medallion.bronze.raw_tags WHERE event_time > unix_micros(now() - INTERVAL 1 MINUTE); vs SELECT COUNT(*) FROM medallion.silver.aggregated_tags WHERE window_start > now() - INTERVAL 1 MINUTE; — show the 100:1 reduction.
+5. Point at the signal_name and unit columns — "this is enrichment, the tag_name 'thermal/rack_temp_c' became 'Rack Temperature' with unit '°C'."
+6. Azure portal: navigate to silver/ folder, show the three subfolders (parsed_tags, aggregated_tags, enriched_tags). Click into one — show the Delta structure. -->
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 35: Section Divider — 7. Gold                            -->
+<!-- ================================================================ -->
+<section class="slide slide-ink dark-bg texture-spotlight" aria-label="Slide 35: Section 7 — Gold">
+  <div class="slide-content" style="text-align: center;">
+    <p style="font-size: clamp(1rem, 1.5vw, 1.4rem); font-weight: 500; color: rgba(255,255,255,0.5); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 0.5em;">Section 7</p>
+    <h2 style="color: #FFD700; font-size: clamp(2.5rem, 5vw, 4.5rem); margin-bottom: 0.3em;">Gold</h2>
+    <p style="color: rgba(255,255,255,0.6); font-size: clamp(0.9rem, 1.2vw, 1.1rem);">15 minutes</p>
+    <!-- NOTES: The final layer. Gold tables answer specific business questions. Each gold table is designed for a particular consumer — a dashboard, an API, a machine learning model. -->
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 36: Gold Principles                                      -->
+<!-- ================================================================ -->
+<section class="slide slide-light" aria-label="Slide 36: Gold Principles">
+  <div class="slide-content">
+    <span class="eyebrow">GOLD LAYER</span>
+    <div class="offset-heading">
+      <h2>Gold Principles</h2>
+    </div>
+    <ul style="list-style: none; padding: 0; margin: 1.5em 0 0 0; display: flex; flex-direction: column; gap: 0.8em;">
+      <li><span class="num-badge">1</span> <strong>Business grain</strong> &mdash; one row per entity per time period</li>
+      <li><span class="num-badge">2</span> <strong>Sources merge here</strong> &mdash; silver stays source-aligned; gold joins across</li>
+      <li><span class="num-badge">3</span> <strong>Named for the question</strong> &mdash; <code>health_scores</code>, not <code>agg_enriched_v3_final</code></li>
+      <li><span class="num-badge">4</span> <strong>Pre-computed</strong> &mdash; no complex joins at query time</li>
+      <li><span class="num-badge">5</span> <strong>Consumer-ready</strong> &mdash; a dashboard can <code>SELECT *</code> and go</li>
+    </ul>
+    <div class="callout-box" style="margin-top: 1.2em;">
+      Gold's contract: <em>"Ask your question, get your answer. No SQL PhD required."</em>
+    </div>
+    <span class="slide-footer">36</span>
+    <!-- NOTES: Gold tables are designed backwards from the question. Start with: "What does the operations team need to know?" Then build a table that answers it directly. An important principle: keep silver tables source-aligned — one silver table per source system. Integration and cross-source joins happen in gold. This means if one source system breaks, only its silver table is affected — gold just gets stale, it doesn't get corrupted. Our revenue_risk table is a great example: it joins sensor health, market prices, and asset metadata — three completely different sources that were separate all the way through silver and only merge here. -->
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 37: Gold — Two Common Patterns (DARK)                    -->
+<!-- ================================================================ -->
+<section class="slide slide-dark dark-bg texture-noise" aria-label="Slide 37: Gold — Two Common Patterns">
+  <div class="slide-content">
+    <span class="eyebrow">GOLD PATTERNS</span>
+    <h2 style="color: white;">Two Common Patterns</h2>
+    <div class="accent-line"></div>
+    <div class="comparison-grid" style="margin-top: 1.5em;">
+      <div class="comparison-card" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 1.5em;">
+        <h3 style="color: white; margin-bottom: 0.6em;">Star Schema <span class="tag" style="font-size: 0.65em;">Traditional BI</span></h3>
+        <ul style="color: rgba(255,255,255,0.8); font-size: 0.85em; line-height: 1.8; padding-left: 1.2em;">
+          <li><strong style="color: white;">Fact + dimension</strong> tables</li>
+          <li>Optimized for <em>slice-and-dice</em> queries</li>
+          <li>Historical reporting, dimensional analysis</li>
+        </ul>
+      </div>
+      <div class="comparison-card" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 1.5em;">
+        <h3 style="color: white; margin-bottom: 0.6em;">Materialized Views <span class="tag" style="font-size: 0.65em;">Real-time Ops</span></h3>
+        <ul style="color: rgba(255,255,255,0.8); font-size: 0.85em; line-height: 1.8; padding-left: 1.2em;">
+          <li><strong style="color: white;">Pre-aggregated</strong>, auto-refreshed</li>
+          <li>Optimized for <em>current state</em> dashboards</li>
+          <li>Operational monitoring, alerting, ML features</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout-box" style="margin-top: 1.2em; background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.15); color: rgba(255,255,255,0.85);">
+      Today we use <strong style="color: white;">materialized views</strong> &mdash; operations teams need <em>current state</em>, not historical drill-downs. Choose the pattern that matches your consumer.
+    </div>
+    <span class="slide-footer" style="color: rgba(255,255,255,0.4);">37</span>
+    <!-- NOTES: There are two common gold patterns and you'll encounter both. The traditional approach is star schemas — fact tables with measures joined to dimension tables with descriptions. This is what tools like Power BI are optimized for, and it's perfect for historical reporting: "show me sales by region by quarter." The modern approach for real-time systems is materialized views — pre-aggregated tables that the pipeline keeps current. Our health_scores table is a materialized view: one row per asset, refreshed continuously. The operations team doesn't need to drill into dimensions — they need the current health score right now. Don't let anyone tell you one pattern is "right" — it depends on who's consuming the gold table and what question they're asking. -->
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 38: Gold Table — health_scores                           -->
+<!-- ================================================================ -->
+<section class="slide slide-light" aria-label="Slide 38: Gold Table — health_scores">
+  <div class="slide-content">
+    <span class="eyebrow">HEALTH SCORING</span>
+    <h2>Gold Table: <code>health_scores</code></h2>
+    <div class="accent-line"></div>
+    <pre><code class="language-sql">CREATE OR REFRESH MATERIALIZED VIEW medallion.gold.health_scores
+AS SELECT
+  now()                                    AS scored_at,
+  asset_id,
+  1.0 - (anomalous_tag_count / total_key_tags)  AS health_score,
+  first_anomalous_tag                      AS primary_risk_tag,
+  risk_description,
+  estimated_hours_to_failure
+FROM silver_health_features;</code></pre>
+    <table style="margin-top: 1em;">
+      <thead>
+        <tr><th>asset_id</th><th>health_score</th><th>primary_risk_tag</th><th>est. hours to failure</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>tomago_bess_01</td><td style="color: var(--db-green); font-weight: 700;">0.92</td><td>&mdash;</td><td>610</td></tr>
+        <tr><td>tomago_bess_02</td><td style="color: var(--db-amber); font-weight: 700;">0.67</td><td>thermal/rack_temp_c</td><td>323</td></tr>
+        <tr><td>liddell_bess_03</td><td style="color: var(--db-burgundy); font-weight: 700;">0.31</td><td>power/soc_pct</td><td>69</td></tr>
+      </tbody>
+    </table>
+    <div class="callout-box" style="margin-top: 0.8em;">
+      One row per asset. One number. Operations knows instantly where to look.
+    </div>
+    <span class="slide-footer">38</span>
+    <!-- NOTES: Health scores is the core gold table. For each asset, it computes a single health score between 0 and 1 using z-score anomaly detection on key signals — temperature, state of charge, power output. If any signal deviates more than 2 standard deviations from its rolling mean, it's flagged as anomalous, and the health score drops. The primary_risk_tag tells the operator exactly which signal is the problem. 0.92 means "healthy, nothing to worry about." 0.31 means "this battery needs attention, its state of charge is behaving abnormally." This is a materialized view — it refreshes automatically whenever the pipeline runs. -->
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 39: Gold Table — revenue_risk                            -->
+<!-- ================================================================ -->
+<section class="slide slide-light" aria-label="Slide 39: Gold Table — revenue_risk">
+  <div class="slide-content">
+    <span class="eyebrow">REVENUE RISK</span>
+    <h2>Gold Table: <code>revenue_risk</code></h2>
+    <div class="accent-line"></div>
+    <div class="grid-wide-narrow" style="margin-top: 1em; gap: 1.5em;">
+      <div>
+        <pre><code class="language-sql">CREATE OR REFRESH MATERIALIZED VIEW
+  medallion.gold.revenue_risk
+AS SELECT
+  h.asset_id,
+  p.risk_window_start,
+  p.forecast_price_aud_mwh,
+  a.capacity_mw,
+  h.health_score,
+  (1 - h.health_score) AS trip_probability,
+  a.capacity_mw * hours * price
+    * (1 - h.health_score)
+    AS revenue_at_risk_aud
+FROM medallion.gold.health_scores h
+JOIN medallion.gold.price_forecast p
+  ON p.price > 300
+JOIN medallion.silver.asset_registry a
+  ON a.asset_id = h.asset_id;</code></pre>
+      </div>
+      <div>
+        <div class="callout-box" style="padding: 1.5em;">
+          <p style="font-weight: 700; margin-bottom: 0.8em;">The business question:</p>
+          <p style="font-size: 0.85em; margin-bottom: 1em;">"During the next high-price window, how much revenue are we risking if an unhealthy asset trips?"</p>
+          <p style="font-size: 0.9em; font-weight: 600; line-height: 1.6; border-top: 1px solid var(--db-oat-dark); padding-top: 0.8em;">
+            <span style="color: var(--db-green);">health_score</span> &times;
+            <span style="color: var(--db-amber);">price forecast</span> &times;
+            <span style="color: var(--db-teal);">capacity</span> =
+            <span style="color: var(--db-burgundy);">dollars at risk</span>
+          </p>
+        </div>
+      </div>
+    </div>
+    <span class="slide-footer">39</span>
+    <!-- NOTES: This is where the "keep sources separate in silver, integrate in gold" principle pays off. revenue_risk joins three different tables: health scores from sensor analytics, price forecasts from market data, and asset capacity from the asset registry. In silver, these were completely separate — different source systems, different schemas, different refresh cadences. They only come together here in gold, joined on asset_id. If the market data feed breaks, the sensor silver tables are unaffected. If we change how we parse tags, the price forecast is untouched. The isolation works in both directions. The result: a dollar figure the CFO understands. "We have $2.3 million at risk in the next high-price window because these three batteries are showing anomalous behaviour." Three sources, one business answer. That's the power of the architecture. -->
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 40: The Complete Pipeline (DARK)                         -->
+<!-- ================================================================ -->
+<section class="slide slide-dark dark-bg texture-noise" aria-label="Slide 40: The Complete Pipeline">
+  <div class="slide-content">
+    <span class="eyebrow">PIPELINE OVERVIEW</span>
+    <h2 style="color: white;">The Complete Pipeline</h2>
+    <div class="accent-line"></div>
+    <div class="ascii-pipeline" style="margin: 1.5em auto; max-width: 800px;">
+<pre style="color: rgba(255,255,255,0.85); font-size: clamp(0.55rem, 0.9vw, 0.8rem); line-height: 1.7;">
+<span class="bronze-text">BRONZE</span>                     <span class="silver-text">SILVER</span>                        <span class="gold-text">GOLD</span>
+
+                           parsed_tags
+                          (extract asset
+raw_tags  ────────────────►   + signal)
+(2,700 events/sec)    │
+                      │   aggregated_tags          health_scores
+                      └──► (1-min windows) ──────► (anomaly detection)
+                              │                         │
+                              ▼                         ▼
+                          enriched_tags            revenue_risk
+                          (+ units, names,         (health × price
+                           asset context)           × capacity = $)
+</pre>
+    </div>
+    <div class="callout-box" style="margin-top: 1em; background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.15); color: rgba(255,255,255,0.85);">
+      <strong style="color: white;">Built with Lakeflow Declarative Pipelines.</strong> You declare <em>what</em> the table should contain. The platform handles <em>how</em> and <em>when</em> to refresh it.
+    </div>
+    <span class="slide-footer" style="color: rgba(255,255,255,0.4);">40</span>
+    <!-- NOTES: Here's the complete DAG. Data flows left to right, from bronze through silver to gold. Each arrow is a streaming transformation — data flows continuously, not in batches. The pipeline manages checkpointing, retries, and ordering. You declare each table as SQL or Python, and the platform handles orchestration. In a moment, we'll see this exact graph in the Databricks UI and the live dashboard consuming the gold tables. -->
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 41: LIVE DEMO — Gold Tables + Dashboard                  -->
+<!-- ================================================================ -->
+<section class="slide slide-dark dark-bg" aria-label="Slide 41: LIVE DEMO — Gold Tables + Dashboard">
+  <div class="slide-content">
+    <span class="demo-badge">LIVE DEMO</span>
+    <h2 style="color: white;">Gold Tables + Dashboard</h2>
+    <div class="accent-line"></div>
+    <ol style="color: rgba(255,255,255,0.85); max-width: 720px; margin: 1.5em auto 0; line-height: 2;">
+      <li>Query <code>health_scores</code> &mdash; one row per asset, sorted by risk</li>
+      <li>Query <code>revenue_risk</code> &mdash; dollar amounts at risk</li>
+      <li>Open the <strong style="color: white;">live dashboard app</strong> &mdash; reading from gold</li>
+      <li>Show <strong style="color: white;">time travel</strong>: "Fleet health 30 minutes ago?"</li>
+      <li>Show the <strong style="color: white;">pipeline DAG</strong> in the Databricks UI</li>
+      <li>Azure portal: browse <code>gold/health_scores/</code> files</li>
+    </ol>
+    <!-- NOTES: DEMO SCRIPT:
+1. SELECT asset_id, health_score, primary_risk_tag, estimated_hours_to_failure FROM medallion.gold.health_scores ORDER BY health_score LIMIT 10; — "Worst assets at the top. The operations team looks at this every morning."
+2. SELECT asset_id, forecast_price_aud_mwh, capacity_mw, trip_probability, revenue_at_risk_aud FROM medallion.gold.revenue_risk ORDER BY revenue_at_risk_aud DESC LIMIT 5; — "These are the assets that'll cost us the most if they trip during a price spike."
+3. Open the Databricks App URL → /analytics page. Show the health score cards, revenue at risk summary. "All of this is just SELECT * from gold tables."
+4. Use the Fleet Snapshot feature — pick a timestamp 30 minutes ago, show health at that point. "This is Delta Lake time travel in action. The gold table was a materialized view that refreshes, but we keep history."
+5. Back to Workflows → Lakeflow Pipelines → show the full DAG. Walk through bronze → silver → gold visually. Click on a node, show data quality metrics.
+6. Azure portal: navigate to gold/health_scores/ — show the Delta files. "Same structure as bronze — Parquet files plus a transaction log. The only difference is what's in them." -->
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 41b: Gold Tables as Data Products                         -->
+<!-- ================================================================ -->
+<section class="slide slide-light texture-dots" aria-label="Slide 41b: Gold Tables as Data Products">
+  <div class="slide-content">
+    <span class="eyebrow">DATA PRODUCTS</span>
+    <h2>Gold Tables Are Data Products</h2>
+    <div class="accent-line"></div>
+    <p class="lead">A data product has an owner, a contract, an SLA, and is discoverable. Your gold tables already have most of this.</p>
+    <div class="card-grid grid-cols-3" style="margin-top: 1.5rem;">
+      <div class="card">
+        <span class="tag lava">CONTRACT</span>
+        <p style="margin-top: 0.5rem;">Schema enforced by pipeline. Quality rules via expectations. Column types are the API.</p>
+      </div>
+      <div class="card">
+        <span class="tag teal">DISCOVERABLE</span>
+        <p style="margin-top: 0.5rem;"><code>COMMENT ON TABLE</code> + column descriptions in Unity Catalog. Searchable by Genie and humans.</p>
+      </div>
+      <div class="card">
+        <span class="tag green">GOVERNED</span>
+        <p style="margin-top: 0.5rem;">UC access controls, lineage from source to dashboard, audit trail via Delta time travel.</p>
+      </div>
+    </div>
+    <div class="callout-box" style="margin-top: 1rem;">
+      <strong>AGL enterprise pattern:</strong> Source-aligned products (bronze/silver per domain) &rarr; Consumer-aligned products (gold for specific audiences). <code>health_scores</code> and <code>revenue_risk</code> are consumer-aligned data products.
+    </div>
+    <span class="slide-footer">41b</span>
+  </div>
+  <!-- NOTES: This maps to AGL's enterprise data products framework. There are three tiers: source-aligned (data as-is from PI, market feeds, etc. — that's our bronze/silver), derived (cross-domain joins — that's our enriched silver), and consumer-aligned (gold tables built for specific audiences). health_scores is a consumer-aligned data product for the operations team. revenue_risk is a consumer-aligned data product for the trading desk. Each has a contract (the schema + expectations), an owner (the pipeline team), and is discoverable via Unity Catalog. The difference from just "tables in a database" is governance: who owns it, what's the quality SLA, who can access it, and what's the lineage back to source. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 41c: Enabling Genie                                       -->
+<!-- ================================================================ -->
+<section class="slide slide-dark dark-bg texture-noise" aria-label="Slide 41c: Enabling Genie">
+  <div class="slide-content">
+    <span class="eyebrow" style="color: var(--db-lava-light);">AI/BI</span>
+    <h2 style="color: white;">What Genie Needs from Your Gold Tables</h2>
+    <div class="accent-line"></div>
+    <div class="grid-wide-narrow" style="margin-top: 1.5rem; align-items: start;">
+      <div>
+        <pre style="font-size: clamp(0.72rem, 0.9vw, 0.85rem);"><code><span class="kw">COMMENT ON TABLE</span> medallion.gold.health_scores
+<span class="kw">IS</span> <span class="str">'Per-asset health score (0-1) using
+z-score anomaly detection on key signals.
+One row per asset. Updated every pipeline run.'</span>;
+
+<span class="kw">COMMENT ON COLUMN</span> health_scores.health_score
+<span class="kw">IS</span> <span class="str">'0 = critical, 1 = healthy.
+Ratio of normal signals to total key signals.'</span>;
+
+<span class="kw">COMMENT ON COLUMN</span> health_scores.primary_risk_tag
+<span class="kw">IS</span> <span class="str">'The signal with highest z-score deviation.
+NULL if all signals are normal.'</span>;</code></pre>
+      </div>
+      <div>
+        <h3 style="color: white; margin-bottom: 1rem;">Genie-ready checklist</h3>
+        <ul style="color: rgba(255,255,255,0.85);">
+          <li><strong style="color: white;">Table + column descriptions</strong> &mdash; Genie reads these to understand your data</li>
+          <li><strong style="color: white;">Clean column names</strong> &mdash; <code>health_score</code> not <code>hs_v3_final</code></li>
+          <li><strong style="color: white;">One entity per table</strong> &mdash; one row per asset, not a wide pivot</li>
+          <li><strong style="color: white;">Consistent types</strong> &mdash; TIMESTAMP not BIGINT, DOUBLE not STRING</li>
+        </ul>
+      </div>
+    </div>
+    <span class="slide-footer" style="color: rgba(255,255,255,0.25);">41c</span>
+  </div>
+  <!-- NOTES: They said they like Genie — this is what makes it work. Genie is only as good as the metadata on your gold tables. It reads table and column descriptions to understand what data means. If your table is called "tbl_hs_v3" with columns "val1" and "val2", Genie can't help anyone. But if it's "health_scores" with a description saying "per-asset health score, 0 to 1, one row per asset" — now an operator can ask "which assets are at risk?" and get an answer. This is where the silver enrichment and UC metadata we built earlier pays off. Clean names, proper types, and descriptions are the difference between "Genie doesn't understand our data" and "Genie just works." The COMMENT ON statements here take 30 seconds to write and unlock natural language access to your entire gold layer. -->
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 42: Section Divider — 8. Putting It All Together         -->
+<!-- ================================================================ -->
+<section class="slide slide-dark dark-bg texture-lines" aria-label="Slide 42: Section 8 — Putting It All Together">
+  <div class="slide-content" style="text-align: center;">
+    <p style="font-size: clamp(1rem, 1.5vw, 1.4rem); font-weight: 500; color: rgba(255,255,255,0.5); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 0.5em;">Section 8</p>
+    <h2 style="color: white; font-size: clamp(2.5rem, 5vw, 4.5rem);">Putting It All Together</h2>
+    <p style="color: rgba(255,255,255,0.6); font-size: clamp(0.9rem, 1.2vw, 1.1rem); margin-top: 0.5em;">10 minutes</p>
+    <!-- NOTES: We've built all three layers. Now let's step back and see the full picture — what we built, what principles guided us, and where to go from here. -->
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 43: The Journey (stagger-fade)                           -->
+<!-- ================================================================ -->
+<section class="slide slide-light" aria-label="Slide 43: The Journey">
+  <div class="slide-content">
+    <span class="eyebrow">FULL PICTURE</span>
+    <h2>The Journey</h2>
+    <div class="accent-line"></div>
+    <div class="card-grid grid-cols-1 stagger-fade" style="margin-top: 1.5em; gap: 0.6em;">
+      <div class="layer-card" style="background: linear-gradient(135deg, rgba(205,127,50,0.08), rgba(205,127,50,0.02)); border-left: 4px solid #CD7F32; padding: 1.2em 1.5em; border-radius: 8px;">
+        <h3 style="color: #CD7F32; margin-bottom: 0.3em;">Bronze: <code>raw_tags</code></h3>
+        <p style="font-size: 0.85em;">2,700 events/sec &bull; microsecond timestamps &bull; packed tag paths &bull; append-only audit trail</p>
+      </div>
+      <div style="text-align: center; color: var(--text-secondary); font-size: 0.8em; padding: 0.2em 0;">&darr; parse &bull; validate &bull; aggregate &bull; enrich &darr;</div>
+      <div class="layer-card" style="background: linear-gradient(135deg, rgba(192,192,192,0.08), rgba(192,192,192,0.02)); border-left: 4px solid #C0C0C0; padding: 1.2em 1.5em; border-radius: 8px;">
+        <h3 style="color: #808080; margin-bottom: 0.3em;">Silver: <code>parsed</code> &rarr; <code>aggregated</code> &rarr; <code>enriched</code></h3>
+        <p style="font-size: 0.85em;">Human-readable timestamps &bull; extracted asset IDs &bull; 1-min windows &bull; quality-validated &bull; 99% volume reduction</p>
+      </div>
+      <div style="text-align: center; color: var(--text-secondary); font-size: 0.8em; padding: 0.2em 0;">&darr; score &bull; join &bull; aggregate &darr;</div>
+      <div class="layer-card" style="background: linear-gradient(135deg, rgba(255,215,0,0.08), rgba(255,215,0,0.02)); border-left: 4px solid #FFD700; padding: 1.2em 1.5em; border-radius: 8px;">
+        <h3 style="color: #B8860B; margin-bottom: 0.3em;">Gold: <code>health_scores</code> &bull; <code>revenue_risk</code></h3>
+        <p style="font-size: 0.85em;">One row per asset &bull; 0&ndash;1 health score &bull; dollars at risk &bull; dashboard- and API-ready</p>
+      </div>
+    </div>
+    <span class="slide-footer">43</span>
+    <!-- NOTES: Let's recap the full journey. We started with 2,700 raw events per second streaming into bronze — messy, packed, microsecond timestamps. Silver parsed, validated, aggregated, and enriched that data — reducing volume by 99% while adding trust and context. Gold produced two tables the business cares about: which assets are healthy and how much money is at risk. Every layer is Delta — Parquet files plus a transaction log. Every table is visible in Azure storage. Every historical version is queryable via time travel. -->
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 44: Design Principles to Remember                        -->
+<!-- ================================================================ -->
+<section class="slide slide-light texture-dots" aria-label="Slide 44: Design Principles to Remember">
+  <div class="slide-content">
+    <span class="eyebrow">DESIGN PRINCIPLES</span>
+    <h2>Principles to Remember</h2>
+    <div class="accent-line"></div>
+    <table style="margin-top: 1.2em; font-size: 0.85em;">
+      <thead>
+        <tr><th>Principle</th><th>What it means</th><th>What we saw</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Schema-on-read &rarr; Schema-on-write</strong></td>
+          <td>Bronze preserves source format; silver enforces types</td>
+          <td>BIGINT &micro;s in bronze &rarr; TIMESTAMP in silver</td>
+        </tr>
+        <tr>
+          <td><strong>13 cleaning operations</strong></td>
+          <td>Silver is systematic, not ad-hoc</td>
+          <td>11 of 13 operations active in our pipeline</td>
+        </tr>
+        <tr>
+          <td><strong>Quarantine, don't discard</strong></td>
+          <td>Bad data goes to a sibling table, not the void</td>
+          <td>DROP today; quarantine table in production</td>
+        </tr>
+        <tr>
+          <td><strong>Separate in silver, integrate in gold</strong></td>
+          <td>Silver stays source-aligned; gold joins across</td>
+          <td>revenue_risk joins health + market + registry</td>
+        </tr>
+        <tr>
+          <td><strong>Match gold to consumer</strong></td>
+          <td>Star schema for BI; MVs for real-time ops</td>
+          <td>health_scores = MV for live dashboard</td>
+        </tr>
+      </tbody>
+    </table>
+    <span class="slide-footer">44</span>
+    <!-- NOTES: These five principles are the "why" behind the architecture we just built. Schema-on-read to schema-on-write is the trust boundary. The 13 cleaning operations give you a checklist so you don't miss anything. Quarantine means bad data is investigated, not lost. Keeping silver source-aligned means one source breaking doesn't contaminate others. And choosing gold patterns based on your consumer — star schema for Power BI analysts, materialized views for operational dashboards — means the architecture serves the user, not the other way around. If you want to go deeper, Piethein Strengholt's O'Reilly book "Building Medallion Architectures" covers all of these in detail with hands-on Azure Databricks examples. -->
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 45: Key Takeaways (DARK)                                 -->
+<!-- ================================================================ -->
+<section class="slide slide-dark dark-bg texture-noise" aria-label="Slide 45: Key Takeaways">
+  <div class="slide-content">
+    <span class="eyebrow">KEY TAKEAWAYS</span>
+    <h2 style="color: white;">Key Takeaways</h2>
+    <div class="accent-line"></div>
+    <ul style="list-style: none; padding: 0; margin: 1.5em 0 0 0; display: flex; flex-direction: column; gap: 1em;">
+      <li style="color: rgba(255,255,255,0.85);"><span class="num-badge">1</span> <strong style="color: white;">It's just files</strong> &mdash; Parquet + transaction log. No proprietary lock-in.</li>
+      <li style="color: rgba(255,255,255,0.85);"><span class="num-badge">2</span> <strong style="color: white;">Each layer has a contract</strong> &mdash; Bronze: complete. Silver: correct. Gold: useful.</li>
+      <li style="color: rgba(255,255,255,0.85);"><span class="num-badge">3</span> <strong style="color: white;">Quality is enforced, not hoped for</strong> &mdash; Expectations validate every row.</li>
+      <li style="color: rgba(255,255,255,0.85);"><span class="num-badge">4</span> <strong style="color: white;">Time travel is built in</strong> &mdash; Every version preserved. Undo, audit, debug.</li>
+      <li style="color: rgba(255,255,255,0.85);"><span class="num-badge">5</span> <strong style="color: white;">The architecture is visible</strong> &mdash; bronze/, silver/, gold/ in your storage. You own it.</li>
+    </ul>
+    <span class="slide-footer" style="color: rgba(255,255,255,0.4);">45</span>
+    <!-- NOTES: Five things to remember from today. First: it's just files. Nothing proprietary. You saw them. Second: each layer has a clear contract, and that's what makes the system maintainable. Third: data quality isn't a hope — it's enforced at every stage with tracked metrics. Fourth: time travel is free with Delta Lake — use it for debugging, auditing, and recovery. Fifth: the whole architecture is visible in your storage account. No mystery. Open your Azure portal and you can see exactly what's happening. -->
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 46: Where to Go from Here                                -->
+<!-- ================================================================ -->
+<section class="slide slide-light" aria-label="Slide 46: Where to Go from Here">
+  <div class="slide-content">
+    <span class="eyebrow">NEXT STEPS</span>
+    <h2>Where to Go from Here</h2>
+    <div class="accent-line"></div>
+    <table style="margin-top: 1.2em; font-size: 0.85em;">
+      <thead>
+        <tr><th>Capability</th><th>What it adds</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>ML Model Scoring</strong></td>
+          <td>Blend z-score health with IsolationForest predictions in gold</td>
+        </tr>
+        <tr>
+          <td><strong>Cross-Domain Fusion</strong></td>
+          <td>Join OT data + weather + market prices in 5-min windows</td>
+        </tr>
+        <tr>
+          <td><strong>AI/BI (Genie)</strong></td>
+          <td>Natural language queries: "which assets are at risk?"</td>
+        </tr>
+        <tr>
+          <td><strong>Delta Sharing</strong></td>
+          <td>Share gold tables with partners &mdash; no data copying</td>
+        </tr>
+        <tr>
+          <td><strong>Metric Views</strong></td>
+          <td>Define metrics once, consume in Power BI / dashboards</td>
+        </tr>
+        <tr>
+          <td><strong>GenAI Evaluations</strong></td>
+          <td>MLflow evaluation framework &mdash; measure model quality, hallucination rates, and response relevance</td>
+        </tr>
+        <tr>
+          <td><strong>GIS / Geospatial</strong></td>
+          <td>H3 spatial indexing on Delta tables &mdash; asset location queries, proximity analysis, spatial joins in gold</td>
+        </tr>
+        <tr>
+          <td><strong>Further Reading</strong></td>
+          <td><em>Building Medallion Architectures</em> by Piethein Strengholt (O&rsquo;Reilly) &mdash; hands-on Azure Databricks examples</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="callout-box" style="margin-top: 0.8em;">
+      The medallion architecture is the foundation. Clean, governed gold tables make every other capability plug in naturally.
+    </div>
+    <span class="slide-footer">46</span>
+    <!-- NOTES: The medallion architecture isn't the end — it's the foundation. Once you have well-structured gold tables, you can layer ML models on top, fuse data from multiple domains, let business users query with natural language via Genie, share data with partners, and define enterprise metrics. We touched on some of these today — the health scoring already uses anomaly detection, and the revenue_risk table fuses sensor data with market data. But each of these is its own deep topic. For today, the key message is: get the medallion foundation right, and everything else follows. -->
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- Slide 47: Closing — Questions?                                 -->
+<!-- ================================================================ -->
+<section class="slide slide-ink dark-bg closing-slide texture-spotlight" aria-label="Slide 47: Questions?">
+  <div class="slide-content" style="text-align: center;">
+    <div style="margin-bottom: 1.5em;">
+      <svg width="72" height="72" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M50 5 L90 28 L50 51 L10 28 Z" fill="#CD7F32" opacity="0.9"/>
+        <path d="M50 25 L90 48 L50 71 L10 48 Z" fill="#C0C0C0" opacity="0.8"/>
+        <path d="M50 45 L90 68 L50 91 L10 68 Z" fill="#FFD700" opacity="0.9"/>
+      </svg>
+    </div>
+    <h1 style="color: white; font-size: clamp(3rem, 6vw, 5rem); margin-bottom: 0.3em;">Questions?</h1>
+    <p style="color: rgba(255,255,255,0.85); font-size: clamp(1rem, 1.5vw, 1.3rem); margin-bottom: 2em;">
+      Bronze &rarr; Silver &rarr; Gold<br>
+      <span style="color: rgba(255,255,255,0.6);">Raw &rarr; Trusted &rarr; Useful</span>
+    </p>
+    <div style="margin-bottom: 2em;">
+      <!-- Databricks wordmark logo — USE ON DARK BACKGROUNDS (Navy, Ink, Black) -->
+      <!-- Diamond icon: Lava (#FF3621), wordmark text: White (#FFFFFF) -->
+      <svg class="db-logo" viewBox="0 0 713 113" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Databricks">
+      <g clip-path="url(#clip0_on_dark)">
+      <path d="M98.9 46.5996L52.3 72.8996L2.4 44.7996L0 46.0996V66.4996L52.3 95.8996L98.9 69.6996V80.4996L52.3 106.8L2.4 78.6996L0 79.9996V83.4996L52.3 112.9L104.5 83.4996V63.0996L102.1 61.7996L52.3 89.7996L5.6 63.5996V52.7996L52.3 78.9996L104.5 49.5996V29.4996L101.9 27.9996L52.3 55.8996L8 31.0996L52.3 6.19961L88.7 26.6996L91.9 24.8996V22.3996L52.3 0.0996094L0 29.4996V32.6996L52.3 62.0996L98.9 35.7996V46.5996Z" fill="#FF3621"/>
+      <path d="M202.2 96.1994V6.39941H188.4V39.9994C188.4 40.4994 188.1 40.8994 187.6 41.0994C187.1 41.2994 186.6 41.0994 186.3 40.7994C181.6 35.2994 174.3 32.1994 166.3 32.1994C149.2 32.1994 135.8 46.5994 135.8 64.9994C135.8 73.9994 138.9 82.2994 144.6 88.3994C150.3 94.4994 158 97.7994 166.3 97.7994C174.2 97.7994 181.5 94.4994 186.3 88.7994C186.6 88.3994 187.2 88.2994 187.6 88.3994C188.1 88.5994 188.4 88.9994 188.4 89.4994V96.1994H202.2ZM169.3 85.2994C158.3 85.2994 149.7 76.3994 149.7 64.9994C149.7 53.5994 158.3 44.6994 169.3 44.6994C180.3 44.6994 188.9 53.5994 188.9 64.9994C188.9 76.3994 180.3 85.2994 169.3 85.2994Z" fill="white"/>
+      <path d="M276 96.0996V33.6996H262.3V39.9996C262.3 40.4996 262 40.8996 261.5 41.0996C261 41.2996 260.5 41.0996 260.2 40.6996C255.6 35.1996 248.4 32.0996 240.2 32.0996C223.1 32.0996 209.7 46.4996 209.7 64.8996C209.7 83.2996 223.1 97.6996 240.2 97.6996C248.1 97.6996 255.4 94.3996 260.2 88.5996C260.5 88.1996 261.1 88.0996 261.5 88.1996C262 88.3996 262.3 88.7996 262.3 89.2996V96.0996H276ZM243.3 85.2996C232.3 85.2996 223.7 76.3996 223.7 64.9996C223.7 53.5996 232.3 44.6996 243.3 44.6996C254.3 44.6996 262.9 53.5996 262.9 64.9996C262.9 76.3996 254.3 85.2996 243.3 85.2996Z" fill="white"/>
+      <path d="M314.4 97.1994C318.8 97.1994 322.7 96.7994 324.9 96.4994V84.4994C323.1 84.6994 319.9 84.8994 318 84.8994C312.4 84.8994 308.1 83.8994 308.1 71.7994V46.0994C308.1 45.3994 308.6 44.8994 309.3 44.8994H322.8V33.5994H309.3C308.6 33.5994 308.1 33.0994 308.1 32.3994V14.3994H294.3V32.4994C294.3 33.1994 293.8 33.6994 293.1 33.6994H283.5V44.9994H293.1C293.8 44.9994 294.3 45.4994 294.3 46.1994V75.2994C294.3 97.1994 308.9 97.1994 314.4 97.1994Z" fill="white"/>
+      <path d="M393.3 96.1996V33.6996H379.6V39.9996C379.6 40.4996 379.3 40.8996 378.8 41.0996C378.3 41.2996 377.8 41.0996 377.5 40.6996C372.9 35.1996 365.7 32.0996 357.5 32.0996C340.3 32.0996 327 46.4996 327 64.9996C327 83.4996 340.4 97.7996 357.5 97.7996C365.4 97.7996 372.7 94.4996 377.5 88.6996C377.8 88.2996 378.4 88.1996 378.8 88.2996C379.3 88.4996 379.6 88.8996 379.6 89.3996V96.1996H393.3ZM360.6 85.2996C349.6 85.2996 341 76.3996 341 64.9996C341 53.5996 349.6 44.6996 360.6 44.6996C371.6 44.6996 380.2 53.5996 380.2 64.9996C380.2 76.3996 371.6 85.2996 360.6 85.2996Z" fill="white"/>
+      <path d="M418.4 88.7994C418.5 88.7994 418.7 88.6994 418.8 88.6994C419.1 88.6994 419.5 88.8994 419.7 89.0994C424.4 94.5994 431.7 97.6994 439.7 97.6994C456.8 97.6994 470.2 83.2994 470.2 64.8994C470.2 55.8994 467.1 47.5994 461.4 41.4994C455.7 35.3994 448 32.0994 439.7 32.0994C431.8 32.0994 424.5 35.3994 419.7 41.0994C419.4 41.4994 418.9 41.5994 418.4 41.4994C417.9 41.2994 417.6 40.8994 417.6 40.3994V6.39941H403.8V96.1994H417.6V89.8994C417.6 89.3994 417.9 88.9994 418.4 88.7994ZM417 64.9994C417 53.5994 425.6 44.6994 436.6 44.6994C447.6 44.6994 456.2 53.5994 456.2 64.9994C456.2 76.3994 447.6 85.2994 436.6 85.2994C425.6 85.2994 417 76.2994 417 64.9994Z" fill="white"/>
+      <path d="M510.1 46.4994C511.4 46.4994 512.6 46.5994 513.4 46.7994V32.5994C512.9 32.4994 512 32.3994 511.1 32.3994C503.9 32.3994 497.3 36.0994 493.8 41.9994C493.5 42.4994 493 42.6994 492.5 42.4994C492 42.3994 491.6 41.8994 491.6 41.3994V33.6994H477.9V96.2994H491.7V68.6994C491.7 54.9994 498.7 46.4994 510.1 46.4994Z" fill="white"/>
+      <path d="M536.1 33.6992H522.1V96.2992H536.1V33.6992Z" fill="white"/>
+      <path d="M528.9 6.49902C524.2 6.49902 520.4 10.299 520.4 14.999C520.4 19.699 524.2 23.499 528.9 23.499C533.6 23.499 537.4 19.699 537.4 14.999C537.4 10.299 533.6 6.49902 528.9 6.49902Z" fill="white"/>
+      <path d="M577.1 32.0996C557.9 32.0996 544 45.8996 544 64.9996C544 74.2996 547.3 82.5996 553.2 88.5996C559.2 94.5996 567.6 97.8996 577 97.8996C584.8 97.8996 590.8 96.3996 602.2 87.9996L594.3 79.6996C588.7 83.3996 583.5 85.1996 578.4 85.1996C566.8 85.1996 558.1 76.4996 558.1 64.9996C558.1 53.4996 566.8 44.7996 578.4 44.7996C583.9 44.7996 589 46.5996 594.1 50.2996L602.9 41.9996C592.6 33.1996 583.3 32.0996 577.1 32.0996Z" fill="white"/>
+      <path d="M626.5 68.699C626.7 68.499 627 68.399 627.3 68.399H627.4C627.7 68.399 628 68.599 628.3 68.799L650.4 96.199H667.4L638.8 61.599C638.4 61.099 638.4 60.399 638.9 59.999L665.2 33.699H648.3L625.6 56.499C625.3 56.799 624.8 56.899 624.3 56.799C623.9 56.599 623.6 56.199 623.6 55.699V6.49902H609.7V96.299H623.5V71.899C623.5 71.599 623.6 71.199 623.9 70.999L626.5 68.699Z" fill="white"/>
+      <path d="M689.9 97.799C701.2 97.799 712.7 90.899 712.7 77.799C712.7 69.199 707.3 63.299 696.3 59.699L688.8 57.199C683.7 55.499 681.3 53.099 681.3 49.799C681.3 45.999 684.7 43.399 689.5 43.399C694.1 43.399 698.2 46.399 700.8 51.599L711.9 45.599C707.8 37.199 699.3 31.999 689.5 31.999C677.1 31.999 668.1 39.999 668.1 50.899C668.1 59.599 673.3 65.399 684 68.799L691.7 71.299C697.1 72.999 699.4 75.199 699.4 78.699C699.4 83.999 694.5 85.899 690.3 85.899C684.7 85.899 679.7 82.299 677.3 76.399L666 82.399C669.7 91.899 678.8 97.799 689.9 97.799Z" fill="white"/>
+      </g>
+      <defs><clipPath id="clip0_on_dark"><rect width="712.8" height="113" fill="white"/></clipPath></defs>
+      </svg>
+    </div>
+    <p style="font-size: 0.75em; color: rgba(255,255,255,0.5);">
+      Slides + demo code available in the workshop repository
+    </p>
+    <!-- NOTES: Thank you for your time today. We covered a lot of ground — from raw sensor events to business-ready gold tables. The medallion architecture gives you a clear, repeatable pattern for turning messy operational data into trusted, governed analytics. All the code, slides, and demo scripts are in the workshop repository. I'm happy to take any questions. -->
+  </div>
+</section>
+
+  <script>
+    class SlidePresentation {
+      constructor() {
+        this.slides = document.querySelectorAll('.slide');
+        this.progressBar = document.querySelector('.progress-bar');
+        this.navDots = document.querySelector('.nav-dots');
+        this.currentSlide = 0;
+        this.init();
+      }
+      init() { this.createNavDots(); this.setupIntersectionObserver(); this.setupKeyboardNav(); this.setupTouchNav(); this.setupWheelNav(); this.updateProgress(); }
+      createNavDots() { this.slides.forEach((_, i) => { const dot = document.createElement('button'); dot.className = 'nav-dot' + (i === 0 ? ' active' : ''); dot.setAttribute('aria-label', `Go to slide ${i + 1}`); dot.addEventListener('click', () => this.goToSlide(i)); this.navDots.appendChild(dot); }); }
+      setupIntersectionObserver() { const observer = new IntersectionObserver((entries) => { entries.forEach(entry => { if (entry.isIntersecting) { entry.target.classList.add('visible'); const index = [...this.slides].indexOf(entry.target); this.currentSlide = index; this.updateDots(); this.updateProgress(); this.animateCounters(entry.target); } }); }, { threshold: 0.5 }); this.slides.forEach(slide => observer.observe(slide)); }
+      animateCounters(slide) { slide.querySelectorAll('.counter-value[data-target]:not(.counted)').forEach(el => { el.classList.add('counted'); const target = parseInt(el.dataset.target); const suffix = el.dataset.suffix || ''; const prefix = el.dataset.prefix || ''; const duration = 1500; const start = performance.now(); const animate = (now) => { const progress = Math.min((now - start) / duration, 1); const eased = 1 - Math.pow(1 - progress, 3); el.textContent = prefix + Math.round(target * eased).toLocaleString() + suffix; if (progress < 1) requestAnimationFrame(animate); }; requestAnimationFrame(animate); }); }
+      setupKeyboardNav() { document.addEventListener('keydown', (e) => { if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); this.goToSlide(this.currentSlide + 1); } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); this.goToSlide(this.currentSlide - 1); } }); }
+      setupTouchNav() { let startY = 0; document.addEventListener('touchstart', (e) => { startY = e.touches[0].clientY; }, { passive: true }); document.addEventListener('touchend', (e) => { const diff = startY - e.changedTouches[0].clientY; if (Math.abs(diff) > 50) { this.goToSlide(this.currentSlide + (diff > 0 ? 1 : -1)); } }, { passive: true }); }
+      setupWheelNav() { let lastScroll = 0; document.addEventListener('wheel', (e) => { const now = Date.now(); if (now - lastScroll < 800) return; lastScroll = now; this.goToSlide(this.currentSlide + (e.deltaY > 0 ? 1 : -1)); }, { passive: true }); }
+      goToSlide(index) { const target = Math.max(0, Math.min(index, this.slides.length - 1)); this.slides[target].scrollIntoView({ behavior: 'instant' }); }
+      updateDots() { this.navDots.querySelectorAll('.nav-dot').forEach((dot, i) => { dot.classList.toggle('active', i === this.currentSlide); }); }
+      updateProgress() { const pct = ((this.currentSlide + 1) / this.slides.length) * 100; this.progressBar.style.width = pct + '%'; this.progressBar.setAttribute('aria-valuenow', Math.round(pct)); }
+    }
+    new SlidePresentation();
+  </script>
+</body>
+</html>

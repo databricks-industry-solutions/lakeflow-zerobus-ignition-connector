@@ -1,4 +1,5 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usePolling } from '../hooks/usePolling';
 import { api } from '../services/api';
 import type { HealthScoreRow, RevenueRiskRow, RevenueSummary } from '../services/api';
@@ -6,12 +7,12 @@ import BigNumberCard from '../components/BigNumberCard';
 import { formatNumber } from '../utils/format';
 
 const VALUE_PROP =
-  'Which assets are at risk, and how much revenue could we lose if they trip during the next high-price NEM window?';
+  'Which assets are at risk, and how much revenue could we lose if they trip during the next high-price market window?';
 
 function formatDateTime(ts: string | null | undefined): string {
   if (ts == null) return '-';
   const d = new Date(ts);
-  return d.toLocaleString('en-AU', {
+  return d.toLocaleString('en-US', {
     dateStyle: 'short',
     timeStyle: 'short',
   });
@@ -24,7 +25,14 @@ function healthColor(score: number | null | undefined): string {
   return 'text-brand-red';
 }
 
+function toLocalInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function Analytics() {
+  const navigate = useNavigate();
+
   const summaryFetcher = useCallback(
     () => api.getRevenueSummary().then((r) => r.data),
     [],
@@ -50,6 +58,54 @@ export default function Analytics() {
     fetcher: riskFetcher,
     intervalMs: 10000,
   });
+
+  // Fleet Snapshot state
+  const [snapshotTimestamp, setSnapshotTimestamp] = useState(
+    toLocalInput(new Date(Date.now() - 2 * 60 * 60 * 1000)),
+  );
+  const [snapshotData, setSnapshotData] = useState<HealthScoreRow[] | null>(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
+  const [showCompare, setShowCompare] = useState(false);
+  const [showSql, setShowSql] = useState(false);
+
+  const snapshotSql = `SELECT scored_at, asset_id, health_score, primary_risk_tag,
+       risk_description, anomaly_tags, estimated_hours_to_failure
+FROM catalog.schema.health_score_history
+WHERE scored_at <= '${new Date(snapshotTimestamp).toISOString()}'
+QUALIFY ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY scored_at DESC) = 1
+ORDER BY health_score ASC
+
+-- health_score_history is an append-only streaming table.
+-- Each pipeline refresh appends a new snapshot of scores.
+-- QUALIFY ROW_NUMBER picks the latest score per asset before the requested time.`;
+
+  async function handleShowSnapshot() {
+    setSnapshotLoading(true);
+    setSnapshotError(null);
+    try {
+      const ts = new Date(snapshotTimestamp).toISOString();
+      const res = await api.getFleetSnapshot(ts);
+      setSnapshotData(res.data);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('404') || msg.includes('vacuum')) {
+        setSnapshotError('No data available for this timestamp. Delta Lake history may have been vacuumed. Default retention is 30 days.');
+      } else {
+        setSnapshotError(msg);
+      }
+      setSnapshotData(null);
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }
+
+  function handleInvestigate(row: HealthScoreRow) {
+    const scoredAt = new Date(row.scored_at);
+    const from = new Date(scoredAt.getTime() - 30 * 60 * 1000).toISOString();
+    const to = new Date(scoredAt.getTime() + 30 * 60 * 1000).toISOString();
+    navigate(`/assets/${row.asset_id}?from=${from}&to=${to}&event_time=${scoredAt.toISOString()}`);
+  }
 
   const assetsAtRisk = summary?.assets_at_risk ?? 0;
   const totalAtRisk = summary?.total_revenue_at_risk_aud ?? 0;
@@ -77,7 +133,7 @@ export default function Analytics() {
         <BigNumberCard
           label="Total revenue at risk"
           value={totalAtRisk > 0 ? `$${formatNumber(totalAtRisk, 0)}` : '$0'}
-          subtitle="AUD (upcoming high-price windows)"
+          subtitle="$ (upcoming high-price windows)"
           colorClass={totalAtRisk > 0 ? 'text-brand-amber' : 'text-brand-green'}
           accent={totalAtRisk > 0 ? 'warning' : 'success'}
         />
@@ -100,6 +156,102 @@ export default function Analytics() {
         />
       </div>
 
+      {/* Fleet Snapshot (Time Travel) */}
+      <section className="mb-8">
+        <h3 className="font-heading text-lg font-semibold text-gray-700 mb-3">Fleet Snapshot (Point-in-Time)</h3>
+        <div className="border border-gray-200 rounded-card bg-surface-card shadow-card p-4">
+          <div className="flex items-center gap-4 mb-4 flex-wrap">
+            <label className="text-sm text-gray-600">
+              Show fleet state at
+              <input
+                type="datetime-local"
+                aria-label="Snapshot timestamp"
+                value={snapshotTimestamp}
+                onChange={(e) => setSnapshotTimestamp(e.target.value)}
+                className="ml-2 border border-gray-300 rounded px-2 py-1 text-sm"
+              />
+            </label>
+            <button
+              onClick={handleShowSnapshot}
+              disabled={snapshotLoading}
+              className="px-4 py-1.5 bg-databricks-primary text-white rounded text-sm disabled:opacity-50"
+            >
+              {snapshotLoading ? 'Loading...' : 'Show snapshot'}
+            </button>
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={showCompare}
+                onChange={(e) => setShowCompare(e.target.checked)}
+                className="rounded"
+              />
+              Compare (then vs now)
+            </label>
+          </div>
+
+          {snapshotError && (
+            <div className="bg-red-50 border border-red-200 rounded p-3 mb-4 text-sm text-red-800">
+              {snapshotError}
+            </div>
+          )}
+
+          {snapshotData && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-left text-gray-700 border-b-2 border-gray-200">
+                    <th className="px-4 py-2 font-semibold">Asset</th>
+                    <th className="px-4 py-2 font-semibold">Health (snapshot)</th>
+                    {showCompare && <th className="px-4 py-2 font-semibold">Health (now)</th>}
+                    <th className="px-4 py-2 font-semibold">Primary risk tag</th>
+                    <th className="px-4 py-2 font-semibold">Risk description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {snapshotData.map((row) => {
+                    const currentRow = (healthScores ?? []).find((h) => h.asset_id === row.asset_id);
+                    const delta = currentRow
+                      ? Math.abs((currentRow.health_score ?? 0) - (row.health_score ?? 0))
+                      : 0;
+                    const highlight = showCompare && delta > 0.1;
+                    return (
+                      <tr key={row.asset_id} className="border-t border-gray-200">
+                        <td className="px-4 py-2 font-mono text-gray-700">{row.asset_id}</td>
+                        <td className={`px-4 py-2 font-semibold ${healthColor(row.health_score)} ${highlight ? 'bg-yellow-100' : ''}`}>
+                          {formatNumber(row.health_score, 2)}
+                        </td>
+                        {showCompare && (
+                          <td className={`px-4 py-2 font-semibold ${healthColor(currentRow?.health_score)} ${highlight ? 'bg-yellow-100' : ''}`}>
+                            {currentRow ? formatNumber(currentRow.health_score, 2) : '-'}
+                          </td>
+                        )}
+                        <td className="px-4 py-2 text-gray-600">{row.primary_risk_tag ?? '-'}</td>
+                        <td className="px-4 py-2 text-gray-600 max-w-md truncate">{row.risk_description ?? '-'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Show SQL collapsible */}
+          <div className="mt-3">
+            <button
+              onClick={() => setShowSql(!showSql)}
+              className="text-sm text-databricks-primary hover:underline"
+            >
+              {showSql ? 'Hide SQL' : 'Show SQL'}
+            </button>
+            {showSql && (
+              <pre className="mt-2 bg-gray-900 text-gray-100 rounded p-3 text-xs overflow-x-auto">
+                {snapshotSql}
+              </pre>
+            )}
+          </div>
+        </div>
+      </section>
+
       {/* Health by asset */}
       <section className="mb-8">
         <h3 className="font-heading text-lg font-semibold text-gray-700 mb-3">Health by asset</h3>
@@ -111,12 +263,13 @@ export default function Analytics() {
                 <th className="px-4 py-3 font-semibold">Health</th>
                 <th className="px-4 py-3 font-semibold">Primary risk tag</th>
                 <th className="px-4 py-3 font-semibold">Risk description</th>
+                <th className="px-4 py-3 font-semibold">Investigate</th>
               </tr>
             </thead>
             <tbody>
               {(healthScores ?? []).length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-gray-500">
+                  <td colSpan={5} className="px-4 py-6 text-center text-gray-500">
                     No health scores yet. Run the pipeline and ensure enriched_tags and
                     silver_asset_registry are populated.
                   </td>
@@ -131,6 +284,14 @@ export default function Analytics() {
                     <td className="px-4 py-3 text-gray-600">{row.primary_risk_tag ?? '-'}</td>
                     <td className="px-4 py-3 text-gray-600 max-w-md truncate">
                       {row.risk_description ?? '-'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleInvestigate(row)}
+                        className="px-3 py-1 text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 rounded"
+                      >
+                        Investigate
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -153,7 +314,7 @@ export default function Analytics() {
                 <th className="px-4 py-3 font-semibold">Capacity MW</th>
                 <th className="px-4 py-3 font-semibold">Health</th>
                 <th className="px-4 py-3 font-semibold">Trip prob.</th>
-                <th className="px-4 py-3 font-semibold">Revenue at risk (AUD)</th>
+                <th className="px-4 py-3 font-semibold">Revenue at risk ($)</th>
                 <th className="px-4 py-3 font-semibold">Recommended action</th>
               </tr>
             </thead>
@@ -173,7 +334,7 @@ export default function Analytics() {
                   >
                     <td className="px-4 py-3 font-mono text-gray-700">{row.asset_id}</td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                      {formatDateTime(row.risk_window_start)} → {formatDateTime(row.risk_window_end)}
+                      {formatDateTime(row.risk_window_start)} &rarr; {formatDateTime(row.risk_window_end)}
                     </td>
                     <td className="px-4 py-3 text-gray-700">
                       {formatNumber(row.forecast_price_aud_mwh, 0)}

@@ -1,5 +1,6 @@
 package com.example.ignition.zerobus;
 
+import com.example.ignition.zerobus.history.ZerobusHistorianExtensionPoint;
 import com.example.ignition.zerobus.web.ZerobusConfigResourceHolder;
 import com.example.ignition.zerobus.web.ZerobusConfigServlet;
 import com.example.ignition.zerobus.web.TagEventPayload;
@@ -14,6 +15,8 @@ import com.inductiveautomation.ignition.gateway.web.systemjs.SystemJsModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -36,6 +39,7 @@ public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements Z
     private ConfigModel configModel;
     private ZerobusConfigResource restResource;
     private final AtomicBoolean restartInProgress = new AtomicBoolean(false);
+    private ZerobusHistorianExtensionPoint historianExtensionPoint;
 
     // 8.3 web-ui module registration
     private static final String MOUNT_ALIAS = "zerobus";
@@ -94,6 +98,8 @@ public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements Z
         } catch (Throwable t) {
             logger.error("Failed to register 8.3 navigation entry", t);
         }
+
+        // TagHistoryProvider registration is handled via getExtensionPoints().
     }
 
     @Override
@@ -119,6 +125,7 @@ public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements Z
     public void shutdown() {
         logger.info("Shutting down Zerobus Gateway Module (8.3)...");
         try {
+            // Historian extension point lifecycle is managed by Ignition's extension system.
             if (tagSubscriptionService != null) {
                 tagSubscriptionService.shutdown();
                 tagSubscriptionService = null;
@@ -143,6 +150,15 @@ public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements Z
     public Optional<String> getMountedResourceFolder() {
         // Serves resources under src/main/resources/mounted/** at /res/<alias>/**
         return Optional.of("mounted");
+    }
+
+    @Override
+    public List<? extends com.inductiveautomation.ignition.gateway.config.ExtensionPoint<?>> getExtensionPoints() {
+        if (configModel != null && configModel.isEnableTagHistoryProvider()) {
+            historianExtensionPoint = new ZerobusHistorianExtensionPoint(configModel);
+            return Collections.singletonList(historianExtensionPoint);
+        }
+        return Collections.emptyList();
     }
 
     // ---- Internal helpers (copied from 8.1 hook with no Wicket dependencies) ----

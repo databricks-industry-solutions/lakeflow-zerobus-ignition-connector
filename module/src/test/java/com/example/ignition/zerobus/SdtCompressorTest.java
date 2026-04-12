@@ -98,5 +98,44 @@ public class SdtCompressorTest {
         SdtCompressor.Outcome o = s.offer(te(path, 10.0, 1500L), dev, maxInterval, minInterval);
         assertNotNull(o);
     }
+
+    @Test
+    void countersAndRatioPctTrackPerTagState() {
+        SdtCompressor.State s = new SdtCompressor.State();
+        String path = "tagA";
+        double dev = 1.0;
+
+        assertEquals(0.0, s.getCompressionRatioPct(), 1e-9);
+
+        // First sample emits, next two stay in the SDT corridor and are suppressed.
+        assertNotNull(s.offer(te(path, 0.0, 0L), dev, 0, 0).emit);
+        assertNull(s.offer(te(path, 0.2, 1000L), dev, 0, 0).emit);
+        assertNull(s.offer(te(path, 0.4, 2000L), dev, 0, 0).emit);
+
+        assertEquals(3L, s.getReceivedCount());
+        assertEquals(1L, s.getEmittedCount());
+        assertEquals(2L, s.getSuppressedCount());
+        assertEquals(66.6667, s.getCompressionRatioPct(), 1e-3);
+    }
+
+    @Test
+    void independentStatesMaintainIndependentRatios() {
+        SdtCompressor.State steadyTag = new SdtCompressor.State();
+        SdtCompressor.State forcedTag = new SdtCompressor.State();
+
+        // Steady tag: one emit, two suppressions.
+        assertNotNull(steadyTag.offer(te("steady", 0.0, 0L), 1.0, 0, 0).emit);
+        assertNull(steadyTag.offer(te("steady", 0.2, 1000L), 1.0, 0, 0).emit);
+        assertNull(steadyTag.offer(te("steady", 0.4, 2000L), 1.0, 0, 0).emit);
+
+        // Forced tag: emits at start and again due to max interval.
+        assertNotNull(forcedTag.offer(te("forced", 5.0, 0L), 1.0, 1000L, 0).emit);
+        assertNotNull(forcedTag.offer(te("forced", 5.0, 1000L), 1.0, 1000L, 0).emit);
+
+        assertEquals(66.6667, steadyTag.getCompressionRatioPct(), 1e-3);
+        assertEquals(0.0, forcedTag.getCompressionRatioPct(), 1e-9);
+        assertEquals(3L, steadyTag.getReceivedCount());
+        assertEquals(2L, forcedTag.getReceivedCount());
+    }
 }
 

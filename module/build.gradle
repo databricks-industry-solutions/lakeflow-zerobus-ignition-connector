@@ -42,7 +42,7 @@ java {
 
 repositories {
     mavenCentral()
-    
+
     // Inductive Automation Repository
     maven {
         url = "https://nexus.inductiveautomation.com/repository/public"
@@ -79,6 +79,10 @@ dependencies {
     compileOnly files("${ignitionHome}/lib/core/gateway/gateway-web-${buildForIgnitionVersion}.jar")
     compileOnly files("${ignitionHome}/lib/core/gateway/gateway-${buildForIgnitionVersion}.jar")
     compileOnly files("${ignitionHome}/lib/core/gateway/simple-orm-${buildForIgnitionVersion}.jar")
+
+    // Historian Gateway API (TagHistoryProvider, LegacyTagHistoryProviderAdapter)
+    // Extracted from Historian-module.modl; provided by Ignition at runtime.
+    compileOnly fileTree(dir: "${ignitionHome}/lib/core/gateway", include: 'historian-gateway-api-*.jar')
 
     // Apache Wicket - for Gateway web UI components
     compileOnly fileTree(dir: "${ignitionHome}/lib/core/gateway", include: 'wicket-*.jar')

@@ -27,13 +27,12 @@ const mockLayers = [
 ];
 
 describe('CompressionWaterfall', () => {
-  it('renders 4 layers with labels', () => {
+  it('renders 3 visible layers with labels', () => {
     render(<CompressionWaterfall layers={mockLayers} />);
 
-    expect(screen.getByText('Raw')).toBeInTheDocument();
-    expect(screen.getByText('After SDT')).toBeInTheDocument();
-    expect(screen.getByText('Delta Lake (ZSTD)')).toBeInTheDocument();
-    expect(screen.getByText('Combined')).toBeInTheDocument();
+    expect(screen.getAllByText('Raw (uncompressed)').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('After SDT').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('On disk (Delta + ZSTD)').length).toBeGreaterThan(0);
     expect(screen.getByTestId('bar-chart')).toBeInTheDocument();
   });
 

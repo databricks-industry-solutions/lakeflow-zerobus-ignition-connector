@@ -53,6 +53,10 @@ def _run_json(cmd: list[str], env: dict[str, str]) -> dict:
     text = proc.stdout.strip()
     if not text:
         return {}
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return {}
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -66,10 +70,43 @@ def _read_env_file(path: Path) -> dict[str, str]:
         k, v = stripped.split("=", 1)
         values[k.strip()] = v.strip()
     return values
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return {}
+
+
+def _autogenerate_admin_credential(*, profile: str, host: str | None, instance_name: str) -> tuple[str, str]:
+    env = os.environ.copy()
+    env["DATABRICKS_CONFIG_PROFILE"] = profile
+    if host:
+        env["DATABRICKS_HOST"] = host
+
+    me = _run_json(["databricks", "current-user", "me", "-o", "json"], env)
+    user = me.get("userName")
+    if not user:
+        emails = me.get("emails") or []
+        for e in emails:
+            if isinstance(e, dict) and e.get("value"):
+                user = e["value"]
+                break
+    if not user:
+        raise RuntimeError("Could not resolve current workspace user for generated Lakebase credential")
+
+    cred_req = json.dumps({"instance_names": [instance_name]})
+    cred = _run_json(
+        [
+            "databricks",
+            "database",
+            "generate-database-credential",
+            "--json",
+            cred_req,
+            "-o",
+            "json",
+        ],
+        env,
+    )
+    token = cred.get("token")
+    if not token:
+        raise RuntimeError("Generated Lakebase credential response did not include a token")
+
+    return user, token
 
 
 def _resolve_instance_host(instance: dict) -> str | None:
@@ -182,8 +219,26 @@ def main() -> int:
     args = p.parse_args()
 
     if not args.admin_user or not args.admin_password:
-        print("✘ Missing Lakebase admin credentials: set LAKEBASE_USER and LAKEBASE_PASSWORD", file=sys.stderr)
-        return 1
+        print(
+            "▸ LAKEBASE_USER/LAKEBASE_PASSWORD not set; generating short-lived admin credential from Databricks profile..."
+        )
+        try:
+            auto_user, auto_password = _autogenerate_admin_credential(
+                profile=args.databricks_profile,
+                host=args.databricks_host or None,
+                instance_name=args.instance_name,
+            )
+            args.admin_user = auto_user
+            args.admin_password = auto_password
+            print(f"  Using generated credential for: {args.admin_user}")
+        except Exception as e:
+            print(
+                "✘ Missing Lakebase admin credentials and auto-generation failed. "
+                "Set LAKEBASE_USER and LAKEBASE_PASSWORD explicitly.",
+                file=sys.stderr,
+            )
+            print(f"  Reason: {e}", file=sys.stderr)
+            return 1
 
     connector_sp_app_id = args.connector_sp_application_id or _read_profile_client_id(args.connector_sp_profile)
     if not connector_sp_app_id:
@@ -279,6 +334,15 @@ def main() -> int:
                 args.schema,
                 args.warehouse_id,
             )
+            if app_sp_app_id:
+                print(f"▸ Applying UC grants for app SP on {args.catalog}.{args.schema}")
+                run_uc_grants(
+                    w,
+                    app_sp_app_id,
+                    args.catalog,
+                    args.schema,
+                    args.warehouse_id,
+                )
         else:
             print("WARN: DATABRICKS_WAREHOUSE_ID not set; skipped UC grants")
     finally:

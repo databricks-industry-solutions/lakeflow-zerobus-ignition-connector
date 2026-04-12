@@ -1,5 +1,5 @@
 {
-  "name": "agl-demo",
+  "name": "ot-demo",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
     "build": "vite build frontend",
     "dev": "vite frontend",
     "typecheck": "tsc -b frontend",
-    "lint": "eslint frontend/src/",
+    "lint": "eslint --config frontend/eslint.config.js frontend/src/",
     "test": "vitest --root frontend"
   },
   "dependencies": {
@@ -25,9 +25,15 @@
     "vite": "^6.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.3",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "eslint": "^9.39.3",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.26",
+    "globals": "^16.5.0",
     "jsdom": "^28.1.0",
+    "typescript-eslint": "^8.56.1",
     "vitest": "^4.0.18"
   }
 }

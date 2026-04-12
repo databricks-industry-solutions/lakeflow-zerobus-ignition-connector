@@ -17,6 +17,7 @@ vi.mock('recharts', () => ({
   CartesianGrid: () => <div />,
   Tooltip: () => <div />,
   Legend: () => <div />,
+  ReferenceLine: () => <div />,
 }));
 
 vi.mock('../../services/api', () => ({
@@ -32,6 +33,8 @@ vi.mock('../../services/api', () => ({
       },
     }),
     getAssetTags: vi.fn().mockResolvedValue({ data: [] }),
+    exportAssetTagsCsv: vi.fn().mockResolvedValue(undefined),
+    getForensics: vi.fn().mockResolvedValue({ data: [] }),
   },
 }));
 
@@ -49,10 +52,10 @@ describe('AssetDetail page', () => {
       </MemoryRouter>,
     );
 
-    // Time range controls are always present
-    expect(screen.getByText('5 min')).toBeInTheDocument();
-    expect(screen.getByText('15 min')).toBeInTheDocument();
-    expect(screen.getByText('1 hour')).toBeInTheDocument();
+    // Time range controls are always present (TimeRangeSelector presets)
+    expect(screen.getByText('5m')).toBeInTheDocument();
+    expect(screen.getByText('15m')).toBeInTheDocument();
+    expect(screen.getByText('1h')).toBeInTheDocument();
 
     // Raw vs compressed toggle
     expect(screen.getByText('Show raw vs compressed')).toBeInTheDocument();

@@ -41,11 +41,24 @@ final class SdtCompressor {
         private double upperSlope;
 
         private long lastEmitTimeMs;
+        private long receivedCount;
+        private long emittedCount;
+        private long suppressedCount;
+
+        private Outcome recordOutcome(TagEvent emit, boolean forcedByMaxInterval, boolean resetDueToOutOfOrder) {
+            if (emit != null) {
+                emittedCount++;
+            } else {
+                suppressedCount++;
+            }
+            return new Outcome(emit, forcedByMaxInterval, resetDueToOutOfOrder);
+        }
 
         synchronized Outcome offer(TagEvent current, double deviation, long maxIntervalMs, long minIntervalMs) {
             if (current == null || !(current.getValue() instanceof Number)) {
                 return new Outcome(null, false, false);
             }
+            receivedCount++;
 
             long t = (current.getTimestamp() != null) ? current.getTimestamp().getTime() : System.currentTimeMillis();
             double v = ((Number) current.getValue()).doubleValue();
@@ -61,7 +74,7 @@ final class SdtCompressor {
                 lowerSlope = Double.NEGATIVE_INFINITY;
                 upperSlope = Double.POSITIVE_INFINITY;
                 lastEmitTimeMs = t;
-                return new Outcome(current, false, false);
+                return recordOutcome(current, false, false);
             }
 
             // Out-of-order timestamps: reset and emit current to keep monotonic archive semantics.
@@ -74,7 +87,7 @@ final class SdtCompressor {
                 lowerSlope = Double.NEGATIVE_INFINITY;
                 upperSlope = Double.POSITIVE_INFINITY;
                 lastEmitTimeMs = t;
-                return new Outcome(current, false, true);
+                return recordOutcome(current, false, true);
             }
 
             // Min-interval suppression (CompMin): don't emit anything too soon after the last emit.
@@ -83,7 +96,7 @@ final class SdtCompressor {
                 prevTimeMs = t;
                 prevValue = v;
                 prevQuality = q;
-                return new Outcome(null, false, false);
+                return recordOutcome(null, false, false);
             }
 
             // Max-interval forcing: emit current and reset door.
@@ -96,7 +109,7 @@ final class SdtCompressor {
                 lowerSlope = Double.NEGATIVE_INFINITY;
                 upperSlope = Double.POSITIVE_INFINITY;
                 lastEmitTimeMs = t;
-                return new Outcome(current, true, false);
+                return recordOutcome(current, true, false);
             }
 
             long dt = t - anchorTimeMs;
@@ -109,7 +122,7 @@ final class SdtCompressor {
                 lowerSlope = Double.NEGATIVE_INFINITY;
                 upperSlope = Double.POSITIVE_INFINITY;
                 lastEmitTimeMs = t;
-                return new Outcome(current, false, true);
+                return recordOutcome(current, false, true);
             }
 
             double sLow = (v - anchorValue - deviation) / (double) dt;
@@ -147,13 +160,32 @@ final class SdtCompressor {
                     upperSlope = Math.min(upperSlope, sHigh2);
                 }
 
-                return new Outcome(closing, false, false);
+                return recordOutcome(closing, false, false);
             }
 
             prevTimeMs = t;
             prevValue = v;
             prevQuality = q;
-            return new Outcome(null, false, false);
+            return recordOutcome(null, false, false);
+        }
+
+        synchronized long getReceivedCount() {
+            return receivedCount;
+        }
+
+        synchronized long getEmittedCount() {
+            return emittedCount;
+        }
+
+        synchronized long getSuppressedCount() {
+            return suppressedCount;
+        }
+
+        synchronized double getCompressionRatioPct() {
+            if (receivedCount <= 0L) {
+                return 0.0;
+            }
+            return (double) suppressedCount * 100.0 / (double) receivedCount;
         }
     }
 }

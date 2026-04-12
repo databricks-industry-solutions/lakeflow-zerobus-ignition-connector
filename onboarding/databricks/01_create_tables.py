@@ -15,7 +15,7 @@
 
 # === EDIT THESE ===
 CATALOG = "ignition_demo"
-SCHEMA = "tilt_ot"
+SCHEMA = "ot"
 BRONZE_TABLE = "ot_events_bronze"
 
 # Service Principal UUID (not clientId). Example: "6ff2b11b-fdb8-4c2c-9360-ed105d5f6dcb"
@@ -47,11 +47,7 @@ CREATE TABLE IF NOT EXISTS {FULL_BRONZE} (
   ingestion_timestamp BIGINT,
   data_type STRING,
   alarm_state STRING,
-  alarm_priority INT,
-  sdt_compressed BOOLEAN,
-  compression_ratio DOUBLE,
-  sdt_enabled BOOLEAN,
-  batch_bytes_sent BIGINT
+  alarm_priority INT
 )
 USING DELTA
 TBLPROPERTIES (

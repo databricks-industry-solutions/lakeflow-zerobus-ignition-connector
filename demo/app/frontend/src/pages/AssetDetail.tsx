@@ -1,5 +1,5 @@
-import { useState, useCallback, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useState, useCallback, useMemo } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
 import {
   LineChart,
   Line,
@@ -9,28 +9,39 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
-} from 'recharts';
-import { usePolling } from '../hooks/usePolling';
-import { api } from '../services/api';
-import type { Asset, TagHistory } from '../services/api';
-import { qualityLabel, formatNumber, formatTimestamp } from '../utils/format';
+  ReferenceLine,
+} from "recharts";
+import { usePolling } from "../hooks/usePolling";
+import { api } from "../services/api";
+import type { Asset, TagHistory } from "../services/api";
+import { qualityLabel, formatNumber, formatTimestamp } from "../utils/format";
+import TimeRangeSelector from "../components/TimeRangeSelector";
+import type { TimeRange } from "../components/TimeRangeSelector";
 
 const WIND_TAGS = [
-  'generator/power_kw',
-  'rotor/wind_speed_ms',
-  'nacelle/temperature_c',
-  'grid/frequency_hz',
+  "generator/power_kw",
+  "rotor/wind_speed_ms",
+  "nacelle/temperature_c",
+  "grid/frequency_hz",
 ];
 const BESS_TAGS = [
-  'battery/soc_pct',
-  'battery/charge_rate_kw',
-  'battery/temperature_c',
-  'inverter/power_kw',
+  "telemetry/soc_pct",
+  "telemetry/activepower_mw",
+  "thermal/maxracktemp_c",
+  "telemetry/frequency_hz",
 ];
 
-const CHART_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
+const CHART_COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444"];
 
-type TimeRange = 5 | 15 | 60;
+const PRESET_MINUTES: Record<string, number> = {
+  "5m": 5,
+  "15m": 15,
+  "1h": 60,
+  "6h": 360,
+  "24h": 1440,
+  "7d": 10080,
+  "30d": 43200,
+};
 
 function ChartSkeleton() {
   return (
@@ -58,9 +69,50 @@ function TableSkeleton() {
 }
 
 export default function AssetDetail() {
-  const { id } = useParams<{ id: string }>();
-  const [range, setRange] = useState<TimeRange>(5);
+  const params = useParams<{ id: string; assetId: string }>();
+  const id = params.id ?? params.assetId;
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showRaw, setShowRaw] = useState(false);
+
+  // Read initial time range from URL params
+  const urlFrom = searchParams.get("from");
+  const urlTo = searchParams.get("to");
+  const urlRange = searchParams.get("range");
+  const urlEventTime = searchParams.get("event_time");
+
+  const initialTimeRange: TimeRange = useMemo(() => {
+    if (urlFrom && urlTo) {
+      return { from: urlFrom, to: urlTo, preset: "Custom" };
+    }
+    const preset = urlRange ?? "5m";
+    const minutes = PRESET_MINUTES[preset] ?? 5;
+    const now = new Date();
+    return {
+      from: new Date(now.getTime() - minutes * 60 * 1000).toISOString(),
+      to: now.toISOString(),
+      preset,
+    };
+  }, [urlFrom, urlTo, urlRange]);
+
+  const [timeRange, setTimeRange] = useState<TimeRange>(initialTimeRange);
+
+  const handleTimeRangeChange = useCallback(
+    (value: TimeRange) => {
+      setTimeRange(value);
+      const params = new URLSearchParams();
+      if (value.preset && value.preset !== "custom") {
+        params.set("range", value.preset);
+      } else {
+        params.set("from", value.from);
+        params.set("to", value.to);
+      }
+      if (urlEventTime) {
+        params.set("event_time", urlEventTime);
+      }
+      setSearchParams(params, { replace: true });
+    },
+    [setSearchParams, urlEventTime],
+  );
 
   const assetFetcher = useCallback(
     () => (id ? api.getAsset(id).then((r) => r.data) : Promise.resolve(null)),
@@ -73,27 +125,45 @@ export default function AssetDetail() {
   });
 
   const trendTags = useMemo(
-    () => (asset?.asset_type === 'battery_bess' ? BESS_TAGS : WIND_TAGS),
+    () => (asset?.asset_type === "battery_bess" ? BESS_TAGS : WIND_TAGS),
     [asset?.asset_type],
   );
 
+  // Determine if we should use range-based or preset-based query
+  const isCustomRange = timeRange.preset === "Custom" || !!(urlFrom && urlTo);
+  const rangeMinutes = timeRange.preset
+    ? PRESET_MINUTES[timeRange.preset] ?? 5
+    : 5;
+
   // Single query for all tags - filter client-side for charts
   const allTagsFetcher = useCallback(
-    () =>
-      id
-        ? api.getAssetTags(id, undefined, range).then((r) => r.data)
-        : Promise.resolve([]),
-    [id, range],
+    () => {
+      if (!id) return Promise.resolve([]);
+      if (isCustomRange) {
+        return api
+          .getAssetTagsRange(id, timeRange.from, timeRange.to)
+          .then((r) => r.data);
+      }
+      return api.getAssetTags(id, undefined, rangeMinutes).then((r) => r.data);
+    },
+    [id, isCustomRange, timeRange.from, timeRange.to, rangeMinutes],
   );
-  const { data: allTags, loading: tagsLoading } = usePolling<TagHistory[]>({
+  const {
+    data: allTags,
+    loading: tagsLoading,
+    error: tagsError,
+  } = usePolling<TagHistory[]>({
     fetcher: allTagsFetcher,
-    intervalMs: 5000,
+    intervalMs: isCustomRange ? 0 : 5000,
     enabled: !!id,
   });
 
   // Build chart data per tag from the single query result
   const chartDataByTag = useMemo(() => {
-    const byTag: Record<string, { time: string; value: number; sdt: boolean }[]> = {};
+    const byTag: Record<
+      string,
+      { time: string; value: number; sdt: boolean }[]
+    > = {};
     for (const tag of trendTags) {
       byTag[tag] = (allTags ?? [])
         .filter((t) => t.tag_name === tag)
@@ -108,10 +178,7 @@ export default function AssetDetail() {
 
   // Build tag table - latest value per unique tag
   const tagTable = useMemo(() => {
-    const latest = new Map<
-      string,
-      TagHistory
-    >();
+    const latest = new Map<string, TagHistory>();
     for (const t of allTags ?? []) {
       const existing = latest.get(t.tag_name);
       if (!existing || t.event_timestamp > existing.event_timestamp) {
@@ -122,6 +189,21 @@ export default function AssetDetail() {
       a.tag_name.localeCompare(b.tag_name),
     );
   }, [allTags]);
+
+  // CSV download handler
+  const handleDownloadCsv = useCallback(async () => {
+    if (!id) return;
+    try {
+      await api.exportAssetTagsCsv(id, timeRange.from, timeRange.to);
+    } catch {
+      // Silently fail for now -- could add toast later
+    }
+  }, [id, timeRange]);
+
+  // Event time reference line for forensics mode
+  const eventTimeRef = urlEventTime
+    ? formatTimestamp(urlEventTime)
+    : null;
 
   if (!id) return <p className="text-gray-600">No asset selected.</p>;
 
@@ -137,7 +219,9 @@ export default function AssetDetail() {
         ) : (
           <>
             <h2 className="font-heading text-2xl font-semibold text-gray-900">
-              {asset ? `${asset.asset_name} - ${asset.site_name}` : 'Asset detail'}
+              {asset
+                ? `${asset.asset_name} - ${asset.site_name}`
+                : "Asset detail"}
             </h2>
             {asset && (
               <div className="flex gap-4 text-sm text-gray-600 mt-1">
@@ -153,22 +237,14 @@ export default function AssetDetail() {
       </div>
 
       {/* Controls */}
-      <div className="flex items-center gap-4 mb-4">
-        <div className="flex gap-2">
-          {([5, 15, 60] as const).map((r) => (
-            <button
-              key={r}
-              onClick={() => setRange(r)}
-              className={`px-3 py-1 rounded text-sm ${
-                range === r
-                  ? 'bg-databricks-primary text-white'
-                  : 'bg-gray-100 text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              {r === 60 ? '1 hour' : `${r} min`}
-            </button>
-          ))}
-        </div>
+      <div className="flex items-center gap-4 mb-4 flex-wrap">
+        <TimeRangeSelector value={timeRange} onChange={handleTimeRangeChange} />
+        <button
+          onClick={handleDownloadCsv}
+          className="px-3 py-1 rounded text-sm bg-gray-100 text-gray-600 hover:text-gray-800 hover:bg-gray-200"
+        >
+          Download CSV
+        </button>
         <label className="flex items-center gap-2 text-sm text-gray-600">
           <input
             type="checkbox"
@@ -179,6 +255,30 @@ export default function AssetDetail() {
           Show raw vs compressed
         </label>
       </div>
+
+      {/* Loading indicator */}
+      {tagsLoading && (
+        <div className="text-sm text-gray-500 mb-2">Loading tag data...</div>
+      )}
+
+      {/* Error banner */}
+      {tagsError && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-card p-4 mb-4 text-sm text-red-800">
+          <span
+            className="flex h-5 w-5 flex-shrink-0 rounded-full bg-red-400 mt-0.5"
+            aria-hidden
+          />
+          <div>
+            <strong>Query error:</strong> {tagsError.message}
+            {tagsError.message?.includes("TABLE_OR_VIEW_NOT_FOUND") && (
+              <p className="mt-1 text-red-600">
+                The SDP pipeline may not have run yet. Check that the pipeline is running
+                in Workflows &gt; Lakeflow Pipelines.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Trend charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
@@ -197,8 +297,8 @@ export default function AssetDetail() {
                     <YAxis stroke="#9CA3AF" fontSize={11} />
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: '#ffffff',
-                        border: '1px solid #e5e7eb',
+                        backgroundColor: "#ffffff",
+                        border: "1px solid #e5e7eb",
                       }}
                     />
                     <Legend />
@@ -217,7 +317,7 @@ export default function AssetDetail() {
                               };
                               const color = payload.sdt
                                 ? CHART_COLORS[idx % CHART_COLORS.length]
-                                : '#4B5563';
+                                : "#4B5563";
                               return (
                                 <circle
                                   key={`${cx}-${cy}`}
@@ -232,6 +332,14 @@ export default function AssetDetail() {
                           : false
                       }
                     />
+                    {eventTimeRef && (
+                      <ReferenceLine
+                        x={eventTimeRef}
+                        stroke="#EF4444"
+                        strokeDasharray="5 5"
+                        label={{ value: "Event", fill: "#EF4444", fontSize: 11 }}
+                      />
+                    )}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -259,7 +367,11 @@ export default function AssetDetail() {
                 {tagTable.map((t) => (
                   <tr
                     key={t.tag_name}
-                    className="border-b border-gray-200/50 hover:bg-gray-100/30"
+                    className={`border-b border-gray-200/50 hover:bg-gray-100/30 ${
+                      urlEventTime && t.quality !== 192
+                        ? "bg-red-50"
+                        : ""
+                    }`}
                   >
                     <td className="py-1.5 px-2 text-gray-700">{t.tag_name}</td>
                     <td className="py-1.5 px-2 text-right text-gray-900">

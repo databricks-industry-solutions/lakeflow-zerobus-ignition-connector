@@ -1,7 +1,6 @@
 # Ignition Module Build Outputs
 *.modl
 !releases/*.modl
-!module/releases/*.modl
 module/build/
 module/build-user/
 module/build-user-*/
@@ -43,9 +42,6 @@ module/build/generated/
 *.log
 logs/
 
-# Local demo docs (do not commit)
-AGL_Tomago_Demo_Talk_Track.pdf
-
 # OS Files
 .DS_Store
 Thumbs.db
@@ -65,6 +61,7 @@ config-production.json
 test-results/
 test-reports/
 *.coverage
+demo/simulator/coverage/
 
 # Temporary Files
 tmp/
@@ -74,7 +71,19 @@ temp/
 
 # Local tooling / caches
 .tooling/
-scripts/__pycache__/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Python virtual environments
+.venv/
+venv/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Databricks local state
+.databricks/
 
 # Stray folders from other repos (Lakeflow community connector work) — keep out of this repo.
 sources/
@@ -104,8 +113,19 @@ my-config.json
 # so we explicitly allow JSON in those directories.
 *.json
 !examples/**/*.json
-!tools/**/*.json
+!pipelines/**/*.json
 !sources/**/*.json
+!demo/simulator/**/*.json
+!demo/app/**/*.json
+!demo/package.json
+!demo/package-lock.json
+
+# Node.js
+node_modules/
+dist/
+
+# App build artifacts
+demo/app/static/
 
 # Local-only Ignition backups (do not commit)
 onboarding/ignition/**/backup_ignition81/
@@ -116,11 +136,29 @@ onboarding/ignition/**/backup_ignition81/
 # Local docker/colima env files (may contain credentials)
 *.env
 !.env.example
+!demo/.env.example
 
 # Tools cloned/built locally (do not commit)
-tools/module-signer/
+pipelines/module-signer/
 
 # Docker-based build outputs (do not commit)
 docker-out/
 # Local generated/backup config files (do not commit)
 module/src/main/resources/zerobus.properties*
+
+# Local-only demo artifacts (do not commit)
+AGL_Tomago_Demo_Talk_Track.pdf
+pipelines/tmp_agl_logo.svg
+
+# AVEVA / partner-sensitive (repo is public — do not commit competitive or internal analysis)
+AVEVA_PI_ASSET_INTELLIGENCE_GAP_ANALYSIS.md
+AGL_DATABRICKS_VS_HISTORIAN_POSITION.md
+AGL_DATABRICKS_VS_HISTORIAN_POSITION_V2.md
+AGL_REPLY_TO_RATISH_DRAFT.md
+IT_OT_DIFFERENTIATORS.md
+
+# git-filter-repo replace-text rules (local use only; do not commit)
+replace-text-rules.txt
+# Databricks 101 session materials (not for public repo)
+databricks_101_session_plan.md
+databricks_101_presentation.html

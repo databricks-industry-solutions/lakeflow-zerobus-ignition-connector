@@ -50,10 +50,26 @@ WORKDIR /workspace/module
 RUN chmod +x ./gradlew
 
 # Build a single .modl artifact (8.1 or 8.3) based on BUILD_FOR_IGNITION_VERSION.
-RUN ./gradlew --no-daemon buildModule \
-  -PignitionHome=/ignition \
-  -PbuildForIgnitionVersion=${BUILD_FOR_IGNITION_VERSION} \
-  -PminIgnitionVersion=${MIN_IGNITION_VERSION}
+# If the requested patch version is not present in the Ignition image, detect the
+# installed SDK version from gateway-api-*.jar and build against that.
+RUN set -eu; \
+  REQUESTED_VER="${BUILD_FOR_IGNITION_VERSION}"; \
+  REQUESTED_JAR="/ignition/lib/core/gateway/gateway-api-${REQUESTED_VER}.jar"; \
+  EFFECTIVE_VER="${REQUESTED_VER}"; \
+  if [ ! -f "${REQUESTED_JAR}" ]; then \
+    DETECTED_JAR="$(ls /ignition/lib/core/gateway/gateway-api-*.jar | head -n 1)"; \
+    if [ -z "${DETECTED_JAR}" ]; then \
+      echo "No gateway-api-*.jar found under /ignition/lib/core/gateway"; \
+      exit 1; \
+    fi; \
+    DETECTED_VER="$(basename "${DETECTED_JAR}" .jar | sed 's/^gateway-api-//')"; \
+    echo "Requested SDK ${REQUESTED_VER} not found; using detected SDK ${DETECTED_VER}"; \
+    EFFECTIVE_VER="${DETECTED_VER}"; \
+  fi; \
+  ./gradlew --no-daemon buildModule \
+    -PignitionHome=/ignition \
+    -PbuildForIgnitionVersion="${EFFECTIVE_VER}" \
+    -PminIgnitionVersion="${MIN_IGNITION_VERSION}"
 
 # Export stage for BuildKit `--output`.
 FROM scratch AS out

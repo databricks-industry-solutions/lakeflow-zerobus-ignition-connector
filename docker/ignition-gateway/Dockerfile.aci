@@ -1,0 +1,13 @@
+FROM inductiveautomation/ignition:8.3.3
+
+COPY zerobus-connector-1.1.0-ignition-8.3.modl \
+     /usr/local/bin/ignition/user-lib/modules/zerobus-connector.modl
+
+ENV ACCEPT_IGNITION_EULA=Y
+
+CMD ["--", "-Dignition.allowunsignedmodules=true", "-Xms256m", "-Xmx1g"]
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
+  CMD curl -sf http://localhost:8088/StatusPing || exit 1
+
+EXPOSE 8088 8043

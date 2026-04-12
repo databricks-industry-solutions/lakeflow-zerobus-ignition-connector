@@ -132,14 +132,14 @@ async def get_throughput(minutes: int = 5) -> list[dict[str, Any]]:
         SELECT
             to_timestamp(floor(event_time / 5000000.0) * 5) AS window_start,
             to_timestamp(floor(event_time / 5000000.0) * 5 + 5) AS window_end,
-            CAST(ROUND(COUNT(*) * GREATEST(1.0, COALESCE(AVG(compression_ratio), 0))) AS BIGINT) AS records_raw,
+            CAST(ROUND(COUNT(*) / GREATEST(0.01, 1.0 - COALESCE(AVG(compression_ratio), 0) / 100.0)) AS BIGINT) AS records_raw,
             COUNT(*) AS records_after_sdt,
             COUNT(*) * 100 AS bytes_estimate,
             AVG((ingestion_timestamp - event_time)::float / 1000.0) AS avg_latency_ms,
             PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY (ingestion_timestamp - event_time)::float / 1000.0) AS p99_latency_ms,
             COUNT(DISTINCT tag_path) AS tags_active,
-            AVG(COALESCE(compression_ratio, 0)) AS sdt_compression_ratio,
-            FALSE AS sdt_enabled
+            COALESCE(AVG(NULLIF(compression_ratio, 0)), 0) AS sdt_compression_ratio,
+            BOOL_OR(COALESCE(sdt_enabled, sdt_compressed, false)) AS sdt_enabled
         FROM {_table}
         WHERE to_timestamp(event_time / 1000000.0) >= NOW() - INTERVAL '{minutes * 2} minutes'
           AND event_time IS NOT NULL

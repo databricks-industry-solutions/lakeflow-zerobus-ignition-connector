@@ -1,0 +1,173 @@
+# Databricks Asset Bundle: Zerobus Ignition Demo
+# Single deployment command for all resources: databricks bundle deploy -t production
+#
+# Resources managed by this bundle:
+#   - Databricks App (zerobus-ignition-demo)
+#   - Lakebase database instance (ot-demo-lakebase)
+#   - SDP ETL pipeline (ot-etl)
+#   - Training job (train-health-model)
+#
+# Example: databricks bundle deploy -t production
+
+bundle:
+  name: zerobus-ignition-demo
+
+sync:
+  exclude:
+    - "module/"
+    - "docker/"
+    - "docker-out/"
+    - "releases/"
+    - "zerobus-test/"
+    - "onboarding/"
+    - "examples/"
+    - "docs/"
+    - "prompts/"
+    - "tools/"
+    - "simulator/"
+    - "*.modl"
+
+variables:
+  catalog:
+    description: Unity Catalog for OT/asset tables
+    default: "ot_demo"
+  schema:
+    description: Schema for OT tables (e.g. raw_tags, asset framework)
+    default: "ot"
+  pipeline_name:
+    description: Display name for the SDP ETL pipeline
+    default: "[production] ot-etl"
+  job_name:
+    description: Display name for the health model training job
+    default: "[production] ot-train-health-model"
+  lakebase_instance_name:
+    description: Lakebase database instance name for app + connector
+    default: "ot-demo-lakebase"
+  lakebase_instance_capacity:
+    description: Lakebase instance capacity SKU
+    default: "CU_1"
+  lakebase_database_name:
+    description: Lakebase database name
+    default: "databricks_postgres"
+  app_database_resource_key:
+    description: App resource key for Lakebase database
+    default: "lakebase-database"
+  connector_role_name:
+    description: Dedicated PostgreSQL role for Zerobus connector
+    default: "zerobus_connector"
+  DATABRICKS_WAREHOUSE_ID:
+    description: SQL warehouse ID for the app (lookup by name or set per target)
+    lookup:
+      warehouse: "Serverless Starter Warehouse"
+
+targets:
+  production:
+    default: true
+    mode: production
+    workspace:
+      profile: daveok
+      root_path: /Workspace/Users/david.okeeffe@databricks.com/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: "ot_demo"
+      schema: "ot"
+      pipeline_name: "[production] ot-etl"
+      job_name: "[production] ot-train-health-model"
+      lakebase_instance_name: "ot-demo-lakebase"
+      lakebase_instance_capacity: "CU_1"
+      lakebase_database_name: "databricks_postgres"
+      app_database_resource_key: "lakebase-database"
+      connector_role_name: "zerobus_connector"
+
+resources:
+  database_instances:
+    app_lakebase:
+      name: ${var.lakebase_instance_name}
+      capacity: ${var.lakebase_instance_capacity}
+      enable_pg_native_login: true
+
+  pipelines:
+    ot_etl:
+      name: ${var.pipeline_name}
+      catalog: ${var.catalog}
+      target: ${var.schema}
+      libraries:
+        - glob:
+            include: ./pipelines/sdp/transformations/**
+      environment:
+        dependencies:
+          - /Volumes/${var.catalog}/${var.schema}/wheels/ot_analytics-0.1.1-py3-none-any.whl
+      serverless: true
+      photon: true
+      continuous: true
+      channel: PREVIEW
+      development: false
+
+  jobs:
+    train_health_model:
+      name: ${var.job_name}
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: train_health_model
+          description: "Train IsolationForest and register to UC asset_health_model"
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "Standard_DS3_v2"
+            num_workers: 0
+            data_security_mode: SINGLE_USER
+            spark_conf:
+              spark.databricks.cluster.profile: singleNode
+              spark.master: local[*]
+            custom_tags:
+              ResourceClass: SingleNode
+          libraries:
+            - pypi:
+                package: mlflow[databricks]
+            - pypi:
+                package: scikit-learn
+            - pypi:
+                package: pandas
+            - pypi:
+                package: numpy
+          spark_python_task:
+            python_file: ./pipelines/sdp/transformations/train_health_model.py
+
+  apps:
+    zerobus_ignition_demo:
+      name: zerobus-ignition-demo
+      description: "Zerobus Ignition Demo - OT tag streaming and asset framework demo"
+      source_code_path: ./demo/app
+      config:
+        command:
+          - uvicorn
+          - backend.main:app
+          - --host
+          - "0.0.0.0"
+          - --port
+          - "$DATABRICKS_APP_PORT"
+        env:
+          - name: DATABRICKS_WAREHOUSE_ID
+            value_from: sql-warehouse
+          - name: LAKEBASE_RESOURCE
+            value_from: ${var.app_database_resource_key}
+          - name: LAKEBASE_HOST
+            value_from: ${var.app_database_resource_key}
+          - name: LAKEBASE_DATABASE
+            value: ${var.lakebase_database_name}
+          - name: APP_TARGET_CATALOG
+            value: ${var.catalog}
+          - name: APP_TARGET_SCHEMA
+            value: ${var.schema}
+          - name: USE_PARSED_TAGS
+            value: "true"
+          - name: STATIC_DIR
+            value: "./static"
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.DATABRICKS_WAREHOUSE_ID}
+            permission: CAN_USE
+        - name: ${var.app_database_resource_key}
+          database:
+            instance_name: ${resources.database_instances.app_lakebase.name}
+            database_name: ${var.lakebase_database_name}
+            permission: CAN_CONNECT_AND_CREATE
