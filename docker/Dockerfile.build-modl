@@ -46,6 +46,18 @@ COPY module/ module/
 # This provides the SDK jars at /ignition/lib/core/** used by module/build.gradle.
 COPY --from=ignition ${IGNITION_HOME} /ignition
 
+# Extract historian-gateway-api jar from the Historian module (.modl is a ZIP).
+# This provides TagHistoryProvider, LegacyTagHistoryProviderAdapter, etc.
+RUN modl="/ignition/user-lib/modules/Historian-module.modl"; \
+    if [ -f "$modl" ]; then \
+      mkdir -p /tmp/historian && cd /tmp/historian && \
+      unzip -qo "$modl" 'historian-gateway-api-*.jar' 2>/dev/null && \
+      cp historian-gateway-api-*.jar /ignition/lib/core/gateway/ && \
+      echo "Extracted historian-gateway-api to /ignition/lib/core/gateway/"; \
+    else \
+      echo "WARNING: Historian-module.modl not found — TagHistoryProvider will not compile"; \
+    fi
+
 WORKDIR /workspace/module
 RUN chmod +x ./gradlew
 
