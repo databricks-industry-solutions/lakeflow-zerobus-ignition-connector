@@ -806,6 +806,7 @@ public class TagSubscriptionService {
 
         TagEvent toEmit = null;
         Object value = te.getValue();
+        double perTagSdtCompressionRatio = 0.0;
 
         if (mode == ConfigModel.NumericCompressionMode.NONE) {
             toEmit = te;
@@ -831,6 +832,7 @@ public class TagSubscriptionService {
 
                 SdtCompressor.State state = sdtStateByTag.computeIfAbsent(tagPathStr, k -> new SdtCompressor.State());
                 SdtCompressor.Outcome out = state.offer(te, policy.sdtDeviation, policy.sdtMaxIntervalMs, policy.sdtMinIntervalMs);
+                perTagSdtCompressionRatio = state.getCompressionRatioPct();
                 if (out == null || out.emit == null) {
                     totalEventsFilteredSdt.incrementAndGet();
                     rolling.recordFilteredSdt(nowMs);
@@ -869,7 +871,7 @@ public class TagSubscriptionService {
 
         boolean sdtEnabled = mode == ConfigModel.NumericCompressionMode.SDT;
         boolean sdtCompressed = sdtEnabled && toEmit != null && toEmit.isNumeric();
-        double sdtCompressionRatio = computeSdtCompressionRatio();
+        double sdtCompressionRatio = sdtCompressed ? perTagSdtCompressionRatio : 0.0;
         OTEvent evt = mapper.map(toEmit, sdtCompressed, sdtCompressionRatio, sdtEnabled, 0L);
         boolean ok = buffer.offer(evt);
         if (ok) {
