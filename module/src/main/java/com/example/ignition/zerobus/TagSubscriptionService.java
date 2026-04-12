@@ -952,7 +952,8 @@ public class TagSubscriptionService {
         if (denom <= 0L) {
             return 0.0;
         }
-        return (double) filtered / (double) denom;
+        // Ratio is emitted as a percentage (0-100), where 0 means no suppression.
+        return (double) filtered * 100.0 / (double) denom;
     }
     
     

@@ -63,7 +63,7 @@ message OTEvent {
   // Whether this event was emitted through SDT compression path.
   optional bool sdt_compressed = 15;
 
-  // Running SDT compression ratio at mapping time (e.g. 3.2 means 3.2:1).
+  // SDT suppression percentage (0-100) at mapping time.
   optional double compression_ratio = 16;
 
   // Config said SDT mode was active for this event's tag.
