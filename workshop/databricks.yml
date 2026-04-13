@@ -1,0 +1,32 @@
+# Workshop: Medallion Architecture — Lakeflow SDP Demo
+#
+# Deploys transformation files + exploratory queries to the workspace.
+# The pipeline itself is created manually in the UI during the workshop.
+#
+# Usage:
+#   cd workshop && databricks bundle deploy -t workshop
+#
+# After deploy, files are at:
+#   /Workspace/Users/david.okeeffe@databricks.com/.bundle/medallion-workshop/workshop/
+
+bundle:
+  name: medallion-workshop
+
+sync:
+  include:
+    - "pipeline/**"
+    - "data/**"
+
+variables:
+  catalog:
+    default: "ot_demo"
+  schema:
+    default: "ot"
+
+targets:
+  workshop:
+    default: true
+    mode: development
+    workspace:
+      profile: daveok
+      root_path: /Workspace/Users/david.okeeffe@databricks.com/.bundle/${bundle.name}/${bundle.target}
