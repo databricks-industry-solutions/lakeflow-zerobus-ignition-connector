@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zerobus Connector Configuration</title>
+    <title>Databricks Zerobus Connector</title>
     <style>
         * {
             box-sizing: border-box;
@@ -13,7 +13,7 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background-color: #f5f5f5;
+            background-color: #F9F7F4;
             color: #333;
             line-height: 1.6;
             padding: 20px;
@@ -28,21 +28,43 @@
         }
 
         .header {
-            background: linear-gradient(135deg, #0067a5 0%, #004d7a 100%);
+            background: #0B2026;
             color: white;
-            padding: 24px 32px;
+            padding: 28px 32px;
             border-radius: 8px 8px 0 0;
+            display: flex;
+            align-items: center;
+            gap: 24px;
         }
 
-        .header h1 {
-            font-size: 24px;
+        .header-logo {
+            flex-shrink: 0;
+            width: 150px;
+            height: auto;
+        }
+
+        .header-logo svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .header-divider {
+            width: 1px;
+            height: 52px;
+            background: rgba(255, 255, 255, 0.2);
+            flex-shrink: 0;
+        }
+
+        .header-text h1 {
+            font-size: 22px;
             font-weight: 600;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
         }
 
-        .header p {
-            font-size: 14px;
-            opacity: 0.9;
+        .header-text p {
+            font-size: 13px;
+            opacity: 0.7;
         }
 
         .content {
@@ -51,7 +73,7 @@
 
         .status-bar {
             padding: 16px 32px;
-            background-color: #f8f9fa;
+            background-color: #EEEDE9;
             border-bottom: 1px solid #e1e4e8;
             display: flex;
             justify-content: space-between;
@@ -85,13 +107,13 @@
             align-items: center;
             margin-bottom: 20px;
             padding-bottom: 12px;
-            border-bottom: 2px solid #0067a5;
+            border-bottom: 2px solid #FF3621;
         }
 
         .section-header h2 {
             font-size: 18px;
             font-weight: 600;
-            color: #0067a5;
+            color: #FF3621;
         }
 
         .form-grid {
@@ -142,8 +164,8 @@
 
         .form-control:focus {
             outline: none;
-            border-color: #0067a5;
-            box-shadow: 0 0 0 3px rgba(0, 103, 165, 0.1);
+            border-color: #FF3621;
+            box-shadow: 0 0 0 3px rgba(255, 54, 33, 0.15);
         }
 
         .form-control:disabled {
@@ -210,12 +232,12 @@
         }
 
         .btn-primary {
-            background-color: #0067a5;
+            background-color: #FF3621;
             color: white;
         }
 
         .btn-primary:hover:not(:disabled) {
-            background-color: #005587;
+            background-color: #E02E1B;
         }
 
         .btn-secondary {
@@ -274,7 +296,7 @@
 
         .collapsible-header {
             padding: 14px 16px;
-            background-color: #f8f9fa;
+            background-color: #EEEDE9;
             cursor: pointer;
             display: flex;
             justify-content: space-between;
@@ -305,8 +327,8 @@
         }
 
         .info-card {
-            background-color: #f8f9fa;
-            border-left: 4px solid #0067a5;
+            background-color: #EEEDE9;
+            border-left: 4px solid #FF3621;
             padding: 16px;
             margin-bottom: 20px;
             border-radius: 4px;
@@ -314,7 +336,7 @@
 
         .info-card-title {
             font-weight: 600;
-            color: #0067a5;
+            color: #FF3621;
             margin-bottom: 8px;
         }
 
@@ -342,7 +364,7 @@
             align-items: center;
             justify-content: space-between;
             padding: 12px 14px;
-            background: #f8f9fa;
+            background: #EEEDE9;
             border-bottom: 1px solid #e1e4e8;
         }
 
@@ -405,7 +427,7 @@
 
         .loading-spinner {
             border: 3px solid #f3f3f3;
-            border-top: 3px solid #0067a5;
+            border-top: 3px solid #FF3621;
             border-radius: 50%;
             width: 16px;
             height: 16px;
@@ -432,7 +454,7 @@
             padding: 8px;
             border: 1px solid #ced4da;
             border-radius: 4px;
-            background-color: #f8f9fa;
+            background-color: #EEEDE9;
         }
 
         .tag {
@@ -440,7 +462,7 @@
             align-items: center;
             gap: 6px;
             padding: 4px 10px;
-            background-color: #0067a5;
+            background-color: #FF3621;
             color: white;
             border-radius: 16px;
             font-size: 13px;
@@ -468,7 +490,7 @@
         .tab-btn {
             border: 1px solid #cdd5df;
             border-bottom: none;
-            background: #f8f9fa;
+            background: #EEEDE9;
             color: #495057;
             border-radius: 6px 6px 0 0;
             padding: 8px 14px;
@@ -478,9 +500,9 @@
         }
 
         .tab-btn.active {
-            background: #0067a5;
+            background: #FF3621;
             color: #fff;
-            border-color: #0067a5;
+            border-color: #FF3621;
         }
 
         .tab-panel {
@@ -492,7 +514,7 @@
         }
 
         .embed-card {
-            border: 1px solid #d7e3ee;
+            border: 1px solid #EEEDE9;
             border-radius: 8px;
             background: #ffffff;
             overflow: hidden;
@@ -500,8 +522,8 @@
 
         .embed-card-header {
             padding: 14px 16px;
-            border-bottom: 1px solid #e6edf4;
-            background: linear-gradient(180deg, #f8fbff 0%, #eef5fc 100%);
+            border-bottom: 1px solid #EEEDE9;
+            background: linear-gradient(180deg, #F9F7F4 0%, #EEEDE9 100%);
         }
 
         .embed-controls {
@@ -514,7 +536,7 @@
         .embed-frame-wrap {
             height: 78vh;
             min-height: 560px;
-            background: #f5f8fb;
+            background: #F9F7F4;
         }
 
         .embed-frame {
@@ -536,9 +558,9 @@
 
         .native-dashboard {
             margin-top: 12px;
-            border-top: 1px solid #e6edf4;
+            border-top: 1px solid #EEEDE9;
             padding: 14px 16px 16px 16px;
-            background: #f8fbff;
+            background: #F9F7F4;
         }
 
         .native-kpi-grid {
@@ -550,14 +572,14 @@
 
         .native-kpi {
             background: #fff;
-            border: 1px solid #d7e3ee;
+            border: 1px solid #EEEDE9;
             border-radius: 8px;
             padding: 10px 12px;
         }
 
         .native-kpi .k {
             font-size: 11px;
-            color: #5f7389;
+            color: #6c757d;
             text-transform: uppercase;
             letter-spacing: 0.03em;
         }
@@ -565,7 +587,7 @@
         .native-kpi .v {
             font-size: 18px;
             font-weight: 700;
-            color: #0f4f7a;
+            color: #0B2026;
             margin-top: 4px;
         }
 
@@ -577,21 +599,21 @@
 
         .native-card {
             background: #fff;
-            border: 1px solid #d7e3ee;
+            border: 1px solid #EEEDE9;
             border-radius: 8px;
             padding: 10px 12px;
         }
 
         .native-card h4 {
             font-size: 13px;
-            color: #184f78;
+            color: #0B2026;
             margin-bottom: 8px;
         }
 
         .native-chart {
             width: 100%;
             height: 220px;
-            border: 1px solid #e2ebf4;
+            border: 1px solid #EEEDE9;
             border-radius: 6px;
             background: #fff;
         }
@@ -617,8 +639,24 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Zerobus Connector Configuration</h1>
-            <p>Configure the connection to Databricks Zerobus for real-time tag data streaming</p>
+            <div class="header-logo">
+                <svg viewBox="0 0 579 323" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <g clip-path="url(#clip0_1984_732)">
+                        <path d="M359.4 75.6001L284 118L203.3 72.6001L199.5 74.8V107.8L284 155.3L359.4 112.8V130.4L284 172.8L203.3 127.5L199.5 129.6V135.2L284 182.7L368.5 135.2V102.2L364.6 100.1L284 145.4L208.5 103V85.5L284 127.9L368.5 80.4V47.9L364.2 45.5L284 90.6001L212.5 50.4L284 10.2L342.8 43.3L348.1 40.4V36.4L284 0.300049L199.5 47.9V53L284 100.5L359.4 58V75.6001Z" fill="#FF3621"/>
+                        <path d="M66.6 321V231H52.7V264.7C52.7 265.2 52.4 265.6 51.9 265.8C51.4 266 50.9 265.8 50.6 265.5C45.9 260 38.6 256.8 30.5 256.8C13.4 256.8 0 271.2 0 289.7C0 298.7 3.1 307.1 8.8 313.2C14.5 319.3 22.2 322.6 30.6 322.6C38.5 322.6 45.8 319.3 50.7 313.6C51 313.2 51.6 313.1 52 313.2C52.5 313.4 52.8 313.8 52.8 314.3V321H66.6ZM33.7 310C22.7 310 14 301.1 14 289.7C14 278.3 22.7 269.4 33.7 269.4C44.7 269.4 53.4 278.3 53.4 289.7C53.4 301.1 44.7 310 33.7 310ZM140.7 320.9V258.3H127V264.6C127 265.1 126.7 265.5 126.2 265.7C125.7 265.9 125.2 265.7 124.9 265.3C120.2 259.7 113.1 256.7 104.8 256.7C87.7 256.7 74.2 271.2 74.2 289.6C74.2 308 87.6 322.5 104.8 322.5C112.7 322.5 120.1 319.2 124.9 313.4C125.2 313 125.8 312.9 126.2 313C126.7 313.2 127 313.6 127 314.1V320.9H140.7ZM107.9 310C96.9 310 88.2 301.1 88.2 289.7C88.2 278.3 96.9 269.4 107.9 269.4C118.9 269.4 127.6 278.3 127.6 289.7C127.6 301.1 118.9 310 107.9 310ZM258.2 320.9V258.3H244.5V264.6C244.5 265.1 244.2 265.5 243.7 265.7C243.2 265.9 242.7 265.7 242.4 265.3C237.7 259.7 230.6 256.7 222.3 256.7C205.2 256.7 191.7 271.2 191.7 289.6C191.7 308 205.1 322.5 222.3 322.5C230.2 322.5 237.6 319.2 242.4 313.4C242.7 313 243.3 312.9 243.7 313C244.2 313.2 244.5 313.6 244.5 314.1V320.9H258.2ZM225.4 310C214.4 310 205.7 301.1 205.7 289.7C205.7 278.3 214.4 269.4 225.4 269.4C236.4 269.4 245.1 278.3 245.1 289.7C245.1 301.1 236.4 310 225.4 310ZM283.4 313.6C283.5 313.6 283.7 313.5 283.8 313.5C284.1 313.5 284.5 313.7 284.7 313.9C289.4 319.4 296.7 322.6 304.8 322.6C321.9 322.6 335.4 308.1 335.4 289.7C335.4 280.7 332.3 272.3 326.6 266.2C320.9 260.1 313.2 256.8 304.8 256.8C296.9 256.8 289.6 260.1 284.7 265.8C284.4 266.2 283.9 266.3 283.4 266.2C282.9 266 282.6 265.6 282.6 265.1V231.1H268.7V321.2H282.6V314.9C282.6 314.2 282.9 313.8 283.4 313.6ZM282 289.7C282 278.3 290.7 269.4 301.7 269.4C312.7 269.4 321.4 278.3 321.4 289.7C321.4 301.1 312.7 310 301.7 310C290.6 310 282 301.1 282 289.7ZM356.9 293.5V321.1H343V258.3H356.7V266C356.7 266.5 357.1 267 357.6 267.1C358.1 267.2 358.7 267 358.9 266.6C362.4 260.7 369.1 257 376.2 257C377.1 257 378.1 257.1 378.5 257.2V271.4C377.7 271.2 376.4 271.1 375.1 271.1C363.9 271.2 356.9 279.7 356.9 293.5ZM401.3 258.3V321H387.3V258.3H401.3ZM402.6 239.6C402.6 244.3 398.8 248.1 394.1 248.1C389.4 248.1 385.6 244.3 385.6 239.6C385.6 234.9 389.4 231.1 394.1 231.1C398.8 231.1 402.6 234.9 402.6 239.6ZM468.2 266.7L459.4 275C454.4 271.3 449.2 269.5 443.7 269.5C432.1 269.5 423.4 278.2 423.4 289.7C423.4 301.2 432.1 309.9 443.7 309.9C448.8 309.9 454 308.1 459.7 304.4L467.6 312.7C456.2 321.1 450.1 322.6 442.3 322.6C432.9 322.6 424.4 319.3 418.5 313.3C412.6 307.3 409.3 299 409.3 289.7C409.3 270.6 423.3 256.8 442.5 256.8C448.6 256.8 458 257.8 468.2 266.7ZM489.4 295.7C489.2 295.9 489 296.2 489 296.6V321H475.1V230.9H489V280.2C489 280.7 489.3 281.1 489.7 281.3C490.2 281.5 490.7 281.4 491 281L513.7 258.2H530.6L504.2 284.6C503.8 285 503.7 285.7 504.1 286.2L532.8 320.9H515.7L493.5 293.4C493.3 293.1 493 293 492.6 293H492.5C492.2 293 491.9 293.1 491.7 293.3L489.4 295.7ZM531.5 307.1L542.7 301.2C545.1 307.1 550.1 310.7 555.7 310.7C559.9 310.7 564.8 308.8 564.8 303.5C564.8 299.9 562.6 297.8 557.1 296.1L549.4 293.6C538.7 290.2 533.5 284.3 533.5 275.6C533.5 264.6 542.5 256.6 555 256.6C564.8 256.6 573.4 261.8 577.5 270.3L566.4 276.3C563.8 271 559.7 268 555.1 268C550.3 268 546.9 270.6 546.9 274.4C546.9 277.7 549.4 280.1 554.4 281.8L562 284.3C573 287.9 578.4 293.8 578.4 302.4C578.4 315.5 566.9 322.4 555.5 322.4C544.4 322.6 535.3 316.7 531.5 307.1ZM159 300V270.8C159 270.1 158.5 269.6 157.8 269.6H148.1V258.3H157.8C158.5 258.3 159 257.8 159 257.1V238.9H172.8V257.1C172.8 257.8 173.3 258.3 174 258.3H187.5V269.6H174C173.3 269.6 172.8 270.1 172.8 270.8V296.6C172.8 308.7 177.1 309.7 182.7 309.7C184.7 309.7 187.8 309.5 189.7 309.2V321.2C187.5 321.5 183.5 321.9 179.2 321.9C173.6 322 159 322 159 300Z" fill="white"/>
+                    </g>
+                    <defs>
+                        <clipPath id="clip0_1984_732">
+                            <rect width="578.5" height="322.3" fill="white" transform="translate(0 0.300049)"/>
+                        </clipPath>
+                    </defs>
+                </svg>
+            </div>
+            <div class="header-divider"></div>
+            <div class="header-text">
+                <h1>Zerobus Connector</h1>
+                <p>Real-time OT tag data streaming to the Databricks Lakehouse</p>
+            </div>
         </div>
 
         <div class="status-bar">
@@ -1366,7 +1404,7 @@
             if (!c) return;
             const { ctx, width, height } = c;
             ctx.clearRect(0, 0, width, height);
-            ctx.fillStyle = '#5f7389';
+            ctx.fillStyle = '#6c757d';
             ctx.font = '12px sans-serif';
             ctx.fillText(message || 'No data', 12, 22);
         }
@@ -1392,7 +1430,7 @@
             const maxY = Math.max(1, ...allVals);
             const minY = 0;
 
-            ctx.strokeStyle = '#e2ebf4';
+            ctx.strokeStyle = '#EEEDE9';
             ctx.lineWidth = 1;
             for (let i = 0; i <= 4; i++) {
                 const y = margin.top + (plotH * i / 4);
@@ -1402,7 +1440,7 @@
                 ctx.stroke();
             }
 
-            ctx.fillStyle = '#5f7389';
+            ctx.fillStyle = '#6c757d';
             ctx.font = '11px sans-serif';
             ctx.textAlign = 'right';
             ctx.textBaseline = 'middle';
@@ -1524,7 +1562,7 @@
                 const labels = Array.from({ length: count }, (_, idx) => `${idx - (count - 1)}m`);
 
                 drawLineChart('nativeThroughputChart', labels, [
-                    { name: 'Incoming', values: incoming, color: '#0067a5' },
+                    { name: 'Incoming', values: incoming, color: '#FF3621' },
                     { name: 'Emitted', values: emitted, color: '#1f7a3f' }
                 ]);
                 drawLineChart('nativeFilterChart', labels, [
