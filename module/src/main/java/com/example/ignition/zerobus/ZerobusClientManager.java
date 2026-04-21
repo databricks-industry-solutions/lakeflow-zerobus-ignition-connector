@@ -9,6 +9,7 @@ import com.databricks.zerobus.ZerobusException;
 import com.databricks.zerobus.NonRetriableException;
 import com.example.ignition.zerobus.proto.OTEvent;
 import com.example.ignition.zerobus.pipeline.OtEventMapper;
+import com.example.ignition.zerobus.telemetry.DatabricksPartnerTelemetry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -216,7 +217,9 @@ public class ZerobusClientManager {
             logger.warn("ZerobusClientManager already initialized");
             return;
         }
-        
+
+        DatabricksPartnerTelemetry.ensureRegistered();
+
         logger.info("Initializing Zerobus client...");
         logger.info("  Workspace URL: {}", config.getWorkspaceUrl());
         logger.info("  Zerobus Endpoint: {}", config.getZerobusEndpoint());
@@ -504,7 +507,9 @@ public class ZerobusClientManager {
      */
     public boolean testConnection() {
         logger.info("Testing Zerobus connection...");
-        
+
+        DatabricksPartnerTelemetry.ensureRegistered();
+
         try {
             // Create a temporary SDK instance for testing
             ZerobusSdk testSdk = new ZerobusSdk(

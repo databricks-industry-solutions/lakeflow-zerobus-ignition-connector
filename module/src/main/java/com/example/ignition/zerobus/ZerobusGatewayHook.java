@@ -1,5 +1,6 @@
 package com.example.ignition.zerobus;
 
+import com.example.ignition.zerobus.telemetry.DatabricksPartnerTelemetry;
 import com.example.ignition.zerobus.web.TagEventPayload;
 import com.example.ignition.zerobus.web.ZerobusConfigResource;
 import com.example.ignition.zerobus.web.ZerobusConfigResourceHolder;
@@ -98,6 +99,7 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements Zer
     @Override
     public void setup(GatewayContext context) {
         this.gatewayContext = context;
+        DatabricksPartnerTelemetry.ensureRegistered();
         ZerobusGatewayHookHolder.set(this);
 
         // Register PersistentRecord for configuration storage

@@ -102,7 +102,11 @@ dependencies {
     
     // Databricks Zerobus Ingest SDK - Use shaded JAR with all dependencies bundled
     implementation 'com.databricks:zerobus-ingest-sdk:0.1.0:jar-with-dependencies'
-    
+
+    // Optional: Databricks Java SDK for partner User-Agent (UserAgent.withPartner / withProduct).
+    // Requires Maven Central (repo.maven.apache.org) to resolve; omit on air-gapped / mis-resolved hosts.
+    // implementation 'com.databricks:databricks-sdk-java:0.54.0'
+
     // Testing
     testImplementation 'org.junit.jupiter:junit-jupiter:5.9.2'
     testImplementation 'org.mockito:mockito-core:5.1.1'
