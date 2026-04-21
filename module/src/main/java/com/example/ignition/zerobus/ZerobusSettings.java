@@ -105,6 +105,12 @@ public class ZerobusSettings extends PersistentRecord {
 
     public static final DoubleField NumericDeadband = new DoubleField(META, "NumericDeadband");
 
+    // New unified numeric compression settings (preferred)
+    public static final StringField NumericCompressionMode = new StringField(META, "NumericCompressionMode");
+    public static final DoubleField NumericSdtDeviation = new DoubleField(META, "NumericSdtDeviation");
+    public static final LongField NumericSdtMaxIntervalMs = new LongField(META, "NumericSdtMaxIntervalMs");
+    public static final LongField NumericSdtMinIntervalMs = new LongField(META, "NumericSdtMinIntervalMs");
+
     // === Category Definitions for UI Grouping ===
 
     static {
@@ -218,6 +224,18 @@ public class ZerobusSettings extends PersistentRecord {
         NumericDeadband.getFormMeta()
             .setFieldNameKey("ZerobusSettings.NumericDeadband.Name")
             .setFieldDescriptionKey("ZerobusSettings.NumericDeadband.desc");
+        NumericCompressionMode.getFormMeta()
+            .setFieldNameKey("ZerobusSettings.NumericCompressionMode.Name")
+            .setFieldDescriptionKey("ZerobusSettings.NumericCompressionMode.desc");
+        NumericSdtDeviation.getFormMeta()
+            .setFieldNameKey("ZerobusSettings.NumericSdtDeviation.Name")
+            .setFieldDescriptionKey("ZerobusSettings.NumericSdtDeviation.desc");
+        NumericSdtMaxIntervalMs.getFormMeta()
+            .setFieldNameKey("ZerobusSettings.NumericSdtMaxIntervalMs.Name")
+            .setFieldDescriptionKey("ZerobusSettings.NumericSdtMaxIntervalMs.desc");
+        NumericSdtMinIntervalMs.getFormMeta()
+            .setFieldNameKey("ZerobusSettings.NumericSdtMinIntervalMs.Name")
+            .setFieldDescriptionKey("ZerobusSettings.NumericSdtMinIntervalMs.desc");
 
         // Set default values
         // Module Control Category
@@ -265,6 +283,10 @@ public class ZerobusSettings extends PersistentRecord {
         IncludeQuality.setDefault(true);
         OnlyOnChange.setDefault(true);
         NumericDeadband.setDefault(0.0);
+        NumericCompressionMode.setDefault("");
+        NumericSdtDeviation.setDefault(0.0);
+        NumericSdtMaxIntervalMs.setDefault(0L);
+        NumericSdtMinIntervalMs.setDefault(0L);
     }
 
     // Note: Category grouping can be added later with a custom StatusPageHook
@@ -336,6 +358,20 @@ public class ZerobusSettings extends PersistentRecord {
         config.setIncludeQuality(getBoolean(IncludeQuality));
         config.setOnlyOnChange(getBoolean(OnlyOnChange));
         config.setNumericDeadband(getDouble(NumericDeadband));
+        String modeStr = getString(NumericCompressionMode);
+        if (modeStr != null && !modeStr.isBlank()) {
+            try {
+                config.setNumericCompressionMode(ConfigModel.NumericCompressionMode.valueOf(modeStr.trim().toUpperCase()));
+            } catch (Exception ignored) {
+                // Leave unset (backward-compatible)
+                config.setNumericCompressionMode(null);
+            }
+        } else {
+            config.setNumericCompressionMode(null);
+        }
+        config.setNumericSdtDeviation(getDouble(NumericSdtDeviation));
+        config.setNumericSdtMaxIntervalMs(getLong(NumericSdtMaxIntervalMs));
+        config.setNumericSdtMinIntervalMs(getLong(NumericSdtMinIntervalMs));
 
         return config;
     }
@@ -395,6 +431,10 @@ public class ZerobusSettings extends PersistentRecord {
         setBoolean(IncludeQuality, config.isIncludeQuality());
         setBoolean(OnlyOnChange, config.isOnlyOnChange());
         setDouble(NumericDeadband, config.getNumericDeadband());
+        setString(NumericCompressionMode, config.getNumericCompressionMode() != null ? config.getNumericCompressionMode().name() : "");
+        setDouble(NumericSdtDeviation, config.getNumericSdtDeviation());
+        setLong(NumericSdtMaxIntervalMs, config.getNumericSdtMaxIntervalMs());
+        setLong(NumericSdtMinIntervalMs, config.getNumericSdtMinIntervalMs());
     }
 
 }

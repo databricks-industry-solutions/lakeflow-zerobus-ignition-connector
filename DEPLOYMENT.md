@@ -25,16 +25,80 @@ GRANT MODIFY ON TABLE <catalog>.<schema>.<table> TO `<service_principal_name_or_
 
 ### Choose the correct module artifact
 
-- **Ignition 8.1.x**: use `releases/zerobus-connector-1.0.0.modl`
-- **Ignition 8.3.x**: use `releases/zerobus-connector-1.0.0-ignition-8.3.modl`
+- **Ignition 8.1.x**: use `releases/zerobus-connector-1.0.1.modl`
+- **Ignition 8.3.x**: use `releases/zerobus-connector-1.0.1-ignition-8.3.modl`
 
 ### Install / upgrade
 
 - Gateway UI → Configure → Modules → Install/Upgrade → upload the `.modl`
 
-### Configure (GUI-only)
+### Configure
 
-The module is configured in the Gateway UI and persisted in the Gateway internal DB. Your `.modl` does **not** contain your credentials.
+The module is configured at runtime and persisted in the Gateway internal DB. Your `.modl` does **not** contain your credentials. There are three ways to configure it: automated CLI, REST API, or the Gateway UI.
+
+#### Option A — Automated CLI (recommended for demos)
+
+If you have a `~/.databrickscfg` profile with OAuth M2M credentials, the AGL Fleet Simulator can push the full config in one command:
+
+```bash
+cd examples/agl_fleet
+uv run --extra setup agl-sim --setup-only \
+    --profile <databricks-cli-profile> \
+    --zerobus-endpoint <workspace-id>.zerobus.<region>.<cloud-domain>
+```
+
+This reads `client_id`, `client_secret`, and `host` from the Databricks CLI profile, then pushes them to the running Gateway via the config API. It uses a GET-then-merge approach so existing settings are preserved.
+
+See `examples/agl_fleet/README.md` for full details and working examples.
+
+#### Option B — REST API (scriptable)
+
+The module exposes a REST API for headless / automated configuration:
+
+```bash
+# View current config
+curl -s http://<gateway-host>:<port>/system/zerobus/config | python3 -m json.tool
+
+# Push full config
+curl -s -X POST http://<gateway-host>:<port>/system/zerobus/config \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "enabled": true,
+    "workspaceUrl": "https://<workspace-host>",
+    "zerobusEndpoint": "<workspace-id>.zerobus.<region>.<cloud-domain>",
+    "oauthClientId": "<service-principal-client-id>",
+    "oauthClientSecret": "<service-principal-client-secret>",
+    "targetTable": "<catalog>.<schema>.<table>",
+    "enableDirectSubscriptions": false,
+    "batchSize": 1000,
+    "batchFlushIntervalMs": 500,
+    "maxQueueSize": 50000,
+    "maxEventsPerSecond": 5000,
+    "enableStoreAndForward": false,
+    "retryBackoffMs": 500,
+    "connectionTimeoutMs": 10000,
+    "requestTimeoutMs": 30000
+  }'
+
+# Quick health check
+curl -s http://<gateway-host>:<port>/system/zerobus/health
+
+# Full diagnostics
+curl -s http://<gateway-host>:<port>/system/zerobus/diagnostics
+```
+
+> **IMPORTANT**: `POST /system/zerobus/config` **replaces** the entire configuration — it does NOT merge. If you POST only batching settings without connection fields, you will blank out the workspace/endpoint/credentials. Always send the **complete** config in a single request.
+
+The Zerobus endpoint follows the format `<workspace-id>.zerobus.<region>.<cloud-domain>`:
+
+| Cloud | Format | Example |
+|-------|--------|---------|
+| Azure | `<workspace-id>.zerobus.<region>.azuredatabricks.net` | `7405607216190670.zerobus.eastus2.azuredatabricks.net` |
+| AWS   | `<workspace-id>.zerobus.<region>.cloud.databricks.com` | `1234567890123456.zerobus.us-west-2.cloud.databricks.com` |
+
+Extract the workspace ID from the URL: `adb-7405607216190670` → `7405607216190670`.
+
+#### Option C — Gateway UI (manual)
 
 Open the configuration page:
 - **Ignition 8.1.x**: `http://<gateway-host>:<port>/system/zerobus/configure`
@@ -42,7 +106,7 @@ Open the configuration page:
   - Nav: **Platform → System → Zerobus Config**
   - Direct: `http://<gateway-host>:<port>/system/zerobus/configure`
 
-#### Recommended mode: Direct subscriptions
+##### Recommended mode: Direct subscriptions
 
 - **Enable Direct Subscriptions**: ON
 - **Tag Selection Mode**:
@@ -105,7 +169,7 @@ ORDER BY rows_last_10m DESC;
 
 ### Ignition 8.3 module won’t install
 
-You likely uploaded the 8.1 artifact. Use `releases/zerobus-connector-1.0.0-ignition-8.3.modl`.
+You likely uploaded the 8.1 artifact. Use `releases/zerobus-connector-1.0.1-ignition-8.3.modl`.
 
 ### Running Ignition in Docker (dev/demo)
 

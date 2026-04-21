@@ -270,11 +270,20 @@ public class ZerobusClientManager {
             );
             
             initialized.set(true);
-            connected.set(true);
-            
-            logger.info("Zerobus client initialized successfully");
+
+            // Only mark connected if stream is actually OPENED. The SDK may return a stream
+            // in RECOVERING state after recreateStream/createStream, and ingestRecord() can
+            // block the calling thread indefinitely on a RECOVERING stream.
+            String state = String.valueOf(zerobusStream.getState());
+            if ("OPENED".equals(state)) {
+                connected.set(true);
+                logger.info("Zerobus client initialized successfully");
+            } else {
+                connected.set(false);
+                logger.warn("Zerobus stream created but in {} state (expected OPENED); will retry via backoff", state);
+            }
             logger.info("  Stream ID: {}", zerobusStream.getStreamId());
-            logger.info("  Stream State: {}", zerobusStream.getState());
+            logger.info("  Stream State: {}", state);
             
         } catch (Exception e) {
             logger.error("Failed to initialize Zerobus client", e);
@@ -377,6 +386,16 @@ public class ZerobusClientManager {
             return true;
         }
         logger.debug("Sending batch of {} OT events to Zerobus", events.size());
+
+        // Guard: check stream state before calling ingestRecord(). The SDK's ingestRecord()
+        // can block the calling thread indefinitely when the stream is in RECOVERING state,
+        // which stalls the flusher and causes the buffer to fill and drop events silently.
+        String streamState = zerobusStream != null ? String.valueOf(zerobusStream.getState()) : "NULL";
+        if (!"OPENED".equals(streamState)) {
+            logger.warn("Stream is {} (not OPENED); marking disconnected for recovery", streamState);
+            connected.set(false);
+            return false;
+        }
 
         try {
             List<CompletableFuture<Void>> futures = new ArrayList<>();
@@ -554,10 +573,16 @@ public class ZerobusClientManager {
                 TimeUnit.MILLISECONDS
             );
             
-            connected.set(true);
-            logger.info("Stream recovery successful");
+            String state = String.valueOf(zerobusStream.getState());
+            if ("OPENED".equals(state)) {
+                connected.set(true);
+                logger.info("Stream recovery successful (state: {})", state);
+            } else {
+                connected.set(false);
+                logger.warn("Stream recovery returned {} state (expected OPENED); will retry via backoff", state);
+            }
             logger.info("  Stream ID: {}", zerobusStream.getStreamId());
-            logger.info("  Stream State: {}", zerobusStream.getState());
+            logger.info("  Stream State: {}", state);
             
         } catch (Exception e) {
             logger.error("Stream recovery failed", e);
@@ -661,11 +686,29 @@ public class ZerobusClientManager {
         return connected.get();
     }
     
+    // Staleness watchdog: if we've been "connected" for this long without a successful send,
+    // force a reconnect. Catches cases where the SDK stream degrades silently.
+    private static final long MAX_SEND_STALE_MS = 5L * 60_000L; // 5 minutes
+
     /**
      * @return true if the sink is currently ready to send without needing reconnection attempts.
      */
     public boolean isReadyToSend() {
-        return initialized.get() && connected.get();
+        if (!initialized.get() || !connected.get()) {
+            return false;
+        }
+        // Staleness watchdog: if we've sent at least once but nothing succeeded in 5 min,
+        // the stream is likely degraded. Force a reconnect cycle.
+        if (lastSuccessfulSendTime > 0) {
+            long staleMs = System.currentTimeMillis() - lastSuccessfulSendTime;
+            if (staleMs > MAX_SEND_STALE_MS) {
+                logger.warn("Staleness watchdog: connected but no successful send in {}s; forcing reconnect",
+                        staleMs / 1000);
+                connected.set(false);
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

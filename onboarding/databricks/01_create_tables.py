@@ -15,7 +15,7 @@
 
 # === EDIT THESE ===
 CATALOG = "ignition_demo"
-SCHEMA = "ignition_ot"
+SCHEMA = "ot"
 BRONZE_TABLE = "ot_events_bronze"
 
 # Service Principal UUID (not clientId). Example: "6ff2b11b-fdb8-4c2c-9360-ed105d5f6dcb"

@@ -1,0 +1,54 @@
+{
+  "name": "RenewablesCo",
+  "tagType": "Folder",
+  "tags": [
+    {
+      "name": "Denmark",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "name": "Midtjylland",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "Aarhus",
+              "tagType": "Folder",
+              "tags": [
+                {
+                  "name": "Site01",
+                  "tagType": "Folder",
+                  "tags": [
+                    {
+                      "name": "DistrictHeating",
+                      "tagType": "Folder",
+                      "tags": [
+                        {
+                          "name": "Network",
+                          "tagType": "Folder",
+                          "tags": [
+                            { "name": "AmbientTemp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 4.0 },
+                            { "name": "HeatDemand_MWth", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 110.0 },
+
+                            { "name": "SupplyTemp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 90.0 },
+                            { "name": "ReturnTemp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 52.0 },
+                            { "name": "Flow_m3h", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2200.0 },
+                            { "name": "PressureDiff_bar", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 3.2 },
+
+                            { "name": "HeatOutput_MWth", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 105.0 },
+                            { "name": "PumpRunning", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                            { "name": "PumpSpeed_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 62.0 }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+

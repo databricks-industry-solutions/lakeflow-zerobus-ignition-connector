@@ -9,12 +9,22 @@ services:
       ACCEPT_IGNITION_EULA: "${ACCEPT_IGNITION_EULA:-Y}"
     volumes:
       - ignition81-data:/usr/local/bin/ignition/data
+      # Auto-load Zerobus module on startup (no manual install needed)
+      - ../../releases/zerobus-connector-1.0.10.modl:/usr/local/bin/ignition/user-lib/modules/zerobus-connector.modl:ro
     # IMPORTANT:
     # - The official entrypoint parses options; passing -D... directly causes "Invalid option: D".
     # - Put JVM args after `--` so getopts stops parsing and the -D arg is treated as a JVM arg.
     command:
       - "--"
-      - "-Dignition.allowunsignedmodules=${IGNITION_ALLOW_UNSIGNED_MODULES:-false}"
+      - "-Dignition.allowunsignedmodules=${IGNITION_ALLOW_UNSIGNED_MODULES:-true}"
+      - "-Xms${IGNITION_XMS:-512m}"
+      - "-Xmx${IGNITION_XMX:-2g}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8088/StatusPing || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 volumes:
   ignition81-data:

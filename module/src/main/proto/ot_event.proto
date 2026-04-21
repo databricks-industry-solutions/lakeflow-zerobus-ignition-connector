@@ -8,12 +8,11 @@ option java_multiple_files = true;
 
 /**
  * OTEvent - Operational Technology event message for Zerobus Ingest.
- * 
- * This protobuf schema EXACTLY matches the Delta table schema:
- * ignition_demo.scada_data.tag_events
- * 
- * IMPORTANT: Column names, types, and order must match Delta table exactly
- * for Zerobus to accept the stream.
+ *
+ * IMPORTANT:
+ * - This schema MUST align with the bronze Delta table schema used for ingest.
+ * - Value/quality-ish fields use proto3 `optional` so default values (0/false/"")
+ *   preserve presence and do not get treated as NULL by downstream mapping.
  */
 message OTEvent {
   // Unique event identifier
@@ -30,22 +29,20 @@ message OTEvent {
   string tag_provider = 4;
   
   // Numeric tag value (for numeric tags)
-  // Can be null/0.0 if not applicable
-    double numeric_value = 5;
+  // `optional` preserves explicit 0.0 presence.
+  optional double numeric_value = 5;
   
   // String tag value (for string tags)
-  // Can be empty if not applicable
-  string string_value = 6;
+  optional string string_value = 6;
   
   // Boolean tag value (for boolean tags)
-  // Can be false if not applicable
-  bool boolean_value = 7;
+  optional bool boolean_value = 7;
   
   // Quality indicator as string ("GOOD", "BAD", "UNCERTAIN")
-  string quality = 8;
+  optional string quality = 8;
   
   // Numeric quality code from Ignition
-  int32 quality_code = 9;
+  optional int32 quality_code = 9;
   
   // Source Ignition Gateway identifier
   string source_system = 10;
@@ -58,9 +55,21 @@ message OTEvent {
   string data_type = 12;
   
   // Alarm state if tag is in alarm (can be empty)
-  string alarm_state = 13;
+  optional string alarm_state = 13;
   
   // Alarm priority if applicable (can be 0)
-  int32 alarm_priority = 14;
+  optional int32 alarm_priority = 14;
+
+  // Whether this event was emitted through SDT compression path.
+  optional bool sdt_compressed = 15;
+
+  // SDT suppression percentage (0-100) at mapping time.
+  optional double compression_ratio = 16;
+
+  // Config said SDT mode was active for this event's tag.
+  optional bool sdt_enabled = 17;
+
+  // Serialized bytes for the sent batch this event belonged to.
+  optional int64 batch_bytes_sent = 18;
 }
 

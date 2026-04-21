@@ -1,0 +1,27 @@
+services:
+  ignition83:
+    image: "inductiveautomation/ignition:${IGNITION83_TAG:-8.3.3}"
+    container_name: ignition83_7088
+    ports:
+      - "${HOST_HTTP_PORT_83:-7088}:8088"
+      - "${HOST_HTTPS_PORT_83:-7044}:8043"
+    environment:
+      ACCEPT_IGNITION_EULA: "${ACCEPT_IGNITION_EULA:-Y}"
+    volumes:
+      - ignition83-data:/usr/local/bin/ignition/data
+      # Auto-load Zerobus module on startup (no manual install needed)
+      - ../../releases/zerobus-connector-1.1.0-ignition-8.3.modl:/usr/local/bin/ignition/user-lib/modules/zerobus-connector.modl:ro
+    command:
+      - "--"
+      - "-Dignition.allowunsignedmodules=${IGNITION_ALLOW_UNSIGNED_MODULES:-true}"
+      - "-Xms${IGNITION_XMS:-256m}"
+      - "-Xmx${IGNITION_XMX:-1g}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8088/StatusPing || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  ignition83-data:

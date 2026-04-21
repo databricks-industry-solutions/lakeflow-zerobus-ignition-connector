@@ -68,6 +68,28 @@ public final class ZerobusServletHandler {
             return Response.text(200, runtime.getDiagnosticsInfo());
         }
 
+        if ("/metrics/compression".equals(path)) {
+            if (runtime == null) {
+                return Response.json(500, "{\"error\":\"hook_not_initialized\"}");
+            }
+            Object metrics = runtime.getCompressionMetrics();
+            if (metrics == null) {
+                return Response.json(200, "{\"available\":false}");
+            }
+            return Response.json(200, gson.toJson(metrics));
+        }
+
+        if ("/diagnostics/sdt".equals(path)) {
+            if (runtime == null) {
+                return Response.json(500, "{\"error\":\"hook_not_initialized\"}");
+            }
+            Object report = runtime.getSdtValidationReport();
+            if (report == null) {
+                return Response.json(200, "{\"available\":false}");
+            }
+            return Response.json(200, gson.toJson(report));
+        }
+
         if ("/config".equals(path)) {
             if (runtime == null) {
                 return Response.json(500, "{\"error\":\"hook_not_initialized\"}");

@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * ConfigModel - POJO for module configuration settings.
@@ -131,13 +132,69 @@ public class ConfigModel implements Serializable {
     
     /** Include tag quality in events */
     private boolean includeQuality = true;
-    
-    /** Only send events when value changes (deadband filtering) */
+
+    /**
+     * Numeric compression mode for edge-side reduction.
+     *
+     * Backward compatibility:
+     * - If unset (null), the effective mode is derived from {@link #onlyOnChange}:
+     *   - onlyOnChange=true  -> DEADBAND
+     *   - onlyOnChange=false -> NONE
+     */
+    public enum NumericCompressionMode {
+        NONE,
+        DEADBAND,
+        SDT
+    }
+
+    /**
+     * Numeric compression mode.
+     *
+     * IMPORTANT: keep nullable so we can detect "unset" and preserve backward compatibility
+     * with configs that only set {@link #onlyOnChange}.
+     */
+    private NumericCompressionMode numericCompressionMode = null;
+
+    /**
+     * Legacy flag (deprecated): only send events when value changes.
+     * Prefer {@link #numericCompressionMode} going forward.
+     */
     private boolean onlyOnChange = false;
-    
-    /** Numeric deadband for change detection (absolute difference) */
+
+    /** Numeric deadband for change detection (absolute difference). Used when mode = DEADBAND. */
     private double numericDeadband = 0.0;
-    
+
+    /** SDT deviation (engineering units). Used when mode = SDT. Must be > 0. */
+    private double numericSdtDeviation = 0.0;
+
+    /**
+     * SDT maximum interval between emitted points (ms). Used when mode = SDT.
+     * 0 disables max-interval forcing.
+     */
+    private long numericSdtMaxIntervalMs = 0L;
+
+    /**
+     * SDT minimum interval between emitted points (ms). Used when mode = SDT.
+     * 0 disables min-interval suppression.
+     *
+     * This is analogous to PI "CompMin": suppress points that arrive too soon after the last emitted point.
+     */
+    private long numericSdtMinIntervalMs = 0L;
+
+    /**
+     * Optional per-tag deadband rules (applies only to numeric values).
+     * The first matching rule wins; if none match, {@link #numericDeadband} is used.
+     *
+     * This allows per-signal tuning (e.g., temperature vs pressure vs flow) without changing tag groups.
+     */
+    private List<DeadbandRule> numericDeadbandRules = new ArrayList<>();
+
+    /**
+     * Per-tag numeric compression rules (first match wins).
+     * Prefer this over {@link #numericDeadbandRules} for new configurations.
+     */
+    private List<NumericCompressionRule> numericCompressionRules = new ArrayList<>();
+
     // === Module Control ===
     
     /** Enable/disable the entire module */
@@ -382,6 +439,25 @@ public class ConfigModel implements Serializable {
     public void setIncludeQuality(boolean includeQuality) {
         this.includeQuality = includeQuality;
     }
+
+    public NumericCompressionMode getNumericCompressionMode() {
+        return numericCompressionMode;
+    }
+
+    public void setNumericCompressionMode(NumericCompressionMode numericCompressionMode) {
+        this.numericCompressionMode = numericCompressionMode;
+    }
+
+    /**
+     * Effective numeric compression mode with backward compatibility for older configs.
+     */
+    public NumericCompressionMode getNumericCompressionModeEffective() {
+        if (numericCompressionMode != null) {
+            return numericCompressionMode;
+        }
+        // Legacy behavior: onlyOnChange implies deadband filtering.
+        return onlyOnChange ? NumericCompressionMode.DEADBAND : NumericCompressionMode.NONE;
+    }
     
     public boolean isOnlyOnChange() {
         return onlyOnChange;
@@ -398,15 +474,111 @@ public class ConfigModel implements Serializable {
     public void setNumericDeadband(double numericDeadband) {
         this.numericDeadband = numericDeadband;
     }
-    
+
+    public double getNumericSdtDeviation() {
+        return numericSdtDeviation;
+    }
+
+    public void setNumericSdtDeviation(double numericSdtDeviation) {
+        this.numericSdtDeviation = numericSdtDeviation;
+    }
+
+    public long getNumericSdtMaxIntervalMs() {
+        return numericSdtMaxIntervalMs;
+    }
+
+    public void setNumericSdtMaxIntervalMs(long numericSdtMaxIntervalMs) {
+        this.numericSdtMaxIntervalMs = numericSdtMaxIntervalMs;
+    }
+
+    public long getNumericSdtMinIntervalMs() {
+        return numericSdtMinIntervalMs;
+    }
+
+    public void setNumericSdtMinIntervalMs(long numericSdtMinIntervalMs) {
+        this.numericSdtMinIntervalMs = numericSdtMinIntervalMs;
+    }
+
+    public List<NumericCompressionRule> getNumericCompressionRules() {
+        return numericCompressionRules;
+    }
+
+    public void setNumericCompressionRules(List<NumericCompressionRule> numericCompressionRules) {
+        this.numericCompressionRules = (numericCompressionRules == null) ? new ArrayList<>() : numericCompressionRules;
+    }
+
+    /**
+     * Effective numeric compression policy for a given tag path.
+     * First matching rule wins; otherwise uses global defaults.
+     */
+    public NumericCompressionPolicy getNumericCompressionPolicyForTag(String tagPath) {
+        String tp = (tagPath == null) ? "" : tagPath;
+
+        // Start with global defaults.
+        NumericCompressionMode mode = getNumericCompressionModeEffective();
+        NumericCompressionPolicy base = new NumericCompressionPolicy(
+                mode,
+                numericDeadband,
+                numericSdtDeviation,
+                numericSdtMaxIntervalMs,
+                numericSdtMinIntervalMs
+        );
+
+        // New rules (preferred).
+        if (numericCompressionRules != null) {
+            for (NumericCompressionRule r : numericCompressionRules) {
+                if (r != null && r.matches(tp)) {
+                    return r.toPolicyOrFallback(base);
+                }
+            }
+        }
+
+        // Backward-compatible per-tag deadband rules (only meaningful when using deadband mode).
+        if (base.mode == NumericCompressionMode.DEADBAND) {
+            double db = getNumericDeadbandForTag(tp);
+            return new NumericCompressionPolicy(
+                    NumericCompressionMode.DEADBAND,
+                    db,
+                    base.sdtDeviation,
+                    base.sdtMaxIntervalMs,
+                    base.sdtMinIntervalMs
+            );
+        }
+
+        return base;
+    }
+
+    public List<DeadbandRule> getNumericDeadbandRules() {
+        return numericDeadbandRules;
+    }
+
+    public void setNumericDeadbandRules(List<DeadbandRule> numericDeadbandRules) {
+        this.numericDeadbandRules = (numericDeadbandRules == null) ? new ArrayList<>() : numericDeadbandRules;
+    }
+
+    /**
+     * Resolve the numeric deadband to apply for a specific tag path.
+     * Uses the first matching rule in {@link #numericDeadbandRules}; otherwise falls back to {@link #numericDeadband}.
+     */
+    public double getNumericDeadbandForTag(String tagPath) {
+        String tp = (tagPath == null) ? "" : tagPath;
+        if (numericDeadbandRules != null) {
+            for (DeadbandRule r : numericDeadbandRules) {
+                if (r != null && r.matches(tp)) {
+                    return r.getDeadband();
+                }
+            }
+        }
+        return numericDeadband;
+    }
+
     public boolean isEnabled() {
         return enabled;
     }
-    
+
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
     }
-    
     public boolean isDebugLogging() {
         return debugLogging;
     }
@@ -538,6 +710,89 @@ public class ConfigModel implements Serializable {
                 errors.add("Spool directory is not usable: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
             }
         }
+
+        // Numeric compression validation (edge-side reduction).
+        NumericCompressionMode effMode = getNumericCompressionModeEffective();
+
+        if (effMode == NumericCompressionMode.DEADBAND) {
+            if (numericDeadband < 0.0) {
+                errors.add("numericDeadband must be >= 0");
+            }
+        } else if (effMode == NumericCompressionMode.SDT) {
+            if (numericSdtDeviation <= 0.0) {
+                errors.add("numericSdtDeviation must be > 0 when numericCompressionMode is SDT");
+            }
+            if (numericSdtMaxIntervalMs < 0L) {
+                errors.add("numericSdtMaxIntervalMs must be >= 0");
+            }
+            if (numericSdtMinIntervalMs < 0L) {
+                errors.add("numericSdtMinIntervalMs must be >= 0");
+            }
+            if (numericSdtMaxIntervalMs > 0L && numericSdtMinIntervalMs > numericSdtMaxIntervalMs) {
+                errors.add("numericSdtMinIntervalMs must be <= numericSdtMaxIntervalMs when maxInterval is enabled");
+            }
+        }
+
+        // Per-tag numeric compression rules validation.
+        if (numericCompressionRules != null && !numericCompressionRules.isEmpty()) {
+            for (int i = 0; i < numericCompressionRules.size(); i++) {
+                NumericCompressionRule r = numericCompressionRules.get(i);
+                if (r == null) {
+                    continue;
+                }
+                if (r.tagPathRegex == null || r.tagPathRegex.isBlank()) {
+                    errors.add("numericCompressionRules[" + i + "].tagPathRegex is required (non-empty)");
+                    continue;
+                }
+                NumericCompressionMode m = (r.mode != null) ? r.mode : effMode;
+                if (m == NumericCompressionMode.DEADBAND) {
+                    if (r.deadband < 0.0) {
+                        errors.add("numericCompressionRules[" + i + "].deadband must be >= 0");
+                    }
+                } else if (m == NumericCompressionMode.SDT) {
+                    if (r.sdtDeviation <= 0.0) {
+                        errors.add("numericCompressionRules[" + i + "].sdtDeviation must be > 0");
+                    }
+                    if (r.sdtMaxIntervalMs < 0L) {
+                        errors.add("numericCompressionRules[" + i + "].sdtMaxIntervalMs must be >= 0");
+                    }
+                    if (r.sdtMinIntervalMs < 0L) {
+                        errors.add("numericCompressionRules[" + i + "].sdtMinIntervalMs must be >= 0");
+                    }
+                    if (r.sdtMaxIntervalMs > 0L && r.sdtMinIntervalMs > r.sdtMaxIntervalMs) {
+                        errors.add("numericCompressionRules[" + i + "].sdtMinIntervalMs must be <= sdtMaxIntervalMs when maxInterval is enabled");
+                    }
+                }
+                try {
+                    r.compile();
+                } catch (Exception e) {
+                    errors.add("numericCompressionRules[" + i + "].tagPathRegex is invalid regex: " + r.tagPathRegex);
+                }
+            }
+        }
+
+        // Backward-compatible per-tag deadband rules validation (only meaningful under deadband mode).
+        if (effMode == NumericCompressionMode.DEADBAND && numericDeadbandRules != null && !numericDeadbandRules.isEmpty()) {
+            for (int i = 0; i < numericDeadbandRules.size(); i++) {
+                DeadbandRule r = numericDeadbandRules.get(i);
+                if (r == null) {
+                    continue;
+                }
+                if (r.tagPathRegex == null || r.tagPathRegex.isBlank()) {
+                    errors.add("numericDeadbandRules[" + i + "].tagPathRegex is required (non-empty)");
+                    continue;
+                }
+                if (r.deadband < 0.0) {
+                    errors.add("numericDeadbandRules[" + i + "].deadband must be >= 0");
+                }
+                try {
+                    // Validate regex compiles (also caches compiled pattern for runtime).
+                    r.compile();
+                } catch (Exception e) {
+                    errors.add("numericDeadbandRules[" + i + "].tagPathRegex is invalid regex: " + r.tagPathRegex);
+                }
+            }
+        }
         
         return errors;
     }
@@ -617,8 +872,14 @@ public class ConfigModel implements Serializable {
             || this.requestTimeoutMs != newConfig.requestTimeoutMs
             || !Objects.equals(this.sourceSystemId, newConfig.sourceSystemId)
             || this.includeQuality != newConfig.includeQuality
+            || !Objects.equals(this.numericCompressionMode, newConfig.numericCompressionMode)
             || this.onlyOnChange != newConfig.onlyOnChange
             || Double.compare(this.numericDeadband, newConfig.numericDeadband) != 0
+            || Double.compare(this.numericSdtDeviation, newConfig.numericSdtDeviation) != 0
+            || this.numericSdtMaxIntervalMs != newConfig.numericSdtMaxIntervalMs
+            || this.numericSdtMinIntervalMs != newConfig.numericSdtMinIntervalMs
+            || !Objects.equals(this.numericDeadbandRules, newConfig.numericDeadbandRules)
+            || !Objects.equals(this.numericCompressionRules, newConfig.numericCompressionRules)
             || this.enabled != newConfig.enabled
             || this.debugLogging != newConfig.debugLogging;
     }
@@ -655,8 +916,14 @@ public class ConfigModel implements Serializable {
         this.requestTimeoutMs = other.requestTimeoutMs;
         this.sourceSystemId = other.sourceSystemId;
         this.includeQuality = other.includeQuality;
+        this.numericCompressionMode = other.numericCompressionMode;
         this.onlyOnChange = other.onlyOnChange;
         this.numericDeadband = other.numericDeadband;
+        this.numericSdtDeviation = other.numericSdtDeviation;
+        this.numericSdtMaxIntervalMs = other.numericSdtMaxIntervalMs;
+        this.numericSdtMinIntervalMs = other.numericSdtMinIntervalMs;
+        this.numericDeadbandRules = (other.numericDeadbandRules == null) ? new ArrayList<>() : new ArrayList<>(other.numericDeadbandRules);
+        this.numericCompressionRules = (other.numericCompressionRules == null) ? new ArrayList<>() : new ArrayList<>(other.numericCompressionRules);
         this.enabled = other.enabled;
         this.debugLogging = other.debugLogging;
     }
@@ -670,6 +937,247 @@ public class ConfigModel implements Serializable {
                 ", batchSize=" + batchSize +
                 ", enabled=" + enabled +
                 '}';
+    }
+
+    public static final class NumericCompressionPolicy implements Serializable {
+        private static final long serialVersionUID = 1L;
+
+        public final NumericCompressionMode mode;
+        public final double deadband;
+        public final double sdtDeviation;
+        public final long sdtMaxIntervalMs;
+        public final long sdtMinIntervalMs;
+
+        public NumericCompressionPolicy(
+                NumericCompressionMode mode,
+                double deadband,
+                double sdtDeviation,
+                long sdtMaxIntervalMs,
+                long sdtMinIntervalMs
+        ) {
+            this.mode = (mode == null) ? NumericCompressionMode.NONE : mode;
+            this.deadband = deadband;
+            this.sdtDeviation = sdtDeviation;
+            this.sdtMaxIntervalMs = sdtMaxIntervalMs;
+            this.sdtMinIntervalMs = sdtMinIntervalMs;
+        }
+
+        @Override
+        public String toString() {
+            return "NumericCompressionPolicy{" +
+                    "mode=" + mode +
+                    ", deadband=" + deadband +
+                    ", sdtDeviation=" + sdtDeviation +
+                    ", sdtMaxIntervalMs=" + sdtMaxIntervalMs +
+                    ", sdtMinIntervalMs=" + sdtMinIntervalMs +
+                    '}';
+        }
+    }
+
+    /**
+     * A rule that maps a tag path regex to a numeric compression policy.
+     * First matching rule wins.
+     */
+    public static final class NumericCompressionRule implements Serializable {
+        private static final long serialVersionUID = 1L;
+
+        private String tagPathRegex = "";
+        private NumericCompressionMode mode = null;
+
+        // Parameters (used depending on mode)
+        private double deadband = 0.0;
+        private double sdtDeviation = 0.0;
+        private long sdtMaxIntervalMs = 0L;
+        private long sdtMinIntervalMs = 0L;
+
+        private transient Pattern compiled;
+
+        public NumericCompressionRule() {}
+
+        public NumericCompressionRule(String tagPathRegex, NumericCompressionMode mode) {
+            this.tagPathRegex = tagPathRegex;
+            this.mode = mode;
+        }
+
+        public String getTagPathRegex() {
+            return tagPathRegex;
+        }
+
+        public void setTagPathRegex(String tagPathRegex) {
+            this.tagPathRegex = tagPathRegex;
+            this.compiled = null;
+        }
+
+        public NumericCompressionMode getMode() {
+            return mode;
+        }
+
+        public void setMode(NumericCompressionMode mode) {
+            this.mode = mode;
+        }
+
+        public double getDeadband() {
+            return deadband;
+        }
+
+        public void setDeadband(double deadband) {
+            this.deadband = deadband;
+        }
+
+        public double getSdtDeviation() {
+            return sdtDeviation;
+        }
+
+        public void setSdtDeviation(double sdtDeviation) {
+            this.sdtDeviation = sdtDeviation;
+        }
+
+        public long getSdtMaxIntervalMs() {
+            return sdtMaxIntervalMs;
+        }
+
+        public void setSdtMaxIntervalMs(long sdtMaxIntervalMs) {
+            this.sdtMaxIntervalMs = sdtMaxIntervalMs;
+        }
+
+        public long getSdtMinIntervalMs() {
+            return sdtMinIntervalMs;
+        }
+
+        public void setSdtMinIntervalMs(long sdtMinIntervalMs) {
+            this.sdtMinIntervalMs = sdtMinIntervalMs;
+        }
+
+        boolean matches(String tagPath) {
+            if (tagPathRegex == null || tagPathRegex.isBlank()) {
+                return false;
+            }
+            Pattern p = compiled;
+            if (p == null) {
+                p = compile();
+            }
+            return p.matcher(tagPath).matches();
+        }
+
+        Pattern compile() {
+            Pattern p = Pattern.compile(tagPathRegex);
+            this.compiled = p;
+            return p;
+        }
+
+        NumericCompressionPolicy toPolicyOrFallback(NumericCompressionPolicy fallback) {
+            NumericCompressionMode m = (this.mode != null) ? this.mode : (fallback != null ? fallback.mode : NumericCompressionMode.NONE);
+            double db = (m == NumericCompressionMode.DEADBAND) ? this.deadband : (fallback != null ? fallback.deadband : 0.0);
+            double dev = (m == NumericCompressionMode.SDT) ? this.sdtDeviation : (fallback != null ? fallback.sdtDeviation : 0.0);
+            long maxInt = (m == NumericCompressionMode.SDT) ? this.sdtMaxIntervalMs : (fallback != null ? fallback.sdtMaxIntervalMs : 0L);
+            long minInt = (m == NumericCompressionMode.SDT) ? this.sdtMinIntervalMs : (fallback != null ? fallback.sdtMinIntervalMs : 0L);
+            return new NumericCompressionPolicy(m, db, dev, maxInt, minInt);
+        }
+
+        @Override
+        public String toString() {
+            return "NumericCompressionRule{" +
+                    "tagPathRegex='" + tagPathRegex + '\'' +
+                    ", mode=" + mode +
+                    ", deadband=" + deadband +
+                    ", sdtDeviation=" + sdtDeviation +
+                    ", sdtMaxIntervalMs=" + sdtMaxIntervalMs +
+                    ", sdtMinIntervalMs=" + sdtMinIntervalMs +
+                    '}';
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            NumericCompressionRule that = (NumericCompressionRule) o;
+            return Double.compare(this.deadband, that.deadband) == 0
+                    && Double.compare(this.sdtDeviation, that.sdtDeviation) == 0
+                    && this.sdtMaxIntervalMs == that.sdtMaxIntervalMs
+                    && this.sdtMinIntervalMs == that.sdtMinIntervalMs
+                    && Objects.equals(this.tagPathRegex, that.tagPathRegex)
+                    && this.mode == that.mode;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(tagPathRegex, mode, deadband, sdtDeviation, sdtMaxIntervalMs, sdtMinIntervalMs);
+        }
+    }
+
+    /**
+     * A rule that maps a tag path regex to an absolute numeric deadband.
+     * Example:
+     * - tagPathRegex: "^\\[default\\].*\\/Temp\\/.*$"
+     * - deadband: 0.1
+     */
+    public static final class DeadbandRule implements Serializable {
+        private static final long serialVersionUID = 1L;
+
+        private String tagPathRegex = "";
+        private double deadband = 0.0;
+
+        private transient Pattern compiled;
+
+        public DeadbandRule() {}
+
+        public DeadbandRule(String tagPathRegex, double deadband) {
+            this.tagPathRegex = tagPathRegex;
+            this.deadband = deadband;
+        }
+
+        public String getTagPathRegex() {
+            return tagPathRegex;
+        }
+
+        public void setTagPathRegex(String tagPathRegex) {
+            this.tagPathRegex = tagPathRegex;
+            this.compiled = null;
+        }
+
+        public double getDeadband() {
+            return deadband;
+        }
+
+        public void setDeadband(double deadband) {
+            this.deadband = deadband;
+        }
+
+        boolean matches(String tagPath) {
+            if (tagPathRegex == null || tagPathRegex.isBlank()) {
+                return false;
+            }
+            Pattern p = compiled;
+            if (p == null) {
+                p = compile();
+            }
+            return p.matcher(tagPath).matches();
+        }
+
+        Pattern compile() {
+            Pattern p = Pattern.compile(tagPathRegex);
+            this.compiled = p;
+            return p;
+        }
+
+        @Override
+        public String toString() {
+            return "DeadbandRule{tagPathRegex='" + tagPathRegex + "', deadband=" + deadband + "}";
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            DeadbandRule that = (DeadbandRule) o;
+            return Double.compare(this.deadband, that.deadband) == 0
+                    && Objects.equals(this.tagPathRegex, that.tagPathRegex);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(tagPathRegex, deadband);
+        }
     }
 }
 

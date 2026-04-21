@@ -1,0 +1,12 @@
+{
+  "name": "ot-lakehouse-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "OT Lakehouse Demo - Ignition to Databricks via Zerobus with SDT compression",
+  "scripts": {
+    "demo:start": "node scripts/check-env.js && concurrently -n be,fe,sim -c blue,green,yellow \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\" \"npm --prefix simulator run dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

@@ -1,0 +1,85 @@
+# Logo-Specific Prompt Hints
+#
+# These are detailed instructions that get automatically injected into prompts
+# when specific logos are detected in the logo kit. Use this for logos that
+# commonly get misinterpreted or require special handling.
+#
+# Format:
+#   logo_name:  # Must match logo filename (without extension)
+#     enabled: true/false
+#     warning_level: "CRITICAL" | "WARNING" | "INFO"
+#     correct_description: "Detailed visual description of what the logo contains"
+#     wrong_patterns:
+#       - "Anti-pattern 1"
+#       - "Anti-pattern 2"
+#     stop_condition: "Clear instruction to stop if doing wrong thing"
+#     additional_notes: "Any extra context"
+
+# Unity Catalog logo frequently gets misinterpreted as a single hexagon
+unity-catalog:
+  enabled: true
+  warning_level: "CRITICAL"
+  correct_description: |
+    The uploaded Unity Catalog logo file contains MULTIPLE DISTINCT GEOMETRIC SHAPES:
+    - Pink/magenta SQUARES (multiple)
+    - Yellow/gold TRIANGULAR shapes (multiple)
+    - Navy blue HEXAGON (one, in center)
+    These shapes are arranged in a SPECIFIC cluster/constellation pattern - NOT a single shape.
+  wrong_patterns:
+    - "A single hexagon shape"
+    - "A stylized hexagon"
+    - "A multi-colored hexagonal logo"
+    - "Any single geometric shape"
+    - "Any logo you generate/draw yourself"
+  stop_condition: "If you find yourself drawing or generating ANY hexagon shape, STOP - that is wrong. The correct logo is a MULTI-ELEMENT composition that was uploaded as an image file."
+  additional_notes: "You MUST use the EXACT uploaded Unity Catalog image file from the logo kit."
+
+# Unity Catalog Solo variant (same issue)
+unity-catalog-solo:
+  enabled: true
+  warning_level: "CRITICAL"
+  correct_description: |
+    The uploaded Unity Catalog logo file contains MULTIPLE DISTINCT GEOMETRIC SHAPES:
+    - Pink/magenta SQUARES (multiple)
+    - Yellow/gold TRIANGULAR shapes (multiple)
+    - Navy blue HEXAGON (one, in center)
+    These shapes are arranged in a SPECIFIC cluster/constellation pattern - NOT a single shape.
+  wrong_patterns:
+    - "A single hexagon shape"
+    - "A stylized hexagon"
+    - "A multi-colored hexagonal logo"
+    - "Any single geometric shape"
+    - "Any logo you generate/draw yourself"
+  stop_condition: "If you find yourself drawing or generating ANY hexagon shape, STOP - that is wrong. The correct logo is a MULTI-ELEMENT composition that was uploaded as an image file."
+  additional_notes: "You MUST use the EXACT uploaded Unity Catalog image file from the logo kit."
+
+# Governance Catalog (Unity Catalog alias)
+governance-catalog:
+  enabled: true
+  warning_level: "CRITICAL"
+  correct_description: |
+    The uploaded Unity Catalog logo file contains MULTIPLE DISTINCT GEOMETRIC SHAPES:
+    - Pink/magenta SQUARES (multiple)
+    - Yellow/gold TRIANGULAR shapes (multiple)
+    - Navy blue HEXAGON (one, in center)
+    These shapes are arranged in a SPECIFIC cluster/constellation pattern - NOT a single shape.
+  wrong_patterns:
+    - "A single hexagon shape"
+    - "A stylized hexagon"
+    - "A multi-colored hexagonal logo"
+    - "Any single geometric shape"
+    - "Any logo you generate/draw yourself"
+  stop_condition: "If you find yourself drawing or generating ANY hexagon shape, STOP - that is wrong. The correct logo is a MULTI-ELEMENT composition that was uploaded as an image file."
+  additional_notes: "You MUST use the EXACT uploaded Unity Catalog image file from the logo kit."
+
+# Add more logo hints here as needed
+# Example template:
+#
+# databricks-full:
+#   enabled: true
+#   warning_level: "WARNING"
+#   correct_description: "The Databricks logo consists of stacked orange/red bars with 'databricks' text"
+#   wrong_patterns:
+#     - "A solid rectangle"
+#     - "A gradient bar"
+#   stop_condition: "Use the exact uploaded logo file"

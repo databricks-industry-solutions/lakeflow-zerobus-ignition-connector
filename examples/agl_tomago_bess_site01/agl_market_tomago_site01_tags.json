@@ -1,0 +1,59 @@
+{
+  "name": "AGL",
+  "tagType": "Folder",
+  "tags": [
+    {
+      "name": "Australia",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "name": "NSW",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "Tomago",
+              "tagType": "Folder",
+              "tags": [
+                {
+                  "name": "Site01",
+                  "tagType": "Folder",
+                  "tags": [
+                    {
+                      "name": "Config",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "SimEnabled", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                        { "name": "UpdateEveryMs", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 2000 }
+                      ]
+                    },
+                    {
+                      "name": "Diagnostics",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "TickCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+                        { "name": "LastRun", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                        { "name": "LastStatus", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                        { "name": "LastError", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+                      ]
+                    },
+                    {
+                      "name": "Market",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "RRP_AUD_per_MWh", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 110.0 },
+                        { "name": "PriceSpikeActive", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+                        { "name": "FCAS_ContingencyPrice_AUD_per_MWh", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 18.0 },
+                        { "name": "FCAS_RegPrice_AUD_per_MWh", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 12.0 }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+

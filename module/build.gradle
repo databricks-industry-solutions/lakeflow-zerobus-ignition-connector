@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'com.example.ignition'
-version = '1.0.0'
+version = '1.0.10'
 
 // Module ID:
 // - Default is the current internal/dev module id.
@@ -17,7 +17,7 @@ def moduleId = project.hasProperty('moduleId') ? project.getProperty('moduleId')
 // Some local builds were previously run with sudo, which can leave the default ./build directory
 // owned by root and therefore unwritable. To keep builds reliable, always use a user-writable build dir.
 // Also, keep 8.1 and 8.3 builds from stepping on each other by using distinct build dirs.
-def buildFlavor = (project.hasProperty('buildForIgnitionVersion') ? project.getProperty('buildForIgnitionVersion') : '8.1.5').startsWith('8.3') ? '8.3' : '8.1'
+def buildFlavor = (project.hasProperty('buildForIgnitionVersion') ? project.getProperty('buildForIgnitionVersion') : '8.1.51').startsWith('8.3') ? '8.3' : '8.1'
 buildDir = file("$projectDir/build-user-${buildFlavor}")
 
 // Cross-version compatibility:
@@ -31,7 +31,7 @@ buildDir = file("$projectDir/build-user-${buildFlavor}")
 // For Ignition 8.3 builds, we emit Java 17 bytecode to match the platform runtime.
 def isIgnition83Build = (project.hasProperty('buildForIgnitionVersion')
         ? project.getProperty('buildForIgnitionVersion')
-        : '8.1.5').startsWith('8.3')
+        : '8.1.51').startsWith('8.3')
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(17)
@@ -42,7 +42,7 @@ java {
 
 repositories {
     mavenCentral()
-    
+
     // Inductive Automation Repository
     maven {
         url = "https://nexus.inductiveautomation.com/repository/public"
@@ -52,12 +52,18 @@ repositories {
 ext {
     // Build version - what Ignition version to compile against
     // Build against the lowest supported version for best compatibility.
-    // Override with: -PbuildForIgnitionVersion=8.1.5
-    buildForIgnitionVersion = project.hasProperty('buildForIgnitionVersion') ? project.getProperty('buildForIgnitionVersion') : '8.1.5'
+    // Override with: -PbuildForIgnitionVersion=8.1.51
+    buildForIgnitionVersion = project.hasProperty('buildForIgnitionVersion') ? project.getProperty('buildForIgnitionVersion') : '8.1.51'
 
     // Ignition installation home (used to locate SDK jars). Override with:
     // -PignitionHome=/path/to/ignition OR env IGNITION_HOME
-    ignitionHome = project.hasProperty('ignitionHome') ? project.getProperty('ignitionHome') : (System.getenv('IGNITION_HOME') ?: '/usr/local/ignition')
+    // Default behavior (when not explicitly overridden):
+    // - For 8.1 builds, use /usr/local/ignition81
+    // - For 8.3 builds, use /usr/local/ignition
+    def defaultIgnitionHome = buildForIgnitionVersion.startsWith('8.3') ? '/usr/local/ignition' : '/usr/local/ignition81'
+    ignitionHome = project.hasProperty('ignitionHome')
+            ? project.getProperty('ignitionHome')
+            : (System.getenv('IGNITION_HOME') ?: defaultIgnitionHome)
     
     // Minimum version - what the module will declare as minimum requirement
     minIgnitionVersion = project.hasProperty('minIgnitionVersion') ? project.getProperty('minIgnitionVersion') : '8.1.0'
@@ -129,10 +135,15 @@ tasks.register('verifyIgnitionSdkJars') {
         if (!missing.isEmpty()) {
             throw new RuntimeException("Missing required Ignition SDK jars:\n- " + missing.join("\n- ") +
                     "\n\nYou likely pointed at the wrong install. Example for 8.1 SDK:\n" +
-                    "  export IGNITION_HOME=/usr/local/ignition8.1\n" +
-                    "  ./gradlew clean buildModule -PbuildForIgnitionVersion=8.1.50")
+                    "  export IGNITION_HOME=/usr/local/ignition81\n" +
+                    "  ./gradlew clean buildModule -PbuildForIgnitionVersion=8.1.51")
         }
     }
+}
+
+// Fail before javac so missing SDK jars surface as verifyIgnitionSdkJars errors instead of many compile failures.
+tasks.named('compileJava') {
+    dependsOn 'verifyIgnitionSdkJars'
 }
 
 // Protobuf configuration
@@ -290,9 +301,8 @@ task buildModule(type: Zip, dependsOn: [jar, verifyIgnitionSdkJars]) {
     }
     
     doLast {
-        // Copy to repo-level releases folder (repoRoot/release/).
-        // This Gradle project lives in repoRoot/module, so the repo root is one level up.
-        def releasesDir = file("${project.projectDir}/../releases")
+        // Copy to project root releases folder
+        def releasesDir = file("${project.rootDir}/releases")
         releasesDir.mkdirs()
         def targetFile = new File(releasesDir, archiveFileName.get())
         copy {
@@ -445,12 +455,7 @@ tasks.register('signModule', JavaExec) {
     description = 'Signs the built .modl using Inductive Automation module-signer.jar (requires signing properties).'
     dependsOn buildModule
 
-    // Run module-signer.jar as a tool; use the Gradle JVM (JDK 17 toolchain is fine for the signer tool).
-    mainClass = '-jar'
-    classpath = files()
-
     doFirst {
-        // Validate signing config FIRST (doFirst actions run in LIFO order, so keep this as the only doFirst).
         def missing = []
         if (!moduleSignerJar) missing << "moduleSignerJar (or env MODULE_SIGNER_JAR)"
         if (!signingKeystore) missing << "signingKeystore (or env SIGNING_KEYSTORE)"
@@ -476,13 +481,16 @@ tasks.register('signModule', JavaExec) {
         if (signingChain && !file(signingChain).exists()) {
             throw new RuntimeException("signingChain not found: ${signingChain}")
         }
+    }
 
+    // Run module-signer.jar as a tool; use the Gradle JVM (JDK 17 toolchain is fine for the signer tool).
+    mainClass = '-jar'
+    classpath = files()
+
+    doFirst {
         def inFile = buildModule.archiveFile.get().asFile
         def outFileName = inFile.name.replaceFirst(/\\.modl$/, '') + "-signed.modl"
         def outFile = new File(inFile.parentFile, outFileName)
-        // Expose paths so we can copy the signed artifact into repo-level releases/ in doLast.
-        ext.unsignedModlFile = inFile
-        ext.signedModlFile = outFile
 
         def argsList = [
                 file(moduleSignerJar).absolutePath,
@@ -499,22 +507,6 @@ tasks.register('signModule', JavaExec) {
 
         args = argsList
         println "Signing module:\n  in : ${inFile}\n  out: ${outFile}"
-    }
-
-    doLast {
-        def outFile = ext.has('signedModlFile') ? ext.signedModlFile : null
-        if (outFile == null || !outFile.exists()) {
-            throw new RuntimeException("Signed module was not produced (expected at: ${outFile}).")
-        }
-
-        // Copy to repo-level releases folder (repoRoot/release/).
-        def releasesDir = file("${project.projectDir}/../releases")
-        releasesDir.mkdirs()
-        copy {
-            from outFile
-            into releasesDir
-        }
-        println "✅ Signed module copied to: ${new File(releasesDir, outFile.name)}"
     }
 }
 

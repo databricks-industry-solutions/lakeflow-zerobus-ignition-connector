@@ -1,6 +1,6 @@
 services:
   ignition83:
-    image: "inductiveautomation/ignition:${IGNITION83_TAG:-8.3.2}"
+    image: "inductiveautomation/ignition:${IGNITION83_TAG:-8.3.3}"
     container_name: ignition83_7088
     ports:
       - "${HOST_HTTP_PORT_83:-7088}:8088"
@@ -11,11 +11,21 @@ services:
       - ignition83-data:/usr/local/bin/ignition/data
       # Place your 8.3 gateway backup at docker/ignition-gateway/restore83/restore.gwbk
       - ./restore83/restore.gwbk:/restore.gwbk:ro
+      # Auto-load Zerobus module on startup (no manual install needed)
+      - ../../releases/zerobus-connector-1.1.0-ignition-8.3.modl:/usr/local/bin/ignition/user-lib/modules/zerobus-connector.modl:ro
     command:
       - "-r"
       - "/restore.gwbk"
       - "--"
       - "-Dignition.allowunsignedmodules=${IGNITION_ALLOW_UNSIGNED_MODULES:-false}"
+      - "-Xms${IGNITION_XMS:-512m}"
+      - "-Xmx${IGNITION_XMX:-2g}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8088/StatusPing || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 volumes:
   ignition83-data:

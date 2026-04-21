@@ -1,0 +1,63 @@
+{
+  "version": 2,
+  "config": {
+    "sample_questions": [
+      {"id": "d2c9316dcafd4275bf66fc670ccf5ceb", "question": ["What is the current SoC and what is the battery doing (charging/discharging)?"]},
+      {"id": "5bd57273cd6047649a14aa6bc3074105", "question": ["Are we dispatch-limited, constraint-limited, or thermally derated right now?"]},
+      {"id": "439a1eb07efa4d0085396a1c350cf7a9", "question": ["How big is our tracking error over the last 2 hours? Show the worst intervals."]},
+      {"id": "354a1627b1c34147a3bc0159512a3804", "question": ["How much curtailment did we have today, and what's the revenue proxy impact?"]},
+      {"id": "efd6cfbc199047ac9a63f711b1d23350", "question": ["Did a price spike coincide with discharge? Show last 6 hours with price + power."]},
+      {"id": "cd53811aaae44c069fcd2b81e29a8a12", "question": ["Do we have any critical alarms or thermal risk? What's the max rack temp today?"]},
+      {"id": "ea3bb65e48604a6da2aff94abad9cc63", "question": ["How many open work orders do we have and are any high priority?"]},
+      {"id": "1ced5feb634146e583dcebae0ea2e400", "question": ["Show me the last 6 hours of SoC%, POI net MW, dispatch target MW, and price."]},
+      {"id": "bdc9bd5dbf15490ca4fe241a53f6f6e6", "question": ["List every 5-minute interval today where constraint_active=true and tracking_error_mw > 20."]},
+      {"id": "11a9654ce7ab4baeac8574f1a1b7af2e", "question": ["Show max_rack_temp_c trend today and indicate when derate_active was true."]}
+    ]
+  },
+  "data_sources": {
+    "tables": [
+      {"identifier": "agl_ignition.ot.gold_site_kpis_5m"},
+      {"identifier": "agl_ignition.ot.gold_site_kpis_daily"},
+      {"identifier": "agl_ignition.ot.gold_dispatch_performance_5m"},
+      {"identifier": "agl_ignition.ot.gold_asset_reliability_daily"},
+      {"identifier": "agl_ignition.ot.gold_revenue_proxy_daily"},
+      {"identifier": "agl_ignition.ot.silver_signals_latest"},
+      {"identifier": "agl_ignition.ot.silver_signals_1m"},
+      {"identifier": "agl_ignition.ot.silver_grid_events"},
+      {"identifier": "agl_ignition.ot.silver_maintenance_events"}
+    ]
+  },
+  "instructions": {
+    "text_instructions": [
+      {
+        "id": "9d39033fdbac4de582b8c7421f3271dd",
+        "content": [
+          "You are an asset intelligence assistant for AGL's Tomago Battery (NSW) demo.\n",
+          "Use Gold views for summaries and KPI trends, and Silver views for drilldown.\n",
+          "\n",
+          "Primary catalog: agl_ignition\n",
+          "Primary schema: ot\n",
+          "\n",
+          "Gold views:\n",
+          "- gold_site_kpis_5m\n",
+          "- gold_site_kpis_daily\n",
+          "- gold_dispatch_performance_5m\n",
+          "- gold_asset_reliability_daily\n",
+          "- gold_revenue_proxy_daily\n",
+          "\n",
+          "Silver views:\n",
+          "- silver_events_normalized\n",
+          "- silver_signals_1m\n",
+          "- silver_signals_latest\n",
+          "- silver_grid_events\n",
+          "- silver_maintenance_events\n",
+          "\n",
+          "When answering:\n",
+          "- state the time window\n",
+          "- include at least one query-backed metric\n",
+          "- give a recommended next action (ops, maintenance, market)"
+        ]
+      }
+    ]
+  }
+}

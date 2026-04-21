@@ -6,6 +6,8 @@ import com.example.ignition.zerobus.pipeline.StoreAndForwardBuffer;
 import com.example.ignition.zerobus.pipeline.EventSink;
 import com.example.ignition.zerobus.pipeline.ZerobusPipelineFactory;
 import com.example.ignition.zerobus.proto.OTEvent;
+import com.example.ignition.zerobus.compression.SdtValidationManager;
+import com.example.ignition.zerobus.compression.SdtValidationReport;
 import com.inductiveautomation.ignition.gateway.model.GatewayContext;
 import com.inductiveautomation.ignition.gateway.tags.model.GatewayTagManager;
 import com.inductiveautomation.ignition.common.model.values.QualifiedValue;
@@ -47,6 +49,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public class TagSubscriptionService {
     
     private static final Logger logger = LoggerFactory.getLogger(TagSubscriptionService.class);
+    private static final int COMPRESSION_WINDOW_MINUTES = 15;
+    private static final int COMPRESSION_TAG_STATS_MAX = 5000;
     
     private final GatewayContext gatewayContext;
     private final ConfigModel config;
@@ -60,13 +64,31 @@ public class TagSubscriptionService {
     // Direct tag subscription state
     private volatile GatewayTagManager tagManager;
     private final Map<TagPath, TagChangeListener> subscribedListeners = new ConcurrentHashMap<>();
-    private final Map<String, Object> lastSentValueByTag = new ConcurrentHashMap<>();
+    private final Map<String, Object> lastEmittedValueByTag = new ConcurrentHashMap<>();
+    private final Map<String, SdtCompressor.State> sdtStateByTag = new ConcurrentHashMap<>();
     private volatile boolean autoPausedDirectSubscriptions = false;
     
     // Metrics
     private AtomicLong totalEventsReceived = new AtomicLong(0);
     private AtomicLong totalEventsDropped = new AtomicLong(0);
     private AtomicLong totalBatchesFlushed = new AtomicLong(0);
+
+    // Compression metrics (edge reduction)
+    private final AtomicLong totalEventsFilteredDeadband = new AtomicLong(0);
+    private final AtomicLong totalEventsFilteredSdt = new AtomicLong(0);
+    private final AtomicLong totalEventsEmittedSdt = new AtomicLong(0);
+    private final AtomicLong totalEventsForcedBySdtMaxInterval = new AtomicLong(0);
+    private final AtomicLong totalSdtOutOfOrderResets = new AtomicLong(0);
+
+    // Rolling window metrics for visual diagnostics (last N minutes)
+    private final RollingCompressionMetrics rolling = new RollingCompressionMetrics(COMPRESSION_WINDOW_MINUTES);
+    private final RollingLatencyMetrics rollingLatency = new RollingLatencyMetrics(COMPRESSION_WINDOW_MINUTES);
+
+    // Per-tag stats (bounded) to highlight which signals get compressed
+    private final ConcurrentHashMap<String, TagCompressionStats> perTagCompression = new ConcurrentHashMap<>();
+
+    // SDT validation buffers (raw points + pivot markers) for deviation-band proof
+    private final SdtValidationManager sdtValidationManager = new SdtValidationManager();
     
     // Rate limiting
     private volatile long lastFlushTime = 0;
@@ -218,6 +240,43 @@ public class TagSubscriptionService {
 
     public boolean isRunning() {
         return running.get();
+    }
+
+    /**
+     * Generate an SDT validation report by comparing raw points vs linear interpolation of emitted pivots.
+     *
+     * This is primarily intended for demos and tuning (proving the deviation guarantee).
+     */
+    public SdtValidationReport getSdtValidationReport(int maxTags, int samplePoints) {
+        // If we haven't recorded any SDT points yet, return an "unavailable" report.
+        if (sdtValidationManager.getTrackedTagCount() == 0) {
+            SdtValidationReport r = new SdtValidationReport();
+            r.enabled = false;
+            r.deviationConfigured = config.getNumericSdtDeviation();
+            r.sdtMaxIntervalMs = config.getNumericSdtMaxIntervalMs();
+            r.sdtMinIntervalMs = config.getNumericSdtMinIntervalMs();
+            r.trackedTags = 0;
+            r.overallVerdict = "PASS";
+            r.tags = java.util.Collections.emptyList();
+            return r;
+        }
+
+        // Use global SDT params for the report header.
+        // Per-tag overrides are resolved via numericCompressionRules and used as validation thresholds.
+        return sdtValidationManager.generateReport(
+                config.getNumericSdtDeviation(),
+                config.getNumericSdtMaxIntervalMs(),
+                config.getNumericSdtMinIntervalMs(),
+                maxTags,
+                samplePoints,
+                tagPath -> {
+                    ConfigModel.NumericCompressionPolicy p = config.getNumericCompressionPolicyForTag(tagPath);
+                    if (p != null && p.mode == ConfigModel.NumericCompressionMode.SDT && p.sdtDeviation > 0.0) {
+                        return p.sdtDeviation;
+                    }
+                    return config.getNumericSdtDeviation();
+                }
+        );
     }
     
     
@@ -569,7 +628,9 @@ public class TagSubscriptionService {
 
             // Clear maps immediately to avoid double-unsubscribe
             subscribedListeners.clear();
-            lastSentValueByTag.clear();
+            lastEmittedValueByTag.clear();
+            sdtStateByTag.clear();
+            sdtValidationManager.clear();
 
             if (paths.isEmpty() || listeners.isEmpty()) {
                 return;
@@ -621,7 +682,7 @@ public class TagSubscriptionService {
         }
     }
 
-    private boolean hasMeaningfulChange(Object last, Object current) {
+    private boolean hasMeaningfulChange(Object last, Object current, double deadband) {
         if (last == null && current == null) {
             return false;
         }
@@ -631,7 +692,6 @@ public class TagSubscriptionService {
         if (last instanceof Number && current instanceof Number) {
             double a = ((Number) last).doubleValue();
             double b = ((Number) current).doubleValue();
-            double deadband = config.getNumericDeadband();
             return Math.abs(a - b) > deadband;
         }
         return !Objects.equals(last, current);
@@ -693,14 +753,29 @@ public class TagSubscriptionService {
             }
 
             logger.debug("Flushing batch of {} events", drained.events.size());
-            boolean success = sink.send(drained.events);
+            long sendStartMs = System.currentTimeMillis();
+            long batchBytes = 0L;
+            List<OTEvent> sendEvents = new ArrayList<>(drained.events.size());
+            for (OTEvent e : drained.events) {
+                if (e == null) {
+                    continue;
+                }
+                batchBytes += e.getSerializedSize();
+                sendEvents.add(e.toBuilder().setBatchBytesSent(0L).build());
+            }
+            for (int i = 0; i < sendEvents.size(); i++) {
+                OTEvent e = sendEvents.get(i);
+                sendEvents.set(i, e.toBuilder().setBatchBytesSent(batchBytes).build());
+            }
+            boolean success = sink.send(sendEvents);
             if (success) {
                 buffer.commit(drained);
+                recordSendLatencies(sendStartMs, sendEvents);
                 totalBatchesFlushed.incrementAndGet();
                 lastFlushTime = System.currentTimeMillis();
             } else {
                 // Do NOT commit; records remain for retry. For memory mode, commit is required to remove.
-                logger.warn("Failed to send batch of {} events (will retry)", drained.events.size());
+                logger.warn("Failed to send batch of {} events (will retry)", sendEvents.size());
             }
         } catch (Exception e) {
             logger.error("Error flushing batch", e);
@@ -712,40 +787,110 @@ public class TagSubscriptionService {
             return true;
         }
 
+        String tagPathStr = te.getTagPath() != null ? te.getTagPath() : "";
+        long nowMs = (te.getTimestamp() != null) ? te.getTimestamp().getTime() : System.currentTimeMillis();
+        rolling.recordIncoming(nowMs);
+        recordIngestLatency(nowMs, te);
+
         // When store-and-forward is enabled and we're paused, reject new events rather than drop later.
         buffer.refreshBackpressure();
         if (buffer.isDiskBacked() && buffer.isPaused()) {
             totalEventsDropped.incrementAndGet();
+            rolling.recordDropped(nowMs);
             return false;
         }
 
-        // Optional filtering: onlyOnChange + numeric deadband.
-        // Apply consistently for BOTH direct subscriptions and HTTP ingest.
-        if (config.isOnlyOnChange()) {
-            String tagPathStr = te.getTagPath() != null ? te.getTagPath() : "";
-            Object last = lastSentValueByTag.get(tagPathStr);
-            if (!hasMeaningfulChange(last, te.getValue())) {
-                if (config.isDebugLogging()) {
-                    logger.debug("Skipped tag event (onlyOnChange) ({}) -> {}", source, tagPathStr);
+        // Numeric compression / filtering (applies consistently for BOTH direct subscriptions and HTTP ingest).
+        ConfigModel.NumericCompressionPolicy policy = config.getNumericCompressionPolicyForTag(tagPathStr);
+        ConfigModel.NumericCompressionMode mode = policy != null ? policy.mode : ConfigModel.NumericCompressionMode.NONE;
+
+        TagEvent toEmit = null;
+        Object value = te.getValue();
+        double perTagSdtCompressionRatio = 0.0;
+
+        if (mode == ConfigModel.NumericCompressionMode.NONE) {
+            toEmit = te;
+        } else if (value instanceof Number) {
+            if (mode == ConfigModel.NumericCompressionMode.DEADBAND) {
+                Object last = lastEmittedValueByTag.get(tagPathStr);
+                if (!hasMeaningfulChange(last, value, policy.deadband)) {
+                    totalEventsFilteredDeadband.incrementAndGet();
+                    rolling.recordFilteredDeadband(nowMs);
+                    recordPerTag(tagPathStr, mode, false, true, false, false);
+                    if (config.isDebugLogging()) {
+                        logger.debug("Skipped tag event (deadband) ({}) -> {}", source, tagPathStr);
+                    }
+                    return true;
                 }
-                return true; // not an error; just filtered out
+                toEmit = te;
+            } else if (mode == ConfigModel.NumericCompressionMode.SDT) {
+                // Validation buffers record the raw point *before* SDT decision so we can prove reconstruction
+                // via interpolation stays within deviation.
+                long tMs = te.getTimestamp() != null ? te.getTimestamp().getTime() : nowMs;
+                double v = ((Number) te.getValue()).doubleValue();
+                sdtValidationManager.recordRawPoint(tagPathStr, tMs, v);
+
+                SdtCompressor.State state = sdtStateByTag.computeIfAbsent(tagPathStr, k -> new SdtCompressor.State());
+                SdtCompressor.Outcome out = state.offer(te, policy.sdtDeviation, policy.sdtMaxIntervalMs, policy.sdtMinIntervalMs);
+                perTagSdtCompressionRatio = state.getCompressionRatioPct();
+                if (out == null || out.emit == null) {
+                    totalEventsFilteredSdt.incrementAndGet();
+                    rolling.recordFilteredSdt(nowMs);
+                    recordPerTag(tagPathStr, mode, false, false, true, false);
+                    return true;
+                }
+                // Mark the emitted pivot in the validation buffer (by timestamp handles "emit previous point").
+                if (out.emit.getTimestamp() != null) {
+                    sdtValidationManager.markPivotByTimestamp(tagPathStr, out.emit.getTimestamp().getTime());
+                } else {
+                    sdtValidationManager.markPivot(tagPathStr);
+                }
+                if (out.forcedByMaxInterval) {
+                    totalEventsForcedBySdtMaxInterval.incrementAndGet();
+                    rolling.recordForcedByMaxInterval(nowMs);
+                }
+                if (out.resetDueToOutOfOrder) {
+                    totalSdtOutOfOrderResets.incrementAndGet();
+                }
+                toEmit = out.emit;
+            } else {
+                // Defensive: treat unknown modes as NONE.
+                toEmit = te;
             }
+        } else {
+            // Non-numeric values: treat DEADBAND/SDT as "only on change" semantics.
+            Object last = lastEmittedValueByTag.get(tagPathStr);
+            if (Objects.equals(last, value)) {
+                totalEventsFilteredDeadband.incrementAndGet();
+                rolling.recordFilteredDeadband(nowMs);
+                recordPerTag(tagPathStr, mode, false, true, false, false);
+                return true;
+            }
+            toEmit = te;
         }
 
-        OTEvent evt = mapper.map(te);
+        boolean sdtEnabled = mode == ConfigModel.NumericCompressionMode.SDT;
+        boolean sdtCompressed = sdtEnabled && toEmit != null && toEmit.isNumeric();
+        double sdtCompressionRatio = sdtCompressed ? perTagSdtCompressionRatio : 0.0;
+        OTEvent evt = mapper.map(toEmit, sdtCompressed, sdtCompressionRatio, sdtEnabled, 0L);
         boolean ok = buffer.offer(evt);
         if (ok) {
-            if (config.isOnlyOnChange()) {
-                String tagPathStr = te.getTagPath() != null ? te.getTagPath() : "";
-                lastSentValueByTag.put(tagPathStr, te.getValue());
+            if (mode != ConfigModel.NumericCompressionMode.NONE) {
+                lastEmittedValueByTag.put(tagPathStr, toEmit.getValue());
+            }
+            if (mode == ConfigModel.NumericCompressionMode.SDT) {
+                totalEventsEmittedSdt.incrementAndGet();
             }
             totalEventsReceived.incrementAndGet();
+            rolling.recordEmitted(nowMs);
+            recordPerTag(tagPathStr, mode, true, false, false, false);
             if (config.isDebugLogging()) {
-                logger.debug("Accepted tag event ({}) -> {}", source, te.getTagPath());
+                logger.debug("Accepted tag event ({}) -> {}", source, toEmit.getTagPath());
             }
         } else {
             totalEventsDropped.incrementAndGet();
-            logger.warn("Buffer full, dropped event ({}) -> {}", source, te.getTagPath());
+            rolling.recordDropped(nowMs);
+            logger.warn("Buffer full, dropped event ({}) -> {}", source, toEmit.getTagPath());
         }
         return ok;
     }
@@ -766,6 +911,51 @@ public class TagSubscriptionService {
         
         long count = eventsThisSecond.incrementAndGet();
         return count <= config.getMaxEventsPerSecond();
+    }
+
+    private void recordIngestLatency(long eventTimestampMs, TagEvent te) {
+        long nowMs = System.currentTimeMillis();
+        long tsMs = eventTimestampMs;
+        if (te != null && te.getTimestamp() != null) {
+            tsMs = te.getTimestamp().getTime();
+        }
+        if (tsMs <= 0) {
+            return;
+        }
+        long ingestLatencyMs = Math.max(0L, nowMs - tsMs);
+        rollingLatency.recordIngest(nowMs, ingestLatencyMs);
+    }
+
+    private void recordSendLatencies(long sendStartMs, List<OTEvent> events) {
+        if (events == null || events.isEmpty()) {
+            return;
+        }
+        for (OTEvent e : events) {
+            if (e == null) {
+                continue;
+            }
+            if (e.getIngestionTimestamp() > 0) {
+                long ingestTsMs = e.getIngestionTimestamp() / 1000L;
+                long queueLatencyMs = Math.max(0L, sendStartMs - ingestTsMs);
+                rollingLatency.recordQueue(sendStartMs, queueLatencyMs);
+            }
+            if (e.getEventTime() > 0) {
+                long eventTsMs = e.getEventTime() / 1000L;
+                long endToEndMs = Math.max(0L, sendStartMs - eventTsMs);
+                rollingLatency.recordEndToEnd(sendStartMs, endToEndMs);
+            }
+        }
+    }
+
+    private double computeSdtCompressionRatio() {
+        long filtered = totalEventsFilteredSdt.get();
+        long emitted = totalEventsEmittedSdt.get();
+        long denom = filtered + emitted;
+        if (denom <= 0L) {
+            return 0.0;
+        }
+        // Ratio is emitted as a percentage (0-100), where 0 means no suppression.
+        return (double) filtered * 100.0 / (double) denom;
     }
     
     
@@ -790,6 +980,11 @@ public class TagSubscriptionService {
         }
         sb.append("Total Events Received: ").append(totalEventsReceived.get()).append("\n");
         sb.append("Total Events Dropped: ").append(totalEventsDropped.get()).append("\n");
+        sb.append("Compression Mode (effective): ").append(config.getNumericCompressionModeEffective()).append("\n");
+        sb.append("Events Filtered (deadband/on-change): ").append(totalEventsFilteredDeadband.get()).append("\n");
+        sb.append("Events Filtered (SDT): ").append(totalEventsFilteredSdt.get()).append("\n");
+        sb.append("Events Forced (SDT max interval): ").append(totalEventsForcedBySdtMaxInterval.get()).append("\n");
+        sb.append("SDT Out-of-order Resets: ").append(totalSdtOutOfOrderResets.get()).append("\n");
         sb.append("Total Batches Flushed: ").append(totalBatchesFlushed.get()).append("\n");
         sb.append("Direct Subscriptions: ").append(subscribedListeners.size()).append(" tags\n");
         sb.append("Auto-Paused Direct Subscriptions: ").append(autoPausedDirectSubscriptions).append("\n");
@@ -800,8 +995,89 @@ public class TagSubscriptionService {
         } else {
             sb.append("Last Flush: Never\n");
         }
+
+        // Visual compression diagnostics (rolling window)
+        sb.append("\n=== Compression (last ").append(COMPRESSION_WINDOW_MINUTES).append(" minutes) ===\n");
+        RollingCompressionMetrics.Snapshot snap = rolling.snapshot();
+        sb.append("Incoming/min: ").append(sparkline(snap.incomingPerMin)).append("\n");
+        sb.append("Emitted/min : ").append(sparkline(snap.emittedPerMin)).append("\n");
+        sb.append("Filtered DB : ").append(sparkline(snap.filteredDeadbandPerMin)).append("\n");
+        sb.append("Filtered SDT: ").append(sparkline(snap.filteredSdtPerMin)).append("\n");
+        sb.append("Forced (SDT maxInterval): ").append(sparkline(snap.forcedByMaxIntervalPerMin)).append("\n");
+
+        long incomingTotal = snap.sum(snap.incomingPerMin);
+        long emittedTotal = snap.sum(snap.emittedPerMin);
+        long filteredTotal = snap.sum(snap.filteredDeadbandPerMin) + snap.sum(snap.filteredSdtPerMin);
+        sb.append("Window totals: incoming=").append(incomingTotal)
+                .append(", emitted=").append(emittedTotal)
+                .append(", filtered=").append(filteredTotal)
+                .append("\n");
+        if (incomingTotal > 0) {
+            double ratio = (double) emittedTotal / (double) incomingTotal;
+            sb.append("Window reduction: ").append(String.format(java.util.Locale.US, "%.1f%%", (1.0 - ratio) * 100.0))
+                    .append(" (emitted ").append(String.format(java.util.Locale.US, "%.1f%%", ratio * 100.0)).append(")\n");
+        }
+
+        RollingLatencyMetrics.Snapshot lat = rollingLatency.snapshot();
+        sb.append("\n=== Latency (last ").append(COMPRESSION_WINDOW_MINUTES).append(" minutes) ===\n");
+        sb.append("Ingest latency ms  : avg=").append(String.format(java.util.Locale.US, "%.1f", lat.ingestAvgMs))
+                .append(" p95=").append(lat.ingestP95Ms)
+                .append(" p99=").append(lat.ingestP99Ms)
+                .append(" max=").append(lat.ingestMaxMs).append("\n");
+        sb.append("Queue latency ms   : avg=").append(String.format(java.util.Locale.US, "%.1f", lat.queueAvgMs))
+                .append(" p95=").append(lat.queueP95Ms)
+                .append(" p99=").append(lat.queueP99Ms)
+                .append(" max=").append(lat.queueMaxMs).append("\n");
+        sb.append("End-to-end ms      : avg=").append(String.format(java.util.Locale.US, "%.1f", lat.endToEndAvgMs))
+                .append(" p95=").append(lat.endToEndP95Ms)
+                .append(" p99=").append(lat.endToEndP99Ms)
+                .append(" max=").append(lat.endToEndMaxMs).append("\n");
+
+        sb.append(renderTopCompressedTags(10));
         
         return sb.toString();
+    }
+
+    /**
+     * Snapshot of rolling compression diagnostics for HTTP/JSON consumption.
+     */
+    public CompressionMetricsSnapshot getCompressionMetricsSnapshot() {
+        RollingCompressionMetrics.Snapshot snap = rolling.snapshot();
+        RollingLatencyMetrics.Snapshot lat = rollingLatency.snapshot();
+        CompressionMetricsSnapshot out = new CompressionMetricsSnapshot();
+        out.windowMinutes = COMPRESSION_WINDOW_MINUTES;
+        out.modeEffective = String.valueOf(config.getNumericCompressionModeEffective());
+        out.incomingPerMin = snap.incomingPerMin;
+        out.emittedPerMin = snap.emittedPerMin;
+        out.filteredDeadbandPerMin = snap.filteredDeadbandPerMin;
+        out.filteredSdtPerMin = snap.filteredSdtPerMin;
+        out.forcedByMaxIntervalPerMin = snap.forcedByMaxIntervalPerMin;
+        out.droppedPerMin = snap.droppedPerMin;
+        out.incomingTotal = snap.sum(snap.incomingPerMin);
+        out.emittedTotal = snap.sum(snap.emittedPerMin);
+        out.filteredDeadbandTotal = snap.sum(snap.filteredDeadbandPerMin);
+        out.filteredSdtTotal = snap.sum(snap.filteredSdtPerMin);
+        out.forcedByMaxIntervalTotal = snap.sum(snap.forcedByMaxIntervalPerMin);
+        out.droppedTotal = snap.sum(snap.droppedPerMin);
+        out.sdtCompressionRatio = computeSdtCompressionRatio();
+        out.sdtEmittedTotal = totalEventsEmittedSdt.get();
+
+        out.ingestLatencyAvgMs = lat.ingestAvgMs;
+        out.ingestLatencyP95Ms = lat.ingestP95Ms;
+        out.ingestLatencyP99Ms = lat.ingestP99Ms;
+        out.ingestLatencyMaxMs = lat.ingestMaxMs;
+
+        out.queueLatencyAvgMs = lat.queueAvgMs;
+        out.queueLatencyP95Ms = lat.queueP95Ms;
+        out.queueLatencyP99Ms = lat.queueP99Ms;
+        out.queueLatencyMaxMs = lat.queueMaxMs;
+
+        out.endToEndLatencyAvgMs = lat.endToEndAvgMs;
+        out.endToEndLatencyP95Ms = lat.endToEndP95Ms;
+        out.endToEndLatencyP99Ms = lat.endToEndP99Ms;
+        out.endToEndLatencyMaxMs = lat.endToEndMaxMs;
+        out.topTags = buildTopCompressedTags(10);
+        return out;
     }
     
     /**
@@ -829,6 +1105,416 @@ public class TagSubscriptionService {
         } catch (Exception e) {
             logger.error("Error ingesting event from Event Streams", e);
             return false;
+        }
+    }
+
+    private void recordPerTag(String tagPath, ConfigModel.NumericCompressionMode mode, boolean emitted, boolean filteredDeadband, boolean filteredSdt, boolean forcedMaxInterval) {
+        if (tagPath == null || tagPath.isBlank()) {
+            return;
+        }
+        // Only track when compression is active; otherwise it's a lot of noise.
+        if (mode == null || mode == ConfigModel.NumericCompressionMode.NONE) {
+            return;
+        }
+        TagCompressionStats s = perTagCompression.get(tagPath);
+        if (s == null) {
+            if (perTagCompression.size() >= COMPRESSION_TAG_STATS_MAX) {
+                return;
+            }
+            TagCompressionStats created = new TagCompressionStats();
+            TagCompressionStats existing = perTagCompression.putIfAbsent(tagPath, created);
+            s = existing != null ? existing : created;
+        }
+        if (emitted) s.emitted.incrementAndGet();
+        if (filteredDeadband) s.filteredDeadband.incrementAndGet();
+        if (filteredSdt) s.filteredSdt.incrementAndGet();
+        if (forcedMaxInterval) s.forcedByMaxInterval.incrementAndGet();
+    }
+
+    private String renderTopCompressedTags(int limit) {
+        List<TagCompressionSummary> top = buildTopCompressedTags(limit);
+        if (top.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("\nTop tags by filtered volume (best-effort; cap ").append(COMPRESSION_TAG_STATS_MAX).append(")\n");
+        for (TagCompressionSummary t : top) {
+            sb.append("- ").append(t.tagPath)
+              .append(" | emitted=").append(t.emitted)
+              .append(" filtered=").append(t.filteredTotal)
+              .append(" forced=").append(t.forcedByMaxInterval)
+              .append(" (filtered=").append(String.format(java.util.Locale.US, "%.1f%%", t.filteredPct * 100.0)).append(")\n");
+        }
+        return sb.toString();
+    }
+
+    private List<TagCompressionSummary> buildTopCompressedTags(int limit) {
+        if (limit <= 0) {
+            return java.util.Collections.emptyList();
+        }
+        List<TagCompressionSummary> out = new ArrayList<>();
+        for (Map.Entry<String, TagCompressionStats> e : perTagCompression.entrySet()) {
+            String tag = e.getKey();
+            TagCompressionStats s = e.getValue();
+            if (s == null) continue;
+            long emitted = s.emitted.get();
+            long filteredDb = s.filteredDeadband.get();
+            long filteredSdt = s.filteredSdt.get();
+            long forced = s.forcedByMaxInterval.get();
+            long filtered = filteredDb + filteredSdt;
+            long incoming = emitted + filtered;
+            if (incoming <= 0) continue;
+            double filteredPct = (double) filtered / (double) incoming;
+            out.add(new TagCompressionSummary(tag, emitted, filteredDb, filteredSdt, forced, filteredPct));
+        }
+        out.sort((a, b) -> {
+            int c = Long.compare(b.filteredTotal, a.filteredTotal);
+            if (c != 0) return c;
+            return Double.compare(b.filteredPct, a.filteredPct);
+        });
+        if (out.size() > limit) {
+            return out.subList(0, limit);
+        }
+        return out;
+    }
+
+    private static String sparkline(long[] values) {
+        if (values == null || values.length == 0) {
+            return "";
+        }
+        long max = 0;
+        for (long v : values) {
+            if (v > max) max = v;
+        }
+        final char[] blocks = new char[] {'▁','▂','▃','▄','▅','▆','▇','█'};
+        StringBuilder sb = new StringBuilder(values.length);
+        for (long v : values) {
+            int idx = 0;
+            if (max > 0) {
+                idx = (int) Math.round(((double) v / (double) max) * (blocks.length - 1));
+                if (idx < 0) idx = 0;
+                if (idx >= blocks.length) idx = blocks.length - 1;
+            }
+            sb.append(blocks[idx]);
+        }
+        sb.append("  max=").append(max);
+        return sb.toString();
+    }
+
+    private static final class TagCompressionStats {
+        final AtomicLong emitted = new AtomicLong(0);
+        final AtomicLong filteredDeadband = new AtomicLong(0);
+        final AtomicLong filteredSdt = new AtomicLong(0);
+        final AtomicLong forcedByMaxInterval = new AtomicLong(0);
+    }
+
+    public static final class TagCompressionSummary {
+        public final String tagPath;
+        public final long emitted;
+        public final long filteredDeadband;
+        public final long filteredSdt;
+        public final long filteredTotal;
+        public final long forcedByMaxInterval;
+        public final double filteredPct;
+
+        TagCompressionSummary(String tagPath, long emitted, long filteredDeadband, long filteredSdt, long forcedByMaxInterval, double filteredPct) {
+            this.tagPath = tagPath;
+            this.emitted = emitted;
+            this.filteredDeadband = filteredDeadband;
+            this.filteredSdt = filteredSdt;
+            this.filteredTotal = filteredDeadband + filteredSdt;
+            this.forcedByMaxInterval = forcedByMaxInterval;
+            this.filteredPct = filteredPct;
+        }
+    }
+
+    public static final class CompressionMetricsSnapshot {
+        public int windowMinutes;
+        public String modeEffective;
+
+        public long[] incomingPerMin;
+        public long[] emittedPerMin;
+        public long[] filteredDeadbandPerMin;
+        public long[] filteredSdtPerMin;
+        public long[] forcedByMaxIntervalPerMin;
+        public long[] droppedPerMin;
+
+        public long incomingTotal;
+        public long emittedTotal;
+        public long filteredDeadbandTotal;
+        public long filteredSdtTotal;
+        public long forcedByMaxIntervalTotal;
+        public long droppedTotal;
+        public long sdtEmittedTotal;
+        public double sdtCompressionRatio;
+
+        public double ingestLatencyAvgMs;
+        public long ingestLatencyP95Ms;
+        public long ingestLatencyP99Ms;
+        public long ingestLatencyMaxMs;
+
+        public double queueLatencyAvgMs;
+        public long queueLatencyP95Ms;
+        public long queueLatencyP99Ms;
+        public long queueLatencyMaxMs;
+
+        public double endToEndLatencyAvgMs;
+        public long endToEndLatencyP95Ms;
+        public long endToEndLatencyP99Ms;
+        public long endToEndLatencyMaxMs;
+
+        public List<TagCompressionSummary> topTags;
+    }
+
+    private static final class RollingLatencyMetrics {
+        private final LatencyReservoir ingestReservoir = new LatencyReservoir(4096);
+        private final LatencyReservoir queueReservoir = new LatencyReservoir(4096);
+        private final LatencyReservoir endToEndReservoir = new LatencyReservoir(4096);
+
+        RollingLatencyMetrics(int windowMinutes) {
+            // Currently reservoir-based only; keep ctor signature aligned with compression window config.
+        }
+
+        void recordIngest(long nowMs, long latencyMs) {
+            ingestReservoir.record(nowMs, latencyMs);
+        }
+
+        void recordQueue(long nowMs, long latencyMs) {
+            queueReservoir.record(nowMs, latencyMs);
+        }
+
+        void recordEndToEnd(long nowMs, long latencyMs) {
+            endToEndReservoir.record(nowMs, latencyMs);
+        }
+
+        Snapshot snapshot() {
+            LatencyReservoir.Stats in = ingestReservoir.snapshot();
+            LatencyReservoir.Stats q = queueReservoir.snapshot();
+            LatencyReservoir.Stats e2e = endToEndReservoir.snapshot();
+            return new Snapshot(
+                    in.avg, in.p95, in.p99, in.max,
+                    q.avg, q.p95, q.p99, q.max,
+                    e2e.avg, e2e.p95, e2e.p99, e2e.max
+            );
+        }
+
+        static final class Snapshot {
+            final double ingestAvgMs;
+            final long ingestP95Ms;
+            final long ingestP99Ms;
+            final long ingestMaxMs;
+
+            final double queueAvgMs;
+            final long queueP95Ms;
+            final long queueP99Ms;
+            final long queueMaxMs;
+
+            final double endToEndAvgMs;
+            final long endToEndP95Ms;
+            final long endToEndP99Ms;
+            final long endToEndMaxMs;
+
+            Snapshot(
+                    double ingestAvgMs, long ingestP95Ms, long ingestP99Ms, long ingestMaxMs,
+                    double queueAvgMs, long queueP95Ms, long queueP99Ms, long queueMaxMs,
+                    double endToEndAvgMs, long endToEndP95Ms, long endToEndP99Ms, long endToEndMaxMs
+            ) {
+                this.ingestAvgMs = ingestAvgMs;
+                this.ingestP95Ms = ingestP95Ms;
+                this.ingestP99Ms = ingestP99Ms;
+                this.ingestMaxMs = ingestMaxMs;
+                this.queueAvgMs = queueAvgMs;
+                this.queueP95Ms = queueP95Ms;
+                this.queueP99Ms = queueP99Ms;
+                this.queueMaxMs = queueMaxMs;
+                this.endToEndAvgMs = endToEndAvgMs;
+                this.endToEndP95Ms = endToEndP95Ms;
+                this.endToEndP99Ms = endToEndP99Ms;
+                this.endToEndMaxMs = endToEndMaxMs;
+            }
+        }
+    }
+
+    private static final class LatencyReservoir {
+        private static final class Sample {
+            final long tsMs;
+            final long latencyMs;
+            Sample(long tsMs, long latencyMs) {
+                this.tsMs = tsMs;
+                this.latencyMs = latencyMs;
+            }
+        }
+
+        static final class Stats {
+            final double avg;
+            final long p95;
+            final long p99;
+            final long max;
+            Stats(double avg, long p95, long p99, long max) {
+                this.avg = avg;
+                this.p95 = p95;
+                this.p99 = p99;
+                this.max = max;
+            }
+        }
+
+        private final int maxSamples;
+        private final java.util.ArrayDeque<Sample> samples;
+
+        LatencyReservoir(int maxSamples) {
+            this.maxSamples = Math.max(256, maxSamples);
+            this.samples = new java.util.ArrayDeque<>(this.maxSamples);
+        }
+
+        synchronized void record(long nowMs, long latencyMs) {
+            long safeLatency = Math.max(0L, latencyMs);
+            if (samples.size() >= maxSamples) {
+                samples.removeFirst();
+            }
+            samples.addLast(new Sample(nowMs, safeLatency));
+        }
+
+        synchronized Stats snapshot() {
+            if (samples.isEmpty()) {
+                return new Stats(0.0, 0L, 0L, 0L);
+            }
+            long[] values = new long[samples.size()];
+            long sum = 0L;
+            long max = 0L;
+            int i = 0;
+            for (Sample s : samples) {
+                long v = s.latencyMs;
+                values[i++] = v;
+                sum += v;
+                if (v > max) {
+                    max = v;
+                }
+            }
+            java.util.Arrays.sort(values);
+            double avg = (double) sum / (double) values.length;
+            long p95 = percentile(values, 0.95);
+            long p99 = percentile(values, 0.99);
+            return new Stats(avg, p95, p99, max);
+        }
+
+        private static long percentile(long[] values, double q) {
+            if (values == null || values.length == 0) {
+                return 0L;
+            }
+            int idx = (int) Math.ceil(q * values.length) - 1;
+            if (idx < 0) {
+                idx = 0;
+            }
+            if (idx >= values.length) {
+                idx = values.length - 1;
+            }
+            return values[idx];
+        }
+    }
+
+    private static final class RollingCompressionMetrics {
+        private final int windowMinutes;
+        private final long[] minuteKeys; // epoch minute for each slot
+        private final long[] incoming;
+        private final long[] emitted;
+        private final long[] filteredDeadband;
+        private final long[] filteredSdt;
+        private final long[] forcedByMaxInterval;
+        private final long[] dropped;
+
+        RollingCompressionMetrics(int windowMinutes) {
+            this.windowMinutes = Math.max(1, windowMinutes);
+            this.minuteKeys = new long[this.windowMinutes];
+            this.incoming = new long[this.windowMinutes];
+            this.emitted = new long[this.windowMinutes];
+            this.filteredDeadband = new long[this.windowMinutes];
+            this.filteredSdt = new long[this.windowMinutes];
+            this.forcedByMaxInterval = new long[this.windowMinutes];
+            this.dropped = new long[this.windowMinutes];
+        }
+
+        void recordIncoming(long nowMs) { add(nowMs, incoming, 1); }
+        void recordEmitted(long nowMs) { add(nowMs, emitted, 1); }
+        void recordFilteredDeadband(long nowMs) { add(nowMs, filteredDeadband, 1); }
+        void recordFilteredSdt(long nowMs) { add(nowMs, filteredSdt, 1); }
+        void recordForcedByMaxInterval(long nowMs) { add(nowMs, forcedByMaxInterval, 1); }
+        void recordDropped(long nowMs) { add(nowMs, dropped, 1); }
+
+        private synchronized void add(long nowMs, long[] arr, long delta) {
+            long minute = nowMs / 60000L;
+            int idx = (int) (minute % windowMinutes);
+            if (minuteKeys[idx] != minute) {
+                // slot rollover
+                minuteKeys[idx] = minute;
+                incoming[idx] = 0;
+                emitted[idx] = 0;
+                filteredDeadband[idx] = 0;
+                filteredSdt[idx] = 0;
+                forcedByMaxInterval[idx] = 0;
+                dropped[idx] = 0;
+            }
+            arr[idx] += delta;
+        }
+
+        Snapshot snapshot() {
+            return snapshotAt(System.currentTimeMillis());
+        }
+
+        synchronized Snapshot snapshotAt(long nowMs) {
+            long nowMin = nowMs / 60000L;
+            long[] in = new long[windowMinutes];
+            long[] em = new long[windowMinutes];
+            long[] fd = new long[windowMinutes];
+            long[] fs = new long[windowMinutes];
+            long[] fm = new long[windowMinutes];
+            long[] dr = new long[windowMinutes];
+
+            // Return ordered oldest -> newest
+            for (int i = 0; i < windowMinutes; i++) {
+                long minute = nowMin - (windowMinutes - 1 - i);
+                int idx = (int) (minute % windowMinutes);
+                if (minuteKeys[idx] == minute) {
+                    in[i] = incoming[idx];
+                    em[i] = emitted[idx];
+                    fd[i] = filteredDeadband[idx];
+                    fs[i] = filteredSdt[idx];
+                    fm[i] = forcedByMaxInterval[idx];
+                    dr[i] = dropped[idx];
+                } else {
+                    in[i] = 0;
+                    em[i] = 0;
+                    fd[i] = 0;
+                    fs[i] = 0;
+                    fm[i] = 0;
+                    dr[i] = 0;
+                }
+            }
+            return new Snapshot(in, em, fd, fs, fm, dr);
+        }
+
+        static final class Snapshot {
+            final long[] incomingPerMin;
+            final long[] emittedPerMin;
+            final long[] filteredDeadbandPerMin;
+            final long[] filteredSdtPerMin;
+            final long[] forcedByMaxIntervalPerMin;
+            final long[] droppedPerMin;
+
+            Snapshot(long[] incomingPerMin, long[] emittedPerMin, long[] filteredDeadbandPerMin, long[] filteredSdtPerMin, long[] forcedByMaxIntervalPerMin, long[] droppedPerMin) {
+                this.incomingPerMin = incomingPerMin;
+                this.emittedPerMin = emittedPerMin;
+                this.filteredDeadbandPerMin = filteredDeadbandPerMin;
+                this.filteredSdtPerMin = filteredSdtPerMin;
+                this.forcedByMaxIntervalPerMin = forcedByMaxIntervalPerMin;
+                this.droppedPerMin = droppedPerMin;
+            }
+
+            long sum(long[] v) {
+                long s = 0;
+                if (v == null) return 0;
+                for (long x : v) s += x;
+                return s;
+            }
         }
     }
     

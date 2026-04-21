@@ -7,7 +7,7 @@ For the full runbook (prereqs, configuration fields, verification SQL, troublesh
 ## 1) Install the module
 
 - Gateway UI: `http://<gateway-host>:<port>/web/home` → Config → Modules → Install/Upgrade
-- Upload: `releases/zerobus-connector-1.0.0.modl`
+- Upload: `releases/zerobus-connector-1.0.1.modl`
 
 ## 2) Open the configuration UI
 

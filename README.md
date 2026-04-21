@@ -1,15 +1,367 @@
+# AGL OT Lakehouse Demo
+
+Live demonstration of streaming industrial OT data from Ignition to Databricks Delta Lake via Zerobus, with Swinging Door Trending (SDT) compression at the connector layer.
+
+## Architecture
+
+```mermaid
+graph TD
+    subgraph "Edge / Ignition Gateway"
+        IG[Ignition Gateway<br/>OPC-UA Tag Provider]
+        EX[Exception Filter<br/>Layer 1: deadband]
+    end
+
+    subgraph "Connector"
+        ZC[Zerobus Connector<br/>+ SDT Compression Engine<br/>Layer 2: swinging door]
+    end
+
+    subgraph "Databricks Lakehouse"
+        ZI[Zerobus Ingest<br/>Serverless]
+        BZ[Bronze: raw_tags<br/>Layer 3: Delta columnar]
+        SV[Silver: aggregated_tags]
+        MT[Metrics: ingest_metrics]
+    end
+
+    subgraph "Demo App"
+        BE[Express API Server<br/>port 3001]
+        FE[React Frontend<br/>port 5173]
+    end
+
+    IG --> EX --> ZC
+    ZC -->|gRPC / Protobuf| ZI
+    ZI --> BZ
+    BZ --> SV
+    BZ --> MT
+    BZ --> BE
+    SV --> BE
+    MT --> BE
+    BE --> FE
+```
+
+## Prerequisites
+
+- Node.js 20+
+- A Databricks workspace with Unity Catalog and a SQL Warehouse
+- Zerobus Ingest endpoint (Public Preview)
+
+## End-to-end demo (Makefile)
+
+For the full **Ignition 8.3** gateway (Docker), **Databricks** bundle deploy, and **synthetic tag** traffic from the repo root, use Make. Step-by-step commands, reruns, and resets are in **[docs/make-workflow.md](docs/make-workflow.md)**.
+
+Quick path:
+
+```bash
+make bootstrap-83
+make setup-wizard-83 configure-83 simulate-83 links-83
+```
+
+Run `make help` from the repo root for all targets. Deeper tables and troubleshooting: [CLAUDE.md](CLAUDE.md).
+
+## Setup
+
+1. Clone the repository and checkout the `agl-demo` branch:
+   ```bash
+   git clone <repo-url>
+   git checkout agl-demo
+   ```
+
+2. Copy `.env.example` to `.env` and fill in your credentials:
+   ```bash
+   cp demo/.env.example demo/.env
+   ```
+
+3. Install dependencies for each package:
+   ```bash
+   npm --prefix demo/frontend install
+   npm --prefix demo/simulator install
+   ```
+
+4. Create the Databricks tables by running `pipelines/sql/setup_tables.sql` against your SQL Warehouse. Replace `${catalog}` and `${schema}` with your values (defaults: `agl_demo.ot`).
+
+5. Start the frontend:
+   ```bash
+   npm --prefix demo/frontend run dev
+   ```
+
+7. Start the simulator:
+   ```bash
+   npm --prefix demo/simulator run dev
+   ```
+
+## Environment variables
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `DATABRICKS_HOST` | Yes | - | Workspace URL |
+| `DATABRICKS_TOKEN` | Auth* | - | PAT or OAuth token (local dev) |
+| `DATABRICKS_CLIENT_ID` | Auth* | - | Service principal client ID (Databricks Apps) |
+| `DATABRICKS_CLIENT_SECRET` | Auth* | - | Service principal client secret (Databricks Apps) |
+| `DATABRICKS_HTTP_PATH` | Yes | - | SQL warehouse HTTP path |
+| `DATABRICKS_WAREHOUSE_ID` | No | - | SQL warehouse ID (injected by app.yaml) |
+| `DATABRICKS_CATALOG` | No | `agl_demo` | Unity Catalog name |
+| `DATABRICKS_SCHEMA` | No | `ot` | Schema name |
+
+*Auth: provide either `DATABRICKS_TOKEN` or both `DATABRICKS_CLIENT_ID` + `DATABRICKS_CLIENT_SECRET`.
+| `ZEROBUS_ENDPOINT` | No | - | Zerobus gRPC endpoint |
+| `ZEROBUS_CLIENT_ID` | No | - | OAuth client ID |
+| `ZEROBUS_CLIENT_SECRET` | No | - | OAuth client secret |
+| `ZEROBUS_TABLE` | No | - | Target Delta table FQN |
+| `SDT_DEFAULT_COMP_DEV_PERCENT` | No | `1.0` | Default SDT compression deviation % |
+| `SDT_DEFAULT_COMP_MAX_SECONDS` | No | `600` | Default max archive interval (seconds) |
+
+## Project structure
+
+```
+demo/             Databricks demo application
+  frontend/       React 18 + Vite + Tailwind CSS dashboard
+  backend/        Express API server with Databricks SQL connector
+  simulator/      Ignition tag simulator + Zerobus publisher
+  app/            Databricks Apps deployment config (app.yaml)
+pipelines/        Databricks data processing
+  sql/            SQL scripts for table setup and transforms (Bronze → Silver → Gold)
+  sites/          Per-customer site SQL packs
+module/           Java Ignition Gateway module (separate build)
+examples/         Ignition site configurations
+docker/           Docker build and gateway configs
+```
+
+## Quick start (demo app only)
+
+```bash
+cd demo && npm run demo:start
+```
+
+This single command verifies `.env` is configured, then starts the backend, frontend, and simulator concurrently.
+
+## Demo deployment — full end-to-end (Ignition + Zerobus + Databricks)
+
+This is the complete local deployment flow for running the demo from scratch. It sets up an Ignition Gateway in Docker, auto-configures the Zerobus connector, and streams simulated industrial data to Databricks.
+
+### Prerequisites
+
+- **Docker** — via [Colima](https://github.com/abiosoft/colima) (macOS, **recommended**: `colima start --memory 10 --cpu 4`) or Docker Desktop
+- **uv** — Python package manager ([install](https://docs.astral.sh/uv/))
+- A **Databricks workspace** with Unity Catalog, a SQL Warehouse, and Zerobus Ingest enabled
+- A **Databricks service principal** with OAuth M2M credentials (Client ID + Client Secret)
+- A `~/.databrickscfg` profile configured for the service principal:
+
+```ini
+[my-demo]
+host          = https://adb-<workspace-id>.<suffix>.azuredatabricks.net
+client_id     = <service-principal-client-id>
+client_secret = <service-principal-client-secret>
+auth_type     = oauth-m2m
+```
+
+### Step 1 — Set up Databricks tables and permissions
+
+Run the setup SQL against your workspace (update catalog/schema/SP ID as needed):
+
+```bash
+# Using the Databricks CLI
+databricks sql execute --profile my-demo \
+  --statement "CREATE CATALOG IF NOT EXISTS my_catalog"
+
+# Or run the full setup script
+# See examples/agl_fleet/setup_databricks.sql for the complete set of
+# CREATE/GRANT statements needed for the service principal
+```
+
+The service principal needs `USE CATALOG`, `USE SCHEMA`, `MODIFY`, and `SELECT` on the target table. See `examples/agl_fleet/setup_databricks.sql` for a working example.
+
+### Step 2 — Start the Ignition Gateway in Docker
+
+```bash
+cd docker/ignition-gateway
+docker compose -f docker-compose.83.yml up -d
+```
+
+Wait for the container to be healthy (~60s on first boot):
+
+```bash
+docker ps --filter name=ignition83_7088 --format '{{.Status}}'
+# Should show: Up ... (healthy)
+```
+
+On first boot, complete the setup wizard at `http://localhost:7088`:
+1. Accept the EULA
+2. Create an admin user (e.g. `admin` / `password`)
+3. Skip edition selection (trial is fine)
+4. Finish setup
+
+The Zerobus module is auto-loaded from the bind-mounted `.modl` file.
+
+### Step 3 — Auto-configure the Zerobus module
+
+```bash
+cd examples/agl_fleet
+
+# One command: reads credentials from your Databricks CLI profile
+# and pushes the full connection config to the running Gateway
+uv run --extra setup agl-sim --setup-only \
+    --profile my-demo \
+    --zerobus-endpoint <workspace-id>.zerobus.<region>.<cloud-domain>
+```
+
+This uses a GET-then-merge approach, so it won't overwrite other settings. You can also configure manually via `curl` — see `DEPLOYMENT.md` for the full REST API reference.
+
+Verify the connection:
+
+```bash
+# Health check — should return {"status":"ok","enabled":true}
+curl -s http://localhost:7088/system/zerobus/health
+
+# Full diagnostics — look for Connected: true
+curl -s http://localhost:7088/system/zerobus/diagnostics
+```
+
+### Step 4 — Run the simulator
+
+```bash
+cd examples/agl_fleet
+uv sync
+uv run agl-sim --gateway http://localhost:7088
+```
+
+You should see events being accepted with `dropped=0`:
+
+```
+[tick 1] sent=48 accepted=48 dropped=0
+[tick 2] sent=39 accepted=39 dropped=0
+```
+
+### Step 5 — Verify data in Databricks
+
+```sql
+SELECT COUNT(*) AS row_count,
+       MIN(ingestion_timestamp) AS earliest,
+       MAX(ingestion_timestamp) AS latest
+FROM <catalog>.<schema>.<table>
+WHERE ingestion_timestamp >= current_timestamp() - INTERVAL 10 MINUTES;
+```
+
+### Teardown
+
+```bash
+# Stop the simulator
+Ctrl+C
+
+# Stop the Gateway (preserves state for next time)
+cd docker/ignition-gateway && docker compose -f docker-compose.83.yml down
+
+# Full reset (removes volumes, requires setup wizard again)
+cd docker/ignition-gateway && docker compose -f docker-compose.83.yml down -v
+```
+
+### Detailed documentation
+
+| Topic | Document |
+|-------|----------|
+| Production deployment & configuration | `DEPLOYMENT.md` |
+| Docker/Colima gateway setup | `docker/ignition-gateway/README.md` |
+| AGL Fleet Simulator & auto-config | `examples/agl_fleet/README.md` |
+| Databricks table setup & SP grants | `examples/agl_fleet/setup_databricks.sql` |
+| Module build from source | `CLAUDE.md` (Docker-based build section) |
+
+## SDT compression
+
+The Swinging Door Trending (SDT) algorithm compresses time-series data at the connector layer, matching common historian compression semantics. It works by maintaining a "door" around the last archived point - only when a new value deviates beyond the configurable CompDev threshold does it trigger an archive event.
+
+**Two-layer compression:**
+
+1. **SDT at the connector** - Swinging Door Trending filters out redundant values before they reach Databricks. Configurable per tag pattern via `comp_dev_percent` (% of tag span) and `comp_max_seconds` (max archive interval).
+2. **Delta columnar encoding** - Parquet dictionary, RLE, bit-packing, and Zstd compression on top of the SDT-filtered data.
+
+**Key parameters:**
+
+| Parameter | Description | Default |
+|---|---|---|
+| `comp_dev_percent` | Compression deviation as % of tag span | 1.0% |
+| `comp_max_seconds` | Max time between forced archive events | 600s |
+| `comp_min_seconds` | Min time between archive events | 0s |
+
+Typical compression ratios range from 4:1 to 10:1 depending on signal characteristics.
+
+## Running tests
+
+```bash
+npm --prefix demo/frontend run test -- --run
+npm --prefix demo/simulator run test -- --run
+```
+
+## Gate verification
+
+```bash
+cd demo && bash gates.sh
+```
+
+This runs install, lint, typecheck, test, and build gates across all packages.
+
+## Deploying to Databricks Apps
+
+The demo app (backend + frontend) can be deployed as a Databricks App using git integration. The simulator runs separately (on-prem or locally).
+
+### Prerequisites
+
+- A Databricks workspace with Apps enabled
+- A SQL warehouse (serverless recommended)
+- The `agl-demo` branch pushed to a git repo accessible from Databricks
+
+### Steps
+
+1. **Clone the repo into your workspace** as a Git Folder:
+   - In Databricks, go to Workspace > Repos > Add Repo
+   - Enter the repo URL and select the `agl-demo` branch
+
+2. **Create the app** in your Databricks workspace:
+   ```bash
+   databricks apps create agl-ot-demo --description "AGL OT Lakehouse Demo"
+   ```
+
+3. **Add resources** - in the Databricks Apps UI, click "Configure" on the app and add a SQL warehouse resource with key `sql-warehouse`. Grant the app's service principal `CAN USE` permission on the warehouse.
+
+4. **Deploy from workspace** - point the app at the `demo/app/` directory within the cloned repo:
+   ```bash
+   databricks apps deploy agl-ot-demo \
+     --source-code-path /Workspace/Repos/<your-user>/lakeflow-ignition-zerobus-connector/demo/app
+   ```
+
+5. **Verify** - open the app URL shown in the deployment output. The dashboard should load and display live metrics once the simulator is sending data.
+
+6. **Stream logs** to debug startup issues:
+   ```bash
+   databricks apps logs agl-ot-demo --follow
+   ```
+
+### How it works
+
+The `demo/app/` directory contains:
+- `app.yaml` - Databricks Apps configuration (command, env vars, resource references)
+- `package.json` - Build and start scripts
+- `scripts/copy-static.js` - Copies frontend build output for Express to serve
+
+When deployed, Databricks Apps:
+1. Runs `npm run build` which installs and builds both frontend and backend, then copies frontend assets to `demo/app/static/`
+2. Runs `npm run start` (from `app.yaml` command) which starts Express serving both the API and static frontend on `$PORT`
+
+The app's service principal automatically receives `DATABRICKS_CLIENT_ID`, `DATABRICKS_CLIENT_SECRET`, and `DATABRICKS_HOST` as environment variables. The SQL warehouse ID is injected via the `sql-warehouse` resource reference in `app.yaml`.
+
+### Troubleshooting deployment
+
+- **Port binding errors**: The app MUST listen on `process.env.PORT`. Do not hardcode a port.
+- **Missing resources**: If `DATABRICKS_WAREHOUSE_ID` is empty, ensure the SQL warehouse resource is attached to the app.
+- **Auth failures**: The app uses service principal OAuth (M2M). Verify the service principal has access to the catalog and warehouse.
+- **Build failures**: Run `cd demo/app && npm run build` locally to debug build issues before deploying.
+- **Frontend not loading**: Check that `demo/app/static/` is populated after build. The Express server serves these files in production mode (`NODE_ENV=production`).
+
+---
+
 ## Ignition Zerobus Connector
 
-**Version**: `1.0.0`  
-**Purpose**: Stream Ignition tag-change events to Databricks Delta tables via Zerobus (gRPC + protobuf).  
-**Ignition compatibility**: **8.1.x** and **8.3.x** (different `.modl` artifacts).  
+**Version**: `1.0.1`
+**Purpose**: Stream Ignition tag-change events to Databricks Delta tables via Zerobus (gRPC + protobuf).
+**Ignition compatibility**: **8.1.x** and **8.3.x** (different `.modl` artifacts).
 **Configuration**: via the **Ignition Gateway UI**.
-
-## Business Problem
-
-Industrial teams need **reliable, low-latency ingestion** of OT signals (PLC/SCADA/MQTT/OPC UA) into the Lakehouse for analytics, monitoring, and AI—without operating separate messaging infrastructure.
-
-This connector runs inside the **Ignition Gateway** and streams **tag-change events** to **Databricks Zerobus** (gRPC + protobuf), landing in Delta tables for downstream Bronze→Silver→Gold processing.
 
 ## Concepts (Ignition Gateway + Databricks Zerobus)
 
@@ -19,7 +371,7 @@ An **Ignition Gateway** is the runtime server for the Ignition platform. It conn
 
 ### What is Databricks Zerobus, and why use it?
 
-**Databricks Zerobus** is Databricks’ managed real-time ingestion transport used to stream events into Delta (typically landing in a **Bronze** table).
+**Databricks Zerobus** is Databricks' managed real-time ingestion transport used to stream events into Delta (typically landing in a **Bronze** table).
 
 Using Zerobus means you get a **streaming ingestion path without operating Kafka infrastructure**:
 - no standing up brokers/zookeepers/controllers
@@ -33,7 +385,7 @@ Instead, this module batches tag-change events and streams them directly to Data
 This connector is **agnostic to the underlying OT/IIoT source** because it subscribes to **Ignition tags**, not to a specific protocol.
 
 - **Ignition normalizes sources into tags**: Whether values originate from **OPC UA**, **MQTT**, PLC drivers, historians, or other tag providers, Ignition exposes them through the same Tag system and emits the same tag-change callbacks.
-- **Stable event schema**: The module converts a tag change into a single protobuf message (see `module/src/main/proto/ot_event.proto`). Since the event payload is **about the tag observation** (tag path, timestamp, value, quality, etc.), **you do not change protobuf/schema when you switch protocols**—you only change which tag paths you subscribe to.
+- **Stable event schema**: The module converts a tag change into a single protobuf message (see `module/src/main/proto/ot_event.proto`). Since the event payload is **about the tag observation** (tag path, timestamp, value, quality, etc.), **you do not change protobuf/schema when you switch protocols** - you only change which tag paths you subscribe to.
 
 ### What changes when you switch sources?
 
@@ -62,7 +414,6 @@ In all cases, the connector publishes **the same protobuf event type** to Databr
 - [Repository layout](#repository-layout)
 - [Release artifacts (two `.modl` files)](#release-artifacts-two-modl-files)
 - [Developer build](#developer-build)
-- [Module internals (code overview)](module/CODE_OVERVIEW.md)
 - [Reference](#reference)
 
 For production setup (prereqs, install, configure, verify, troubleshooting), see `DEPLOYMENT.md`.
@@ -71,8 +422,8 @@ For production setup (prereqs, install, configure, verify, troubleshooting), see
 
 Download the prebuilt Ignition module (`.modl`) from GitHub Releases:
 
-- **Ignition 8.1.x**: `zerobus-connector-1.0.0.modl`
-- **Ignition 8.3.x**: `zerobus-connector-1.0.0-ignition-8.3.modl`
+- **Ignition 8.1.x**: `zerobus-connector-1.0.1.modl`
+- **Ignition 8.3.x**: `zerobus-connector-1.0.1-ignition-8.3.modl`
 
 Then follow `DEPLOYMENT.md` for installation and configuration.
 
@@ -89,8 +440,8 @@ Directory structure (high-level):
 ├── README.md
 ├── DEPLOYMENT.md
 ├── releases/                       # canonical .modl artifacts (root)
-│   ├── zerobus-connector-1.0.0.modl
-│   └── zerobus-connector-1.0.0-ignition-8.3.modl
+│   ├── zerobus-connector-1.0.1.modl
+│   └── zerobus-connector-1.0.1-ignition-8.3.modl
 ├── module/                         # Ignition module source + Gradle build
 │   ├── build.gradle
 │   ├── settings.gradle
@@ -101,13 +452,12 @@ Directory structure (high-level):
 │           ├── resources/          # module.xml, i18n, UI assets (web/, mounted/)
 │           └── proto/              # protobuf schema (ot_event.proto)
 ├── examples/                        # end-to-end demo simulations (Ignition tags + timer scripts)
-│   ├── manufacturing_site01/
-│   ├── manufacturing_site02/
-│   ├── oil_gas_site01/
-│   ├── renewables_site01/
-│   └── renewables_sim/
-├── tools/
-│   └── module-signer/               # optional: Ignition module signing tool (see License/Third-party notices)
+│   ├── tilt_renewables_site01/
+│   ├── saint_gobain_site01/
+│   └── tilt_sim/
+├── tools/                           # Databricks SQL packs (Bronze->Silver->Gold) + dashboard/genie prompts
+│   ├── databricks_end2end_tilt/
+│   └── databricks_end2end_sg/
 └── onboarding/
     ├── databricks/                 # optional: helper to create/align target table schema
     └── ignition/
@@ -119,15 +469,15 @@ Directory structure (high-level):
 
 There are **two** prebuilt module packages under `releases/`:
 
-- **`releases/zerobus-connector-1.0.0.modl`**:
+- **`releases/zerobus-connector-1.0.1.modl`**:
   - **Install on**: Ignition **8.1.x** (and 8.2.x if you run it)
   - **Why**: the packaged `module.xml` sets `<requiredIgnitionVersion>` to `8.1.0`
 
-- **`releases/zerobus-connector-1.0.0-ignition-8.3.modl`**:
+- **`releases/zerobus-connector-1.0.1-ignition-8.3.modl`**:
   - **Install on**: Ignition **8.3.x**
   - **Why**: the packaged `module.xml` sets `<requiredIgnitionVersion>` to `8.3.0`
 
-### What’s different between them?
+### What's different between them?
 
 Ignition enforces compatibility based on `module.xml` during install. Because 8.3 refuses modules whose `requiredIgnitionVersion` is below 8.3, we ship two `.modl` artifacts.
 
@@ -145,15 +495,15 @@ The **runtime behavior and code are the same**; the important differences are:
 
 - **JDK 17** installed (Gradle/tooling).
 - **Ignition SDK jars available locally** (used as `compileOnly` dependencies):
-  - **8.1.x**: set `IGNITION_HOME=/usr/local/ignition8.1` (or pass `-PignitionHome=...`)
-  - **8.3.x**: set `IGNITION_HOME=/usr/local/ignition` (or pass `-PignitionHome=...`)
+  - **8.1.x** install at: `/usr/local/ignition8.1`
+  - **8.3.x** install at: `/usr/local/ignition`
 
 ### 2) Code flow explainer (runtime)
 
 #### 2.1) High-level architecture
 
 Two ways for events to enter the module:
-- **Direct subscriptions** (recommended): in-JVM tag change callbacks from Ignition’s TagManager
+- **Direct subscriptions** (recommended): in-JVM tag change callbacks from Ignition's TagManager
 - **HTTP ingest** (ingest-only mode): external producer POSTs JSON to module endpoints
 
 One way for events to leave the module:
@@ -163,10 +513,10 @@ One way for events to leave the module:
 
 The runtime data path is built as a small pipeline:
 
-- **Mapper**: `TagEvent → OTEvent` (`module/src/main/java/com/example/ignition/zerobus/pipeline/OtEventMapper.java`)
+- **Mapper**: `TagEvent -> OTEvent` (`module/src/main/java/com/example/ignition/zerobus/pipeline/OtEventMapper.java`)
 - **Buffer**: commit-based buffer backed by memory or disk (`module/src/main/java/com/example/ignition/zerobus/pipeline/StoreAndForwardBuffer.java`)
 - **Sink**: Zerobus write boundary (`module/src/main/java/com/example/ignition/zerobus/pipeline/EventSink.java`)
-  - Zerobus implementation: `ZerobusEventSink` → `ZerobusClientManager.sendOtEvents(...)`
+  - Zerobus implementation: `ZerobusEventSink` -> `ZerobusClientManager.sendOtEvents(...)`
 
 #### 2.2) Lifecycle and configuration
 
@@ -186,11 +536,11 @@ The runtime data path is built as a small pipeline:
 
 #### 2.3) Data path: Direct subscriptions mode
 
-1) **Tag change happens**: Ignition calls into the module via TagManager subscription callbacks.  
-2) **Normalize**: `TagSubscriptionService` builds a `TagEvent`, then maps it to `OTEvent` via `OtEventMapper`.  
-3) **Buffer**: the `OTEvent` is offered to the buffer (memory or disk store-and-forward).  
-4) **Flush loop**: a scheduled flusher runs every `batchFlushIntervalMs`. When the sink is ready, it drains up to `batchSize` events and calls the sink.  
-5) **Commit semantics**: the buffer is committed only after a successful send (at-least-once).  
+1) **Tag change happens**: Ignition calls into the module via TagManager subscription callbacks.
+2) **Normalize**: `TagSubscriptionService` builds a `TagEvent`, then maps it to `OTEvent` via `OtEventMapper`.
+3) **Buffer**: the `OTEvent` is offered to the buffer (memory or disk store-and-forward).
+4) **Flush loop**: a scheduled flusher runs every `batchFlushIntervalMs`. When the sink is ready, it drains up to `batchSize` events and calls the sink.
+5) **Commit semantics**: the buffer is committed only after a successful send (at-least-once).
 
 #### 2.4) Data path: HTTP ingest mode (ingest-only)
 
@@ -202,10 +552,10 @@ Prerequisite: set **Enable Direct Subscriptions** = OFF in the module UI.
 2) **Servlet routes the request**:
    - `.../web/ZerobusConfigServlet` (dispatcher)
    - `.../web/ZerobusServletHandler` (shared request parsing/routing)
-3) **Normalize + buffer**: payload → `TagEvent` → `OTEvent` → buffer.
+3) **Normalize + buffer**: payload -> `TagEvent` -> `OTEvent` -> buffer.
 4) **Batch/flush/send**: same flush loop and sink as direct subscriptions.
 
-### 2.5) Store-and-forward + backpressure + “sink down” behavior
+### 2.5) Store-and-forward + backpressure + "sink down" behavior
 
 When **Store-and-Forward** is enabled:
 
@@ -230,7 +580,7 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PA
   ./gradlew buildModule81
 ```
 
-Output: `module/build-user-8.1/modules/zerobus-connector-1.0.0.modl`
+Output: `module/build-user-8.1/modules/zerobus-connector-1.0.1.modl`
 
 #### 3.2) Build the Ignition 8.3.x module (`.modl`)
 
@@ -240,7 +590,7 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PA
   ./gradlew buildModule83
 ```
 
-Output: `module/build-user-8.3/modules/zerobus-connector-1.0.0-ignition-8.3.modl`
+Output: `module/build-user-8.3/modules/zerobus-connector-1.0.1-ignition-8.3.modl`
 
 #### 3.3) Where release artifacts go
 
@@ -266,7 +616,7 @@ cd module
 Ignition modules should be **signed** for distribution.
 This repo supports signing as an **optional** build step, without hardcoding any secrets.
 
-You will need Inductive Automation’s `module-signer.jar` (see IA SDK docs on module signing) and a keystore.
+You will need Inductive Automation's `module-signer.jar` (see IA SDK docs on module signing) and a keystore.
 
 Provide signing config via Gradle properties or environment variables:
 
@@ -307,7 +657,7 @@ cd module
 
 #### 3.4) Docker-based build (optional)
 
-If you don’t want to install Ignition locally just to access SDK jars, you can build the `.modl` in Docker using:
+If you don't want to install Ignition locally just to access SDK jars, you can build the `.modl` in Docker using:
 - the official `inductiveautomation/ignition` image (source of Ignition SDK/runtime jars)
 - an official Java 17 JDK image (`eclipse-temurin:17-jdk`) for the Gradle build
 
@@ -412,61 +762,43 @@ All endpoints are under `/system/zerobus`:
 ### End-to-end data flow
 
 **Direct subscriptions**
-1) Tag change event → `TagSubscriptionService` listener  
-2) Convert to internal `TagEvent` → queue  
-3) Flush loop batches → `ZerobusClientManager`  
-4) Protobuf (OTEvent) → Zerobus stream → Delta
+1) Tag change event -> `TagSubscriptionService` listener
+2) Convert to internal `TagEvent` -> queue
+3) Flush loop batches -> `ZerobusClientManager`
+4) Protobuf (OTEvent) -> Zerobus stream -> Delta
 
 **HTTP ingest (Event Streams / external producer)**
-1) Producer POSTs JSON → `/system/zerobus/ingest` or `/ingest/batch`  
-2) Handler parses + enqueues `TagEvent`s  
+1) Producer POSTs JSON -> `/system/zerobus/ingest` or `/ingest/batch`
+2) Handler parses + enqueues `TagEvent`s
 3) Batching + streaming as above
 
----
+## Troubleshooting
 
-## Code Assets Included
+### Frontend won't start
 
-- **Ignition Gateway module (`.modl`)**:
-  - `releases/zerobus-connector-1.0.0.modl` (Ignition 8.1.x)
-  - `releases/zerobus-connector-1.0.0-ignition-8.3.modl` (Ignition 8.3.x)
-- **Module source**: `module/` (Java + protobuf schema in `module/src/main/proto/ot_event.proto`)
-- **Demo tag exports + timer scripts**: `examples/` (manufacturing, oil & gas, renewables)
-- **Optional helper for target Delta table**: `onboarding/databricks/01_create_tables.py`
-- **Optional local testing**: `docker/ignition-gateway/` (Ignition Gateway in Docker/Colima)
-- **Developer documentation**: `DEPLOYMENT.md`, `module/CODE_OVERVIEW.md`
+- Ensure Node.js 20+ is installed: `node --version`
+- Run `npm --prefix demo/frontend install` first
+- Check port 5173 is not already in use
 
-## Authors
+### Backend won't connect to Databricks
 
-- **Pravin Varma** (Databricks Industry Solutions)
+- Verify `.env` has correct `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, and `DATABRICKS_HTTP_PATH`
+- Ensure the SQL warehouse is running in your Databricks workspace
+- Check network connectivity: `curl -s https://<your-host>/api/2.0/clusters/list`
 
-## Project support
+### Simulator not generating data
 
-Please note the code in this project is provided for your exploration only, and are not formally supported by Databricks with Service Level Agreements (SLAs). They are provided AS-IS and we do not make any guarantees of any kind. Please do not submit a support ticket relating to any issues arising from the use of these projects. The source in this project is provided subject to the Databricks License. All included or referenced third party libraries are subject to the licenses set forth below.
+- Ensure simulator dependencies are installed: `npm --prefix demo/simulator install`
+- Check that SDT configuration defaults are set in `.env`
+- Try running with verbose logging: `DEBUG=* npm --prefix demo/simulator run dev`
 
-Any issues discovered through the use of this project should be filed as GitHub Issues on the Repo. They will be reviewed as time permits, but there are no formal SLAs for support.
+### Tests failing
 
-## License
+- Run `cd demo && bash gates.sh` to see which specific gate is failing
+- Clear node_modules and reinstall: `rm -rf demo/*/node_modules && npm --prefix demo/frontend install && npm --prefix demo/simulator install`
+- Ensure TypeScript version is 5.7+: `npx --prefix demo/frontend tsc --version`
 
-© 2025 Databricks, Inc. All rights reserved. The source in this repository is provided subject to the Databricks License: `https://databricks.com/db-license-source` (see `LICENSE.md`).
+### CORS errors in browser
 
-All included or referenced third party libraries are subject to the licenses set forth below.
-
-## Third‑party library licenses (Ignition + Java)
-
-The connector is an **Ignition module**. Some dependencies are **provided by Ignition at runtime** (not redistributed as part of this repository), and some are **packaged into the module** at build time.
-
-| library | description | license | source |
-|---|---|---|---|
-| Inductive Automation **Ignition** | Runtime platform that hosts the module (`.modl`) and provides Gateway/Tag APIs | Commercial / Ignition EULA (see Inductive Automation terms) | Inductive Automation |
-| Ignition SDK jars (`gateway-api`, `gateway-web`, `common`, Wicket, etc.) | Compile-only APIs; provided by Ignition install at runtime | Commercial / Ignition EULA | Ignition installation |
-| `com.databricks:zerobus-ingest-sdk:0.1.0:jar-with-dependencies` | Databricks Zerobus ingest client SDK (shaded jar bundles transitive deps) | Databricks (see Databricks License) | Maven artifact |
-| `com.google.protobuf:protobuf-java:3.21.12` | Protobuf runtime used for `OTEvent` messages | BSD 3‑Clause (per Protobuf project) | Maven Central |
-| `com.google.protobuf:protoc:3.21.12` | Protobuf compiler used during build (`com.google.protobuf` Gradle plugin) | BSD 3‑Clause (per Protobuf project) | Maven Central |
-| `org.slf4j:slf4j-api:1.7.36` | Logging API (bound by Ignition at runtime) | MIT License | Maven Central |
-| `com.google.code.gson:gson` | JSON serialization for the HTTP config/ingest endpoints (provided by Ignition common libs) | Apache 2.0 | Ignition / Maven Central |
-| `jakarta.servlet:jakarta.servlet-api:6.0.0` | Servlet API for Ignition 8.3+ (`jakarta.servlet.*`) | Eclipse Public License 2.0 (per Jakarta/Eclipse) | Maven Central |
-| `javax.servlet:javax.servlet-api:4.0.1` | Servlet API for Ignition 8.1/8.2 (`javax.servlet.*`) | CDDL 1.1 and/or GPLv2 + Classpath Exception (per artifact) | Maven Central |
-| `org.junit.jupiter:junit-jupiter:5.9.2` | Unit testing | EPL 2.0 | Maven Central |
-| `org.mockito:mockito-core:5.1.1` | Unit testing (mocking) | MIT License | Maven Central |
-
-**Note on shaded/transitive dependencies**: `zerobus-ingest-sdk:jar-with-dependencies` bundles additional third-party libraries. For a complete dependency/license list, consult the artifact metadata (POM) and any `NOTICE`/license files included with the SDK at build time.
+- Backend CORS is configured for `http://localhost:5173` by default
+- Set `CORS_ORIGINS` env var to add additional origins (comma-separated)

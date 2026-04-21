@@ -14,6 +14,7 @@ import com.inductiveautomation.ignition.gateway.web.systemjs.SystemJsModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -217,6 +218,22 @@ public class ZerobusGatewayHook83 extends AbstractGatewayModuleHook implements Z
             sb.append(tagSubscriptionService.getDiagnostics());
         }
         return sb.toString();
+    }
+
+    @Override
+    public Object getCompressionMetrics() {
+        if (tagSubscriptionService == null) {
+            return null;
+        }
+        return tagSubscriptionService.getCompressionMetricsSnapshot();
+    }
+
+    @Override
+    public Object getSdtValidationReport() {
+        if (tagSubscriptionService == null) {
+            return null;
+        }
+        return tagSubscriptionService.getSdtValidationReport(50, 200);
     }
 
     @Override

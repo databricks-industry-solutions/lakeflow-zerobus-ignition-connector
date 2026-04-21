@@ -1,0 +1,232 @@
+{
+  "name": "PetrolCo",
+  "tagType": "Folder",
+  "tags": [
+    {
+      "name": "USA",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "name": "Appalachia",
+          "tagType": "Folder",
+          "tags": [
+            {
+              "name": "Site01",
+              "tagType": "Folder",
+              "tags": [
+                {
+                  "name": "Config",
+                  "tagType": "Folder",
+                  "tags": [
+                    { "name": "SimEnabled", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                    { "name": "UpdateEveryMs", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 1000 },
+                    { "name": "ScenarioName", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "Petrol Co RegionA - Shale gas pads + processing + midstream (demo)" },
+                    { "name": "AmbientTemp_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 6.0 },
+                    { "name": "GasPrice_USD_MMBtu", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.75 }
+                  ]
+                },
+                {
+                  "name": "Diagnostics",
+                  "tagType": "Folder",
+                  "tags": [
+                    { "name": "TickCount", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Int4", "value": 0 },
+                    { "name": "LastRun", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                    { "name": "LastStatus", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" },
+                    { "name": "LastError", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "String", "value": "" }
+                  ]
+                },
+                {
+                  "name": "Pads",
+                  "tagType": "Folder",
+                  "tags": [
+                    {
+                      "name": "PadA",
+                      "tagType": "Folder",
+                      "tags": [
+                        {
+                          "name": "W01",
+                          "tagType": "Folder",
+                          "tags": [
+                            {
+                              "name": "Wellhead",
+                              "tagType": "Folder",
+                              "tags": [
+                                { "name": "Enabled", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                                { "name": "Choke_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 62.0 },
+                                { "name": "Pressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 4200.0 },
+                                { "name": "Temperature_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 44.0 }
+                              ]
+                            },
+                            {
+                              "name": "Production",
+                              "tagType": "Folder",
+                              "tags": [
+                                { "name": "GasRate_Mscfd", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 18.5 },
+                                { "name": "WaterRate_bpd", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 120.0 },
+                                { "name": "LinePressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 850.0 }
+                              ]
+                            },
+                            {
+                              "name": "Integrity",
+                              "tagType": "Folder",
+                              "tags": [
+                                { "name": "CasingPressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1120.0 },
+                                { "name": "TubingPressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2650.0 },
+                                { "name": "AnnulusPressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 420.0 }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "name": "W02",
+                          "tagType": "Folder",
+                          "tags": [
+                            {
+                              "name": "Wellhead",
+                              "tagType": "Folder",
+                              "tags": [
+                                { "name": "Enabled", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                                { "name": "Choke_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 55.0 },
+                                { "name": "Pressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 3980.0 },
+                                { "name": "Temperature_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 41.0 }
+                              ]
+                            },
+                            {
+                              "name": "Production",
+                              "tagType": "Folder",
+                              "tags": [
+                                { "name": "GasRate_Mscfd", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 14.2 },
+                                { "name": "WaterRate_bpd", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 95.0 },
+                                { "name": "LinePressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 830.0 }
+                              ]
+                            },
+                            {
+                              "name": "Integrity",
+                              "tagType": "Folder",
+                              "tags": [
+                                { "name": "CasingPressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1080.0 },
+                                { "name": "TubingPressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2510.0 },
+                                { "name": "AnnulusPressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 390.0 }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "name": "PadB",
+                      "tagType": "Folder",
+                      "tags": [
+                        {
+                          "name": "W01",
+                          "tagType": "Folder",
+                          "tags": [
+                            {
+                              "name": "Wellhead",
+                              "tagType": "Folder",
+                              "tags": [
+                                { "name": "Enabled", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                                { "name": "Choke_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 68.0 },
+                                { "name": "Pressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 4350.0 },
+                                { "name": "Temperature_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 46.0 }
+                              ]
+                            },
+                            {
+                              "name": "Production",
+                              "tagType": "Folder",
+                              "tags": [
+                                { "name": "GasRate_Mscfd", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 22.0 },
+                                { "name": "WaterRate_bpd", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 80.0 },
+                                { "name": "LinePressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 900.0 }
+                              ]
+                            },
+                            {
+                              "name": "Integrity",
+                              "tagType": "Folder",
+                              "tags": [
+                                { "name": "CasingPressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1200.0 },
+                                { "name": "TubingPressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2800.0 },
+                                { "name": "AnnulusPressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 460.0 }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "Processing",
+                  "tagType": "Folder",
+                  "tags": [
+                    {
+                      "name": "Separator01",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "Pressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 725.0 },
+                        { "name": "Temperature_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 32.0 },
+                        { "name": "Level_pct", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 48.0 }
+                      ]
+                    },
+                    {
+                      "name": "Compressor01",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "Running", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": true },
+                        { "name": "SuctionPressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 690.0 },
+                        { "name": "DischargePressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 1050.0 },
+                        { "name": "Vibration_mm_s", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 2.6 }
+                      ]
+                    },
+                    {
+                      "name": "Dehydrator01",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "InletWater_ppm", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 780.0 },
+                        { "name": "OutletWater_ppm", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 65.0 },
+                        { "name": "DP_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 4.2 }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "Midstream",
+                  "tagType": "Folder",
+                  "tags": [
+                    {
+                      "name": "SalesMeter01",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "GasFlow_Mscfd", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 54.0 },
+                        { "name": "Pressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 980.0 },
+                        { "name": "Temperature_C", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 18.0 }
+                      ]
+                    },
+                    {
+                      "name": "Pipeline01",
+                      "tagType": "Folder",
+                      "tags": [
+                        { "name": "Linepack_MMcft", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 86.0 },
+                        { "name": "DownstreamPressure_psi", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 950.0 }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "Safety",
+                  "tagType": "Folder",
+                  "tags": [
+                    { "name": "ESD_Active", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Boolean", "value": false },
+                    { "name": "H2S_ppm", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 0.0 },
+                    { "name": "Methane_ppm", "tagType": "AtomicTag", "valueSource": "memory", "dataType": "Float4", "value": 180.0 }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
