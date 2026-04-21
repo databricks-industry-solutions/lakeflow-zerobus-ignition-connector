@@ -77,10 +77,6 @@ public class ZerobusSettings83 extends PersistentRecord {
     public static final LongField NumericSdtMaxIntervalMs = new LongField(META, "NumericSdtMaxIntervalMs");
     public static final LongField NumericSdtMinIntervalMs = new LongField(META, "NumericSdtMinIntervalMs");
 
-    // Tag History Provider
-    public static final BooleanField EnableTagHistoryProvider = new BooleanField(META, "EnableTagHistoryProvider");
-    public static final StringField WarehouseId = new StringField(META, "WarehouseId");
-
     static {
         // Defaults aligned with ConfigModel defaults
         Enabled.setDefault(false);
@@ -117,8 +113,6 @@ public class ZerobusSettings83 extends PersistentRecord {
         NumericSdtDeviation.setDefault(0.0);
         NumericSdtMaxIntervalMs.setDefault(0L);
         NumericSdtMinIntervalMs.setDefault(0L);
-        EnableTagHistoryProvider.setDefault(false);
-        WarehouseId.setDefault("");
     }
 
     @Override
@@ -179,8 +173,6 @@ public class ZerobusSettings83 extends PersistentRecord {
         config.setNumericSdtDeviation(getDouble(NumericSdtDeviation));
         config.setNumericSdtMaxIntervalMs(getLong(NumericSdtMaxIntervalMs));
         config.setNumericSdtMinIntervalMs(getLong(NumericSdtMinIntervalMs));
-        config.setEnableTagHistoryProvider(getBoolean(EnableTagHistoryProvider));
-        config.setWarehouseId(getString(WarehouseId));
         return config;
     }
 
@@ -221,8 +213,6 @@ public class ZerobusSettings83 extends PersistentRecord {
         setDouble(NumericSdtDeviation, config.getNumericSdtDeviation());
         setLong(NumericSdtMaxIntervalMs, config.getNumericSdtMaxIntervalMs());
         setLong(NumericSdtMinIntervalMs, config.getNumericSdtMinIntervalMs());
-        setBoolean(EnableTagHistoryProvider, config.isEnableTagHistoryProvider());
-        setString(WarehouseId, config.getWarehouseId());
     }
 }
 

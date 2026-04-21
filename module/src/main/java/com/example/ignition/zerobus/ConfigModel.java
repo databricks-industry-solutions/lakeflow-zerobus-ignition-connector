@@ -195,13 +195,6 @@ public class ConfigModel implements Serializable {
      */
     private List<NumericCompressionRule> numericCompressionRules = new ArrayList<>();
 
-    // === Tag History Provider ===
-
-    /** Enable the native Ignition TagHistoryProvider integration. */
-    private boolean enableTagHistoryProvider = false;
-
-    /** Databricks SQL Warehouse ID for history read queries. */
-    private String warehouseId = "";
     // === Module Control ===
     
     /** Enable/disable the entire module */
@@ -579,21 +572,6 @@ public class ConfigModel implements Serializable {
         return numericDeadband;
     }
 
-    public boolean isEnableTagHistoryProvider() {
-        return enableTagHistoryProvider;
-    }
-
-    public void setEnableTagHistoryProvider(boolean enableTagHistoryProvider) {
-        this.enableTagHistoryProvider = enableTagHistoryProvider;
-    }
-
-    public String getWarehouseId() {
-        return warehouseId;
-    }
-
-    public void setWarehouseId(String warehouseId) {
-        this.warehouseId = warehouseId;
-    }
     public boolean isEnabled() {
         return enabled;
     }
@@ -903,9 +881,7 @@ public class ConfigModel implements Serializable {
             || !Objects.equals(this.numericDeadbandRules, newConfig.numericDeadbandRules)
             || !Objects.equals(this.numericCompressionRules, newConfig.numericCompressionRules)
             || this.enabled != newConfig.enabled
-            || this.debugLogging != newConfig.debugLogging
-            || this.enableTagHistoryProvider != newConfig.enableTagHistoryProvider
-            || !Objects.equals(this.warehouseId, newConfig.warehouseId);
+            || this.debugLogging != newConfig.debugLogging;
     }
     
     /**
@@ -950,8 +926,6 @@ public class ConfigModel implements Serializable {
         this.numericCompressionRules = (other.numericCompressionRules == null) ? new ArrayList<>() : new ArrayList<>(other.numericCompressionRules);
         this.enabled = other.enabled;
         this.debugLogging = other.debugLogging;
-        this.enableTagHistoryProvider = other.enableTagHistoryProvider;
-        this.warehouseId = other.warehouseId;
     }
     
     @Override
