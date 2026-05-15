@@ -2,6 +2,13 @@
 
 Live demonstration of streaming industrial OT data from Ignition to Databricks Delta Lake via Zerobus, with Swinging Door Trending (SDT) compression at the connector layer.
 
+**Connector highlights (current `main`):**
+
+- **SDT observability** — per-tag SDT compression ratio flows into events (`ot_event.proto`) and aggregate metrics for the Gateway UI.
+- **Gateway UI** — Zerobus configuration page uses Databricks-aligned styling (`module/src/main/resources/web/zerobus-config.html`).
+- **Zerobus stream recovery** — flusher avoids deadlocks when the gRPC stream is in a recovering state (`ZerobusClientManager`).
+- **Workshop bundle** — `workshop/databricks.yml` deploys medallion workshop SQL/assets via Databricks Asset Bundles (adjust `workspace` / variables for your profile).
+
 ## Architecture
 
 ```mermaid
@@ -59,10 +66,10 @@ Run `make help` from the repo root for all targets. Deeper tables and troublesho
 
 ## Setup
 
-1. Clone the repository and checkout the `agl-demo` branch:
+1. Clone the repository. Use **`main`** for the latest connector and demo stack; use **`agl-demo`** for a stable AGL fleet–focused snapshot:
    ```bash
    git clone <repo-url>
-   git checkout agl-demo
+   git checkout main
    ```
 
 2. Copy `.env.example` to `.env` and fill in your credentials:
@@ -100,8 +107,7 @@ Run `make help` from the repo root for all targets. Deeper tables and troublesho
 | `DATABRICKS_WAREHOUSE_ID` | No | - | SQL warehouse ID (injected by app.yaml) |
 | `DATABRICKS_CATALOG` | No | `agl_demo` | Unity Catalog name |
 | `DATABRICKS_SCHEMA` | No | `ot` | Schema name |
-
-*Auth: provide either `DATABRICKS_TOKEN` or both `DATABRICKS_CLIENT_ID` + `DATABRICKS_CLIENT_SECRET`.
+| *Auth note* | | | Use either `DATABRICKS_TOKEN` or both `DATABRICKS_CLIENT_ID` + `DATABRICKS_CLIENT_SECRET` for Databricks SQL / Apps. |
 | `ZEROBUS_ENDPOINT` | No | - | Zerobus gRPC endpoint |
 | `ZEROBUS_CLIENT_ID` | No | - | OAuth client ID |
 | `ZEROBUS_CLIENT_SECRET` | No | - | OAuth client secret |
@@ -121,6 +127,7 @@ pipelines/        Databricks data processing
   sql/            SQL scripts for table setup and transforms (Bronze → Silver → Gold)
   sites/          Per-customer site SQL packs
 module/           Java Ignition Gateway module (separate build)
+workshop/         Databricks bundle (medallion workshop file sync); see workshop/databricks.yml
 examples/         Ignition site configurations
 docker/           Docker build and gateway configs
 ```
@@ -261,6 +268,7 @@ cd docker/ignition-gateway && docker compose -f docker-compose.83.yml down -v
 | Docker/Colima gateway setup | `docker/ignition-gateway/README.md` |
 | AGL Fleet Simulator & auto-config | `examples/agl_fleet/README.md` |
 | Databricks table setup & SP grants | `examples/agl_fleet/setup_databricks.sql` |
+| Medallion workshop (bundle deploy) | `workshop/databricks.yml` |
 | Module build from source | `CLAUDE.md` (Docker-based build section) |
 
 ## SDT compression
@@ -269,18 +277,86 @@ The Swinging Door Trending (SDT) algorithm compresses time-series data at the co
 
 **Two-layer compression:**
 
-1. **SDT at the connector** - Swinging Door Trending filters out redundant values before they reach Databricks. Configurable per tag pattern via `comp_dev_percent` (% of tag span) and `comp_max_seconds` (max archive interval).
+1. **SDT at the connector** - Swinging Door Trending filters out redundant values before they reach Databricks.
 2. **Delta columnar encoding** - Parquet dictionary, RLE, bit-packing, and Zstd compression on top of the SDT-filtered data.
 
-**Key parameters:**
+### Global SDT settings (UI)
+
+Use the Gateway page at:
+
+- `http://<gateway-host>:<port>/system/zerobus/configure`
+
+In the Numeric Compression section:
+
+- set `Numeric Compression Mode = SDT`
+- set `SDT Deviation` (`numericSdtDeviation`)
+- set `SDT Max Interval (ms)` (`numericSdtMaxIntervalMs`)
+- set `SDT Min Interval (ms)` (`numericSdtMinIntervalMs`)
+
+These are the global defaults applied when no per-tag override rule matches.
+The current UI exposes global SDT settings only.
+
+### Per-tag SDT rules (JSON POST)
+
+Per-tag overrides are configured through `POST /system/zerobus/config` using `numericCompressionRules`.
+
+Recommended flow is GET -> merge -> POST (to avoid overwriting unrelated settings):
+
+```bash
+# 1) Get current config
+curl -s "http://localhost:7088/system/zerobus/config" > /tmp/zerobus-config.json
+
+# 2) Edit /tmp/zerobus-config.json and add numericCompressionRules, then:
+curl -s -X POST "http://localhost:7088/system/zerobus/config" \
+  -H "Content-Type: application/json" \
+  --data-binary "@/tmp/zerobus-config.json"
+```
+
+Example `numericCompressionRules` block:
+
+```json
+{
+  "numericCompressionRules": [
+    {
+      "tagPathRegex": "^\\[default\\]AreaA/Temp/.*$",
+      "mode": "SDT",
+      "sdtDeviation": 0.15,
+      "sdtMaxIntervalMs": 60000,
+      "sdtMinIntervalMs": 1000
+    },
+    {
+      "tagPathRegex": "^\\[default\\]AreaA/Pressure/.*$",
+      "mode": "SDT",
+      "sdtDeviation": 0.5,
+      "sdtMaxIntervalMs": 120000,
+      "sdtMinIntervalMs": 2000
+    },
+    {
+      "tagPathRegex": "^\\[default\\]AreaA/Status/.*$",
+      "mode": "DEADBAND",
+      "deadband": 0.0
+    }
+  ]
+}
+```
+
+Rule behavior:
+
+- first matching rule wins
+- regex is matched against the full tag path
+- if no rule matches, global numeric compression settings are used
+
+**Global parameter names:**
 
 | Parameter | Description | Default |
 |---|---|---|
-| `comp_dev_percent` | Compression deviation as % of tag span | 1.0% |
-| `comp_max_seconds` | Max time between forced archive events | 600s |
-| `comp_min_seconds` | Min time between archive events | 0s |
+| `numericSdtDeviation` | SDT deviation in engineering units | `0.0` |
+| `numericSdtMaxIntervalMs` | Max time between forced archive events (ms) | `0` (disabled) |
+| `numericSdtMinIntervalMs` | Min time between emitted events (ms) | `0` (disabled) |
 
 Typical compression ratios range from 4:1 to 10:1 depending on signal characteristics.
+
+The connector also tracks **per-tag SDT compression ratio** (percentage of samples suppressed vs. raw) for validation, diagnostics, and the native metrics payload surfaced in the Gateway UI.
 
 ## Running tests
 
@@ -305,13 +381,13 @@ The demo app (backend + frontend) can be deployed as a Databricks App using git 
 
 - A Databricks workspace with Apps enabled
 - A SQL warehouse (serverless recommended)
-- The `agl-demo` branch pushed to a git repo accessible from Databricks
+- The target branch (`main` or `agl-demo`) pushed to a git repo accessible from Databricks
 
 ### Steps
 
 1. **Clone the repo into your workspace** as a Git Folder:
    - In Databricks, go to Workspace > Repos > Add Repo
-   - Enter the repo URL and select the `agl-demo` branch
+   - Enter the repo URL and select **`main`** (latest) or **`agl-demo`** (AGL snapshot)
 
 2. **Create the app** in your Databricks workspace:
    ```bash
@@ -358,10 +434,10 @@ The app's service principal automatically receives `DATABRICKS_CLIENT_ID`, `DATA
 
 ## Ignition Zerobus Connector
 
-**Version**: `1.0.1`
+**Version**: `1.0.10` (see `module/build.gradle`)
 **Purpose**: Stream Ignition tag-change events to Databricks Delta tables via Zerobus (gRPC + protobuf).
-**Ignition compatibility**: **8.1.x** and **8.3.x** (different `.modl` artifacts).
-**Configuration**: via the **Ignition Gateway UI**.
+**Ignition compatibility**: **8.1.x** and **8.3.x** (different `.modl` artifacts). Tag History provider features require **8.3.x**.
+**Configuration**: via the **Ignition Gateway UI** (`/system/zerobus` web assets).
 
 ## Concepts (Ignition Gateway + Databricks Zerobus)
 
@@ -420,12 +496,12 @@ For production setup (prereqs, install, configure, verify, troubleshooting), see
 
 ## Get started (download the module)
 
-Download the prebuilt Ignition module (`.modl`) from GitHub Releases:
+Download the prebuilt Ignition module (`.modl`) from GitHub Releases (or use the copies under `releases/` in this repo):
 
-- **Ignition 8.1.x**: `zerobus-connector-1.0.1.modl`
-- **Ignition 8.3.x**: `zerobus-connector-1.0.1-ignition-8.3.modl`
+- **Ignition 8.1.x**: `zerobus-connector-1.0.10.modl`
+- **Ignition 8.3.x**: `zerobus-connector-1.0.10-ignition-8.3.modl`
 
-Then follow `DEPLOYMENT.md` for installation and configuration.
+Signed artifacts (`*-signed.modl`) may also be published alongside releases. Then follow `DEPLOYMENT.md` for installation and configuration.
 
 ## Repository layout
 
@@ -440,8 +516,10 @@ Directory structure (high-level):
 ├── README.md
 ├── DEPLOYMENT.md
 ├── releases/                       # canonical .modl artifacts (root)
-│   ├── zerobus-connector-1.0.1.modl
-│   └── zerobus-connector-1.0.1-ignition-8.3.modl
+│   ├── zerobus-connector-1.0.10.modl
+│   └── zerobus-connector-1.0.10-ignition-8.3.modl
+├── workshop/                       # Databricks Asset Bundle (medallion workshop sync)
+│   └── databricks.yml
 ├── module/                         # Ignition module source + Gradle build
 │   ├── build.gradle
 │   ├── settings.gradle
@@ -469,11 +547,11 @@ Directory structure (high-level):
 
 There are **two** prebuilt module packages under `releases/`:
 
-- **`releases/zerobus-connector-1.0.1.modl`**:
+- **`releases/zerobus-connector-1.0.10.modl`**:
   - **Install on**: Ignition **8.1.x** (and 8.2.x if you run it)
   - **Why**: the packaged `module.xml` sets `<requiredIgnitionVersion>` to `8.1.0`
 
-- **`releases/zerobus-connector-1.0.1-ignition-8.3.modl`**:
+- **`releases/zerobus-connector-1.0.10-ignition-8.3.modl`**:
   - **Install on**: Ignition **8.3.x**
   - **Why**: the packaged `module.xml` sets `<requiredIgnitionVersion>` to `8.3.0`
 
@@ -570,6 +648,83 @@ When the **sink is down** (auth/network outages):
 - The flusher **does not drain disk** unless the sink is ready (prevents repeatedly reading/parsing the same records while disconnected).
 - Once auth/network recovers, the sink reconnects, the backlog drains, and subscriptions resume.
 
+When the Zerobus gRPC stream is **recovering** after an error, the client avoids a class of **flusher deadlocks** by not blocking shutdown paths that must join the flush thread (see `ZerobusClientManager`).
+
+### 2.6) Sink modes: Zerobus vs Lakebase (PostgreSQL)
+
+The connector supports two **exclusive** sink modes:
+
+- `sinkMode=zerobus`:
+  - `enableZerobusSink=true`, `enablePostgresSink=false`
+  - Flush loop sends `OTEvent` batches to Zerobus ingest (gRPC/protobuf), landing in Delta.
+- `sinkMode=lakebase`:
+  - `enableZerobusSink=false`, `enablePostgresSink=true`
+  - Flush loop sends the same mapped `OTEvent` fields to PostgreSQL/Lakebase via SQL batch inserts (typically to `raw_tags`).
+
+Both modes share the same upstream event path:
+
+1) Event arrives (direct tag subscription or HTTP ingest)  
+2) `TagEvent` normalization in `TagSubscriptionService`  
+3) `TagEvent -> OTEvent` mapping in `OtEventMapper`  
+4) Buffer + store-and-forward + batch flush  
+5) Delivery to the active sink
+
+#### Switch sink mode on 8.3
+
+```bash
+# Zerobus mode
+make configure-zerobus-83
+
+# Lakebase mode (requires LAKEBASE_* env vars)
+make configure-lakebase-83
+
+# Lakebase mode with direct provisioning + connector artifact
+make configure-lakebase-83-direct
+```
+
+#### Switch sink mode on 8.1
+
+```bash
+# Zerobus mode
+make configure-zerobus-81
+
+# Lakebase mode (requires LAKEBASE_* env vars)
+make configure-lakebase-81
+
+# Lakebase mode with direct provisioning + connector artifact
+make configure-lakebase-81-direct
+```
+
+#### Lakebase SQL setup
+
+- Minimal table setup (manual env-driven path):
+  - `make db-lakebase-setup`
+  - Runs `onboarding/lakebase/create_raw_tags.sql` via `psql` (`PGSSLMODE=require`).
+- Managed post-deploy setup:
+  - `make db-deploy`
+  - `make db-lakebase-post-deploy`
+  - Provisions/updates Lakebase role + grants and applies DDL through `onboarding/databricks/provision_lakebase_direct.py`.
+
+#### End-to-end comparison
+
+- Zerobus path:
+  - Ignition -> connector -> Zerobus ingest -> Delta table (`catalog.schema.raw_tags`)
+- Lakebase path:
+  - Ignition -> connector -> PostgreSQL sink -> Lakebase table (`raw_tags`)
+
+> Note: Lakebase mode is a connector sink switch; it is not Zerobus writing to Lakebase.
+
+#### Quick decision guide
+
+| Goal | Recommended mode | Why |
+|---|---|---|
+| Land OT events in Unity Catalog Delta and feed medallion/Lakeflow pipelines | `sinkMode=zerobus` | Native Zerobus -> Delta landing path; best fit for Delta-native analytics and downstream transformations. |
+| Write directly to PostgreSQL-compatible storage for low-latency operational reads | `sinkMode=lakebase` | Connector writes directly to Lakebase `raw_tags` via SQL inserts. |
+| Compare throughput/latency between Delta ingest and Postgres ingest in demos | Switch between both (`configure-zerobus-*` / `configure-lakebase-*`) | Modes are exclusive and use the same upstream event path, making A/B comparisons straightforward. |
+| Use Delta time travel (`TIMESTAMP AS OF`) and Delta-native history workflows | `sinkMode=zerobus` | Time travel applies to Delta tables, not the Lakebase Postgres sink path. |
+| Keep app reads in PostgreSQL while validating connector ingestion behavior | `sinkMode=lakebase` | App/backend can query Lakebase directly without a Delta-to-Postgres bridge. |
+| Receive events from Event Streams/webhooks/scripts instead of direct tag listeners | Keep chosen sink mode (`zerobus` or `lakebase`) and set **Enable Direct Subscriptions = OFF** | Connector runs in HTTP ingest-only mode using `/system/zerobus/ingest` and `/system/zerobus/ingest/batch`; sink selection still controls destination. |
+
 ### 3) Build artifacts
 
 #### 3.1) Build the Ignition 8.1.x module (`.modl`)
@@ -580,7 +735,7 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PA
   ./gradlew buildModule81
 ```
 
-Output: `module/build-user-8.1/modules/zerobus-connector-1.0.1.modl`
+Output: `module/build-user-8.1/modules/zerobus-connector-1.0.10.modl`
 
 #### 3.2) Build the Ignition 8.3.x module (`.modl`)
 
@@ -590,7 +745,7 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PA
   ./gradlew buildModule83
 ```
 
-Output: `module/build-user-8.3/modules/zerobus-connector-1.0.1-ignition-8.3.modl`
+Output: `module/build-user-8.3/modules/zerobus-connector-1.0.10-ignition-8.3.modl`
 
 #### 3.3) Where release artifacts go
 
@@ -753,7 +908,7 @@ All endpoints are under `/system/zerobus`:
   - direct mode subscriptions via TagManager
   - HTTP ingest queueing via `/ingest` and `/ingest/batch`
   - batching + rate limiting + flush loop
-- **`module/src/main/java/com/example/ignition/zerobus/ZerobusClientManager.java`**: manages Zerobus client; converts events to protobuf and streams to Databricks.
+- **`module/src/main/java/com/example/ignition/zerobus/ZerobusClientManager.java`**: manages Zerobus client; converts events to protobuf and streams to Databricks; coordinates stream recovery and flush lifecycle.
 - **Servlet compatibility layer**:
   - `.../web/ZerobusConfigServlet.java` selects `javax` vs `jakarta` servlet implementation at runtime.
   - `.../web/ZerobusServletHandler.java` holds shared request parsing and routing.
