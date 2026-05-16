@@ -14,7 +14,7 @@ The primary ingestion capability is in:
 - `DEPLOYMENT.md` - install/configure/verify runbook
 - `docker/ignition-gateway/` - optional local gateway runtime
 
-This module does **not** require a Databricks App, frontend, backend, simulator, or workshop content to ingest OT events.
+This module ingests OT events directly from Ignition through the connector runtime.
 
 ## Architecture
 
@@ -53,7 +53,7 @@ Key configuration areas:
 - direct subscriptions vs HTTP ingest-only mode
 - batching, buffering, backpressure, and optional numeric compression
 
-For full examples and validation steps, use `DEPLOYMENT.md`.
+For full validation steps, use `DEPLOYMENT.md`.
 
 ## Ingestion modes
 
