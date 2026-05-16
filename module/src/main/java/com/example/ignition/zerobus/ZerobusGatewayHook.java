@@ -367,6 +367,10 @@ public class ZerobusGatewayHook extends AbstractGatewayModuleHook implements Zer
                     if (postgresClientManager != null) {
                         postgresClientManager.shutdown();
                     }
+                    // Force full sink/pipeline rewire so sinkMode changes are applied.
+                    tagSubscriptionService = null;
+                    zerobusClientManager = null;
+                    postgresClientManager = null;
 
                     // Start services with new configuration
                     try {
