@@ -1,4 +1,4 @@
-# AGL OT Lakehouse Demo
+# Ignition OT Ingestion Connector
 
 Live demonstration of streaming industrial OT data from Ignition to Databricks Delta Lake via Zerobus, with Swinging Door Trending (SDT) compression at the connector layer.
 
@@ -11,39 +11,9 @@ Live demonstration of streaming industrial OT data from Ignition to Databricks D
 
 ## Architecture
 
-```mermaid
-graph TD
-    subgraph "Edge / Ignition Gateway"
-        IG[Ignition Gateway<br/>OPC-UA Tag Provider]
-        EX[Exception Filter<br/>Layer 1: deadband]
-    end
+![Ignition OT ingestion options: Zerobus and Lakebase](docs/diagrams/ingestion-options-dual-sink.png)
 
-    subgraph "Connector"
-        ZC[Zerobus Connector<br/>+ SDT Compression Engine<br/>Layer 2: swinging door]
-    end
-
-    subgraph "Databricks Lakehouse"
-        ZI[Zerobus Ingest<br/>Serverless]
-        BZ[Bronze: raw_tags<br/>Layer 3: Delta columnar]
-        SV[Silver: aggregated_tags]
-        MT[Metrics: ingest_metrics]
-    end
-
-    subgraph "Demo App"
-        BE[Express API Server<br/>port 3001]
-        FE[React Frontend<br/>port 5173]
-    end
-
-    IG --> EX --> ZC
-    ZC -->|gRPC / Protobuf| ZI
-    ZI --> BZ
-    BZ --> SV
-    BZ --> MT
-    BZ --> BE
-    SV --> BE
-    MT --> BE
-    BE --> FE
-```
+*Two ingestion destinations from the same Ignition connector: Zerobus ingest to Delta, or SQL/PostgreSQL sink to Lakebase.*
 
 ## Prerequisites
 
@@ -66,7 +36,7 @@ Run `make help` from the repo root for all targets. Deeper tables and troublesho
 
 ## Setup
 
-1. Clone the repository. Use **`main`** for the latest connector and demo stack; use **`agl-demo`** for a stable AGL fleet–focused snapshot:
+1. Clone the repository and checkout the desired branch:
    ```bash
    git clone <repo-url>
    git checkout main
@@ -83,7 +53,7 @@ Run `make help` from the repo root for all targets. Deeper tables and troublesho
    npm --prefix demo/simulator install
    ```
 
-4. Create the Databricks tables by running `pipelines/sql/setup_tables.sql` against your SQL Warehouse. Replace `${catalog}` and `${schema}` with your values (defaults: `agl_demo.ot`).
+4. Create the Databricks tables by running `pipelines/sql/setup_tables.sql` against your SQL Warehouse. Replace `${catalog}` and `${schema}` with your values.
 
 5. Start the frontend:
    ```bash
@@ -105,7 +75,7 @@ Run `make help` from the repo root for all targets. Deeper tables and troublesho
 | `DATABRICKS_CLIENT_SECRET` | Auth* | - | Service principal client secret (Databricks Apps) |
 | `DATABRICKS_HTTP_PATH` | Yes | - | SQL warehouse HTTP path |
 | `DATABRICKS_WAREHOUSE_ID` | No | - | SQL warehouse ID (injected by app.yaml) |
-| `DATABRICKS_CATALOG` | No | `agl_demo` | Unity Catalog name |
+| `DATABRICKS_CATALOG` | No | `ot_demo` | Unity Catalog name |
 | `DATABRICKS_SCHEMA` | No | `ot` | Schema name |
 | *Auth note* | | | Use either `DATABRICKS_TOKEN` or both `DATABRICKS_CLIENT_ID` + `DATABRICKS_CLIENT_SECRET` for Databricks SQL / Apps. |
 | `ZEROBUS_ENDPOINT` | No | - | Zerobus gRPC endpoint |
@@ -169,12 +139,11 @@ Run the setup SQL against your workspace (update catalog/schema/SP ID as needed)
 databricks sql execute --profile my-demo \
   --statement "CREATE CATALOG IF NOT EXISTS my_catalog"
 
-# Or run the full setup script
-# See examples/agl_fleet/setup_databricks.sql for the complete set of
-# CREATE/GRANT statements needed for the service principal
+# Or run the full setup script under pipelines/sql and onboarding/databricks
+# for complete CREATE/GRANT statements needed for the service principal.
 ```
 
-The service principal needs `USE CATALOG`, `USE SCHEMA`, `MODIFY`, and `SELECT` on the target table. See `examples/agl_fleet/setup_databricks.sql` for a working example.
+The service principal needs `USE CATALOG`, `USE SCHEMA`, `MODIFY`, and `SELECT` on the target table.
 
 ### Step 2 — Start the Ignition Gateway in Docker
 
@@ -201,13 +170,8 @@ The Zerobus module is auto-loaded from the bind-mounted `.modl` file.
 ### Step 3 — Auto-configure the Zerobus module
 
 ```bash
-cd examples/agl_fleet
-
-# One command: reads credentials from your Databricks CLI profile
-# and pushes the full connection config to the running Gateway
-uv run --extra setup agl-sim --setup-only \
-    --profile my-demo \
-    --zerobus-endpoint <workspace-id>.zerobus.<region>.<cloud-domain>
+# One command path from repo root:
+make configure-83
 ```
 
 This uses a GET-then-merge approach, so it won't overwrite other settings. You can also configure manually via `curl` — see `DEPLOYMENT.md` for the full REST API reference.
@@ -225,9 +189,8 @@ curl -s http://localhost:7088/system/zerobus/diagnostics
 ### Step 4 — Run the simulator
 
 ```bash
-cd examples/agl_fleet
-uv sync
-uv run agl-sim --gateway http://localhost:7088
+# One command path from repo root:
+make simulate-83
 ```
 
 You should see events being accepted with `dropped=0`:
@@ -266,8 +229,8 @@ cd docker/ignition-gateway && docker compose -f docker-compose.83.yml down -v
 |-------|----------|
 | Production deployment & configuration | `DEPLOYMENT.md` |
 | Docker/Colima gateway setup | `docker/ignition-gateway/README.md` |
-| AGL Fleet Simulator & auto-config | `examples/agl_fleet/README.md` |
-| Databricks table setup & SP grants | `examples/agl_fleet/setup_databricks.sql` |
+| Simulator & gateway auto-config | `docs/make-workflow.md` |
+| Databricks table setup & SP grants | `pipelines/sql/setup_tables.sql` |
 | Medallion workshop (bundle deploy) | `workshop/databricks.yml` |
 | Module build from source | `CLAUDE.md` (Docker-based build section) |
 
@@ -381,24 +344,24 @@ The demo app (backend + frontend) can be deployed as a Databricks App using git 
 
 - A Databricks workspace with Apps enabled
 - A SQL warehouse (serverless recommended)
-- The target branch (`main` or `agl-demo`) pushed to a git repo accessible from Databricks
+- A target branch pushed to a git repo accessible from Databricks
 
 ### Steps
 
 1. **Clone the repo into your workspace** as a Git Folder:
    - In Databricks, go to Workspace > Repos > Add Repo
-   - Enter the repo URL and select **`main`** (latest) or **`agl-demo`** (AGL snapshot)
+   - Enter the repo URL and select your target branch
 
 2. **Create the app** in your Databricks workspace:
    ```bash
-   databricks apps create agl-ot-demo --description "AGL OT Lakehouse Demo"
+   databricks apps create ot-ingestion-demo --description "Ignition OT Ingestion Demo"
    ```
 
 3. **Add resources** - in the Databricks Apps UI, click "Configure" on the app and add a SQL warehouse resource with key `sql-warehouse`. Grant the app's service principal `CAN USE` permission on the warehouse.
 
 4. **Deploy from workspace** - point the app at the `demo/app/` directory within the cloned repo:
    ```bash
-   databricks apps deploy agl-ot-demo \
+   databricks apps deploy ot-ingestion-demo \
      --source-code-path /Workspace/Repos/<your-user>/lakeflow-ignition-zerobus-connector/demo/app
    ```
 
@@ -406,7 +369,7 @@ The demo app (backend + frontend) can be deployed as a Databricks App using git 
 
 6. **Stream logs** to debug startup issues:
    ```bash
-   databricks apps logs agl-ot-demo --follow
+   databricks apps logs ot-ingestion-demo --follow
    ```
 
 ### How it works
@@ -479,10 +442,6 @@ Examples (illustrative):
   - `[Sample_Tags]Ramp/Ramp0`
 
 In all cases, the connector publishes **the same protobuf event type** to Databricks and writes into the same Delta table schema.
-
-## Reference architecture
-
-![Ignition to Databricks reference architecture](docs/ignition-to-databricks-reference-architecture.jpg)
 
 ## Table of contents
 
@@ -713,6 +672,17 @@ make configure-lakebase-81-direct
   - Ignition -> connector -> PostgreSQL sink -> Lakebase table (`raw_tags`)
 
 > Note: Lakebase mode is a connector sink switch; it is not Zerobus writing to Lakebase.
+
+#### Naming and scope
+
+The historical name "Zerobus connector" reflects the original ingestion path, but the current module supports **two destinations**:
+
+- Zerobus ingest -> Delta
+- PostgreSQL sink -> Lakebase
+
+Operationally, this is an **Ignition OT ingestion connector with dual sinks**. If you prefer stricter naming, consider describing it in docs/UI as:
+
+- `Ignition OT Ingestion Connector (Zerobus + Lakebase)`
 
 #### Quick decision guide
 
