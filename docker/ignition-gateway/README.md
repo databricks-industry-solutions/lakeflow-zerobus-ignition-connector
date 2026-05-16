@@ -1,7 +1,7 @@
 ## Ignition Gateway in Docker (Colima on macOS)
 
 This repo already supports **Docker-based `.modl` builds** via `docker/Dockerfile.build-modl`.
-This document covers running a full **Ignition Gateway** in Docker (useful for demos without installing Ignition on your laptop).
+This document covers running a full **Ignition Gateway** in Docker without installing Ignition on your laptop.
 
 ### Requirements (macOS)
 
@@ -84,7 +84,7 @@ gateway into another environment, because it can include:
 Two common options:
 
 - **GUI (Gateway Web UI)**: `Config → System → Backup/Restore → Backup`
-- **CLI (no GUI)**: use `gwcmd.sh` on the Ignition machine (works great for repeatable demo setups).
+- **CLI (no GUI)**: use `gwcmd.sh` on the Ignition machine (works well for repeatable setup automation).
 
 #### 1) Create a `.gwbk` from a local Ignition install (non-GUI)
 

@@ -1,67 +1,45 @@
-# Makefile workflow (Ignition 8.3 + Databricks)
+# Makefile workflow (module-focused)
 
-This project’s recommended path for a **full** demo—service principal, Unity Catalog objects, Databricks Asset Bundle deploy, Ignition 8.3 gateway in Docker, and synthetic tag traffic—is the **Makefile at the repo root**.
+Use Make targets from the repository root to build and operate the Ignition ingestion module runtime.
 
-Developer-oriented tables and pitfall notes live in [CLAUDE.md](../CLAUDE.md). This page is a short runbook for “run it again” scenarios.
-
-## Environment
-
-Optional overrides live in `.env` (copy from [.env.example](../.env.example)):
+## Build module artifacts
 
 ```bash
-set -a && source .env && set +a
+make build-83
+make build-81
 ```
 
-Then run `make` targets from the **repository root**.
+These produce version-specific `.modl` artifacts under `releases/`.
 
-## First-time end-to-end (8.3)
-
-Automated steps 1–4:
+## Run local Ignition gateway (Docker)
 
 ```bash
-make bootstrap-83
+make up-83
+make logs-83
 ```
 
-When that finishes, run the manual gateway steps in order:
+If this is a fresh gateway volume, complete the setup wizard, then configure the module.
+
+## Configure connector
 
 ```bash
-make setup-wizard-83    # Browser: EULA, admin user, trial
-make configure-83       # Push SP + Zerobus config to the gateway
-make simulate-83        # Start synthetic tag events (AGL Fleet Simulator)
-make links-83           # Print workspace / app / gateway URLs
+make configure-83
+make health-83
+make diag-83
 ```
 
-Optional ML training job:
+Sink mode switch commands:
 
 ```bash
-make db-train-health-model
+make configure-zerobus-83
+make configure-lakebase-83
 ```
 
-## Run it again (common cases)
+Use equivalent `*-81` targets for Ignition 8.1.
 
-| Situation | Typical commands |
-|-----------|------------------|
-| Gateway already set up; you just want fresh simulator traffic | `make simulate-83` |
-| You want URLs again | `make links-83` |
-| You recreated the container volume (fresh Ignition) | `make setup-wizard-83` → `make configure-83` → `make simulate-83` → `make links-83` |
-| You changed Databricks/workspace and need the full stack rebuilt from Makefile | `make bootstrap-83` then the manual steps above |
-
-## Full reset (Databricks resources + gateway)
-
-```bash
-make db-clean clean-83 bootstrap-83
-```
-
-Then complete the manual block again: `setup-wizard-83`, `configure-83`, `simulate-83`, `links-83`.
-
-## Discover targets
+## Discover all available targets
 
 ```bash
 make help
 ```
 
-Lists build, gateway, configure, Databricks, Lakebase, simulator, and training targets.
-
-## Ignition 8.1
-
-Parallel artifacts use `*-81` targets (e.g. `make build-81`, `make up-81`). The 8.3 flow above is the primary demo path documented in the Makefile help text.

@@ -25,8 +25,8 @@ GRANT MODIFY ON TABLE <catalog>.<schema>.<table> TO `<service_principal_name_or_
 
 ### Choose the correct module artifact
 
-- **Ignition 8.1.x**: use `releases/zerobus-connector-1.0.1.modl`
-- **Ignition 8.3.x**: use `releases/zerobus-connector-1.0.1-ignition-8.3.modl`
+- **Ignition 8.1.x**: use `releases/zerobus-connector-1.0.10.modl`
+- **Ignition 8.3.x**: use `releases/zerobus-connector-1.0.10-ignition-8.3.modl`
 
 ### Install / upgrade
 
@@ -36,20 +36,14 @@ GRANT MODIFY ON TABLE <catalog>.<schema>.<table> TO `<service_principal_name_or_
 
 The module is configured at runtime and persisted in the Gateway internal DB. Your `.modl` does **not** contain your credentials. There are three ways to configure it: automated CLI, REST API, or the Gateway UI.
 
-#### Option A — Automated CLI (recommended for demos)
+#### Option A — Gateway UI (recommended)
 
-If you have a `~/.databrickscfg` profile with OAuth M2M credentials, the AGL Fleet Simulator can push the full config in one command:
+Open the module configuration page and set connection + sink mode fields:
 
-```bash
-cd examples/agl_fleet
-uv run --extra setup agl-sim --setup-only \
-    --profile <databricks-cli-profile> \
-    --zerobus-endpoint <workspace-id>.zerobus.<region>.<cloud-domain>
-```
-
-This reads `client_id`, `client_secret`, and `host` from the Databricks CLI profile, then pushes them to the running Gateway via the config API. It uses a GET-then-merge approach so existing settings are preserved.
-
-See `examples/agl_fleet/README.md` for full details and working examples.
+- Ignition 8.1.x: `http://<gateway-host>:<port>/system/zerobus/configure`
+- Ignition 8.3.x:
+  - Platform -> System -> Zerobus Config
+  - or direct URL: `http://<gateway-host>:<port>/system/zerobus/configure`
 
 #### Option B — REST API (scriptable)
 
@@ -98,12 +92,12 @@ The Zerobus endpoint follows the format `<workspace-id>.zerobus.<region>.<cloud-
 
 Extract the workspace ID from the URL: `adb-7405607216190670` → `7405607216190670`.
 
-#### Option C — Gateway UI (manual)
+#### Gateway UI field guidance
 
 Open the configuration page:
 - **Ignition 8.1.x**: `http://<gateway-host>:<port>/system/zerobus/configure`
 - **Ignition 8.3.x**:
-  - Nav: **Platform → System → Zerobus Config**
+  - Nav: **Platform -> System -> Zerobus Config**
   - Direct: `http://<gateway-host>:<port>/system/zerobus/configure`
 
 ##### Recommended mode: Direct subscriptions
@@ -151,7 +145,7 @@ If your table has `ingestion_timestamp` as `TIMESTAMP`:
 SELECT
   source_system_id,
   COUNT(*) AS rows_last_10m
-FROM ignition_demo.scada_data.tag_events
+FROM <catalog>.<schema>.<table>
 WHERE ingestion_timestamp >= current_timestamp() - INTERVAL 10 MINUTES
 GROUP BY source_system_id
 ORDER BY rows_last_10m DESC;
@@ -169,10 +163,10 @@ ORDER BY rows_last_10m DESC;
 
 ### Ignition 8.3 module won’t install
 
-You likely uploaded the 8.1 artifact. Use `releases/zerobus-connector-1.0.1-ignition-8.3.modl`.
+You likely uploaded the 8.1 artifact. Use `releases/zerobus-connector-1.0.10-ignition-8.3.modl`.
 
-### Running Ignition in Docker (dev/demo)
+### Running Ignition in Docker (dev/test)
 
 This deployment guide assumes a “normal” Ignition installation.
-If you want to run an Ignition Gateway in Docker (for demo/dev environments), see:
+If you want to run an Ignition Gateway in Docker (for development/test environments), see:
 - `docker/ignition-gateway/README.md`
