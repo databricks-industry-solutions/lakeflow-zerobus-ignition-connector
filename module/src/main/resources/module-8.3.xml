@@ -12,6 +12,8 @@
         <jar scope="G">lib/zerobus-connector.jar</jar>
         <jar scope="G">lib/zerobus-ingest-sdk-0.1.0-jar-with-dependencies.jar</jar>
         <jar scope="G">lib/protobuf-java-3.21.12.jar</jar>
+        <jar scope="G">lib/HikariCP-5.1.0.jar</jar>
+        <jar scope="G">lib/postgresql-42.7.4.jar</jar>
     </module>
 </modules>
 

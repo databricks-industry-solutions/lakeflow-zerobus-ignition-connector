@@ -37,6 +37,7 @@ public class PostgresClientManager {
 
     private static final long MAX_CONNECTION_LIFETIME_MS = 3L * 24 * 60 * 60 * 1000;
     private static final long IDLE_TIMEOUT_MS = 24L * 60 * 60 * 1000;
+    private static final String POSTGRES_DRIVER_CLASS = "org.postgresql.Driver";
 
     private static final String INSERT_SQL =
             "INSERT INTO %s ("
@@ -66,6 +67,8 @@ public class PostgresClientManager {
         logger.info("  Pool Size: {}", config.getPostgresPoolSize());
 
         try {
+            // Ignition module classloaders do not always auto-register JDBC drivers with DriverManager.
+            Class.forName(POSTGRES_DRIVER_CLASS, true, getClass().getClassLoader());
             HikariConfig hikariConfig = new HikariConfig();
             String jdbcUrl = String.format(
                     "jdbc:postgresql://%s:%d/%s?sslmode=require",
@@ -74,6 +77,7 @@ public class PostgresClientManager {
                     config.getPostgresDatabase()
             );
             hikariConfig.setJdbcUrl(jdbcUrl);
+            hikariConfig.setDriverClassName(POSTGRES_DRIVER_CLASS);
             hikariConfig.setUsername(config.getPostgresUser());
             hikariConfig.setPassword(config.getPostgresPassword());
             hikariConfig.setMaximumPoolSize(config.getPostgresPoolSize());
@@ -198,6 +202,7 @@ public class PostgresClientManager {
     public Optional<String> testConnection() {
         logger.info("Testing PostgreSQL connection...");
         try {
+            Class.forName(POSTGRES_DRIVER_CLASS, true, getClass().getClassLoader());
             HikariConfig testConfig = new HikariConfig();
             String jdbcUrl = String.format(
                     "jdbc:postgresql://%s:%d/%s?sslmode=require",
@@ -206,6 +211,7 @@ public class PostgresClientManager {
                     config.getPostgresDatabase()
             );
             testConfig.setJdbcUrl(jdbcUrl);
+            testConfig.setDriverClassName(POSTGRES_DRIVER_CLASS);
             testConfig.setUsername(config.getPostgresUser());
             testConfig.setPassword(config.getPostgresPassword());
             testConfig.setMaximumPoolSize(1);

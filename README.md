@@ -60,6 +60,49 @@ Install from Gateway UI:
 
 - Configure -> Modules -> Install/Upgrade
 
+## Build your own module (Gradle)
+
+Build from source in `module/` using Gradle:
+
+```bash
+cd module
+
+# Ignition 8.1.x artifact
+./gradlew buildModule81
+
+# Ignition 8.3.x artifact
+./gradlew buildModule83
+```
+
+Generated artifacts are copied to:
+
+- `module/releases/zerobus-connector-1.0.10.modl`
+- `module/releases/zerobus-connector-1.0.10-ignition-8.3.modl`
+
+For full installation and verification after build, see:
+
+- `DEPLOYMENT.md`
+
+## Deploy with Docker (Gateway runtime)
+
+For local/containerized Ignition Gateway deployment, use the Docker guide:
+
+- `docker/ignition-gateway/README.md`
+
+Quick start example:
+
+```bash
+cd docker/ignition-gateway
+docker compose -f docker-compose.83.restore.yml up -d
+```
+
+That guide covers:
+
+- Colima/Docker prerequisites
+- normal start vs `.gwbk` restore flows
+- persistent Gateway data volumes
+- port mappings and runtime flags
+
 ## Configure
 
 Configuration endpoints:
