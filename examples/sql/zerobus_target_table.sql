@@ -1,7 +1,7 @@
 -- Zerobus target table schema (Delta / Unity Catalog)
 -- Update catalog/schema/table names as needed.
 
-CREATE TABLE IF NOT EXISTS agl_ignition.scada_data.tag_events (
+CREATE TABLE IF NOT EXISTS ot_ingestion.scada_data.tag_events (
   event_id STRING NOT NULL,
   event_time TIMESTAMP,
   tag_path STRING,

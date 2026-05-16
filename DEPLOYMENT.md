@@ -28,13 +28,17 @@ GRANT MODIFY ON TABLE <catalog>.<schema>.<table> TO `<service_principal_name_or_
 - **Ignition 8.1.x**: use `releases/zerobus-connector-1.0.10.modl`
 - **Ignition 8.3.x**: use `releases/zerobus-connector-1.0.10-ignition-8.3.modl`
 
-### Install / upgrade
+### Deployment order (recommended)
 
-- Gateway UI → Configure → Modules → Install/Upgrade → upload the `.modl`
+Follow this order before sending production data:
 
-### Configure
-
-The module is configured at runtime and persisted in the Gateway internal DB. Your `.modl` does **not** contain your credentials. There are three ways to configure it: automated CLI, REST API, or the Gateway UI.
+1. Create/confirm Databricks auth principal and permissions.
+2. Create destination table schema for the selected sink mode.
+3. Install/upgrade the `.modl` in Ignition.
+4. Apply full module configuration with `enabled=false` first.
+5. Run `POST /system/zerobus/test-connection` until it succeeds.
+6. Set `enabled=true` and save config.
+7. Verify diagnostics and table row growth.
 
 ### Create destination tables first
 
@@ -69,6 +73,14 @@ So the Lakebase table must include:
 - `event_id TEXT PRIMARY KEY`
 - all event payload columns used by the sink insert statement
 
+### Install / upgrade
+
+- Gateway UI -> Configure -> Modules -> Install/Upgrade -> upload the `.modl`
+
+### Configure
+
+The module is configured at runtime and persisted in the Gateway internal DB. Your `.modl` does **not** contain your credentials. There are three ways to configure it: automated CLI, REST API, or the Gateway UI.
+
 #### Option A — Gateway UI (recommended)
 
 Open the module configuration page and set connection + sink mode fields:
@@ -86,11 +98,11 @@ The module exposes a REST API for headless / automated configuration:
 # View current config
 curl -s http://<gateway-host>:<port>/system/zerobus/config | python3 -m json.tool
 
-# Push full config
+# Push full config (recommended initial save with enabled=false)
 curl -s -X POST http://<gateway-host>:<port>/system/zerobus/config \
   -H 'Content-Type: application/json' \
   -d '{
-    "enabled": true,
+    "enabled": false,
     "workspaceUrl": "https://<workspace-host>",
     "zerobusEndpoint": "<workspace-id>.zerobus.<region>.<cloud-domain>",
     "oauthClientId": "<service-principal-client-id>",
@@ -112,6 +124,14 @@ curl -s http://<gateway-host>:<port>/system/zerobus/health
 
 # Full diagnostics
 curl -s http://<gateway-host>:<port>/system/zerobus/diagnostics
+
+# Validate sink connection and credentials before enabling ingestion
+curl -s -X POST http://<gateway-host>:<port>/system/zerobus/test-connection
+
+# Enable ingestion after connection test passes
+curl -s -X POST http://<gateway-host>:<port>/system/zerobus/config \
+  -H 'Content-Type: application/json' \
+  -d '{ ...same full config..., "enabled": true }'
 ```
 
 > **IMPORTANT**: `POST /system/zerobus/config` **replaces** the entire configuration — it does NOT merge. If you POST only batching settings without connection fields, you will blank out the workspace/endpoint/credentials. Always send the **complete** config in a single request.
@@ -172,15 +192,29 @@ What to look for:
 
 ### Verify (Databricks)
 
-If your table has `ingestion_timestamp` as `TIMESTAMP`:
+If your table stores `event_time` as `TIMESTAMP`:
 
 ```sql
 SELECT
-  source_system_id,
-  COUNT(*) AS rows_last_10m
+  source_system,
+  COUNT(*) AS rows_last_10m,
+  MAX(event_time) AS latest_event_time
 FROM <catalog>.<schema>.<table>
-WHERE ingestion_timestamp >= current_timestamp() - INTERVAL 10 MINUTES
-GROUP BY source_system_id
+WHERE event_time >= current_timestamp() - INTERVAL 10 MINUTES
+GROUP BY source_system
+ORDER BY rows_last_10m DESC;
+```
+
+If your table stores microsecond epoch in `ingestion_timestamp` (`BIGINT`):
+
+```sql
+SELECT
+  source_system,
+  COUNT(*) AS rows_last_10m,
+  MAX(to_timestamp(ingestion_timestamp / 1000000.0)) AS latest_ingestion_time
+FROM <catalog>.<schema>.<table>
+WHERE to_timestamp(ingestion_timestamp / 1000000.0) >= current_timestamp() - INTERVAL 10 MINUTES
+GROUP BY source_system
 ORDER BY rows_last_10m DESC;
 ```
 
