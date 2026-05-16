@@ -36,6 +36,39 @@ GRANT MODIFY ON TABLE <catalog>.<schema>.<table> TO `<service_principal_name_or_
 
 The module is configured at runtime and persisted in the Gateway internal DB. Your `.modl` does **not** contain your credentials. There are three ways to configure it: automated CLI, REST API, or the Gateway UI.
 
+### Create destination tables first
+
+Before enabling ingest, create the table that matches your sink mode.
+
+#### Zerobus mode (`sinkMode=zerobus`) - Delta table
+
+Use the ready-to-run example:
+
+- `examples/sql/zerobus_target_table.sql`
+
+Expected columns include:
+
+- `event_id`, `event_time`, `tag_path`, `tag_provider`
+- `numeric_value`, `string_value`, `boolean_value`
+- `quality`, `quality_code`, `source_system`
+- `ingestion_timestamp`, `data_type`, `alarm_state`, `alarm_priority`
+- `sdt_compressed`, `compression_ratio`, `sdt_enabled`, `batch_bytes_sent`
+
+#### Lakebase mode (`sinkMode=lakebase`) - PostgreSQL table
+
+Use the ready-to-run example:
+
+- `examples/sql/lakebase_raw_tags_table.sql`
+
+The connector performs:
+
+- `INSERT ... ON CONFLICT (event_id) DO NOTHING`
+
+So the Lakebase table must include:
+
+- `event_id TEXT PRIMARY KEY`
+- all event payload columns used by the sink insert statement
+
 #### Option A — Gateway UI (recommended)
 
 Open the module configuration page and set connection + sink mode fields:

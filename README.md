@@ -47,7 +47,7 @@ This module can ingest OT events directly as a standalone Ignition connector.
 
 ## Architecture
 
-![Ignition OT ingestion options: Zerobus and Lakebase](docs/diagrams/ingestion-options-dual-sink.png)
+- Diagram source: `docs/diagrams/ingestion-options-dual-sink.mmd`
 
 ## Install
 
@@ -139,6 +139,17 @@ For end-to-end setup and validation commands, use `DEPLOYMENT.md`.
   - destination: Lakebase via SQL batch inserts
 
 Both sink modes share the same upstream ingestion and buffering flow.
+
+## Target table schemas (required)
+
+Create the destination table before enabling the sink:
+
+- Zerobus target table (Delta): `examples/sql/zerobus_target_table.sql`
+- Lakebase target table (PostgreSQL): `examples/sql/lakebase_raw_tags_table.sql`
+
+Schema alignment notes for Zerobus/protobuf are documented in:
+
+- `module/SCHEMA_ALIGNMENT.md`
 
 ## Historical note
 

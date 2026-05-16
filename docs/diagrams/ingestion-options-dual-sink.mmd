@@ -1,0 +1,16 @@
+flowchart LR
+    A[Ignition Gateway]
+    B[OT Ingestion Connector]
+    C[TagEvent normalization]
+    D[OTEvent mapping]
+    E[Store-and-forward buffer]
+    F[Batch flush loop]
+    G{sinkMode}
+    H[Zerobus ingest<br/>gRPC + protobuf]
+    I[Delta target table]
+    J[PostgreSQL sink<br/>SQL batch inserts]
+    K[Lakebase table]
+
+    A --> B --> C --> D --> E --> F --> G
+    G -->|zerobus| H --> I
+    G -->|lakebase| J --> K
