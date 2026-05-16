@@ -81,13 +81,13 @@ Generated artifacts are copied to:
 
 For full installation and verification after build, see:
 
-- `DEPLOYMENT.md`
+- <a href="./DEPLOYMENT.md">DEPLOYMENT.md</a>
 
 ## Deploy with Docker (Gateway runtime)
 
 For local/containerized Ignition Gateway deployment, use the Docker guide:
 
-- `docker/ignition-gateway/README.md`
+- <a href="./docker/ignition-gateway/README.md">docker/ignition-gateway/README.md</a>
 
 Quick start example:
 
