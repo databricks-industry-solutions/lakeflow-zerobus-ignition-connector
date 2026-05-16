@@ -51,10 +51,22 @@ This module can ingest OT events directly as a standalone Ignition connector.
 
 ## Install
 
-Choose the artifact for your Ignition version:
+Use the Release 2 artifacts for your Ignition version:
+
+- Ignition 8.1.x release: <a href="https://github.com/databricks-industry-solutions/lakeflow-zerobus-ignition-connector/releases/tag/v2.0.0-ignition-8.1">v2.0.0-ignition-8.1</a>
+- Ignition 8.3.x release: <a href="https://github.com/databricks-industry-solutions/lakeflow-zerobus-ignition-connector/releases/tag/v2.0.0-ignition-8.3">v2.0.0-ignition-8.3</a>
+
+Asset filenames:
 
 - Ignition 8.1.x -> `releases/zerobus-connector-1.0.10.modl`
-- Ignition 8.3.x -> `releases/zerobus-connector-1.0.10-ignition-8.3.modl`
+- Ignition 8.3.x -> `releases/zerobus-connector-1.1.0-ignition-8.3.modl`
+
+Release 2 includes:
+
+- dual sink modes (`sinkMode=zerobus` and `sinkMode=lakebase`)
+- Lakebase/PostgreSQL sink integration with connection pooling and diagnostics
+- SDT compression fields in the OT event schema and sink payloads
+- Databricks SDK partner/product User-Agent attribution registration
 
 Install from Gateway UI:
 
