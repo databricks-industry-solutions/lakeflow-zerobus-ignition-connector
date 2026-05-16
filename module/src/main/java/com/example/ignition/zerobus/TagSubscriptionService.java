@@ -129,7 +129,7 @@ public class TagSubscriptionService {
     public TagSubscriptionService(GatewayContext gatewayContext,
                                   ZerobusClientManager zerobusClientManager,
                                   ConfigModel config) {
-        this(gatewayContext, config, ZerobusPipelineFactory.create(config, zerobusClientManager));
+        this(gatewayContext, config, ZerobusPipelineFactory.create(config, zerobusClientManager, null));
     }
     
     /**

@@ -6,7 +6,7 @@ import com.example.ignition.zerobus.proto.OTEvent;
 import java.util.List;
 
 /**
- * EventSink implementation backed by PostgreSQL (Databricks Lakebase).
+ * Event sink implementation for PostgreSQL/Lakebase.
  */
 public final class PostgresEventSink implements EventSink {
     private final PostgresClientManager client;

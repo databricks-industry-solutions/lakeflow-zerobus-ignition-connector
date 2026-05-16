@@ -1,6 +1,7 @@
 package com.example.ignition.zerobus.pipeline;
 
 import com.example.ignition.zerobus.ConfigModel;
+import com.example.ignition.zerobus.PostgresClientManager;
 import com.example.ignition.zerobus.ZerobusClientManager;
 
 import java.util.Objects;
@@ -14,12 +15,23 @@ import java.util.Objects;
 public final class ZerobusPipelineFactory {
     private ZerobusPipelineFactory() {}
 
-    public static PipelineComponents create(ConfigModel config, ZerobusClientManager clientManager) {
+    public static PipelineComponents create(
+            ConfigModel config,
+            ZerobusClientManager zerobusClientManager,
+            PostgresClientManager postgresClientManager
+    ) {
         Objects.requireNonNull(config, "config");
-        Objects.requireNonNull(clientManager, "clientManager");
         OtEventMapper mapper = new OtEventMapper(config);
         StoreAndForwardBuffer buffer = new StoreAndForwardBuffer(config);
-        EventSink sink = new ZerobusEventSink(clientManager);
+        EventSink sink;
+        ConfigModel.SinkMode mode = config.getSinkMode() == null ? ConfigModel.SinkMode.zerobus : config.getSinkMode();
+        if (mode == ConfigModel.SinkMode.lakebase || config.isEnablePostgresSink()) {
+            Objects.requireNonNull(postgresClientManager, "postgresClientManager");
+            sink = new PostgresEventSink(postgresClientManager);
+        } else {
+            Objects.requireNonNull(zerobusClientManager, "zerobusClientManager");
+            sink = new ZerobusEventSink(zerobusClientManager);
+        }
         return new PipelineComponents(mapper, buffer, sink);
     }
 

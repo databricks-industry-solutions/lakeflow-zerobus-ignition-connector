@@ -35,6 +35,48 @@ public class ConfigModel implements Serializable {
     
     /** OAuth2 client secret for authentication */
     private String oauthClientSecret = "";
+
+    // === Sink Selection Settings ===
+
+    /**
+     * Sink mode selector.
+     * - zerobus: send OT events via Zerobus ingest API
+     * - lakebase: write OT events to PostgreSQL (Lakebase)
+     */
+    public enum SinkMode {
+        zerobus,
+        lakebase
+    }
+
+    /** Active sink mode. */
+    private SinkMode sinkMode = SinkMode.zerobus;
+
+    /** Feature flags for sink activation (kept for backward compatibility with existing config payloads). */
+    private boolean enableZerobusSink = true;
+    private boolean enablePostgresSink = false;
+
+    // === PostgreSQL / Lakebase Settings ===
+
+    /** PostgreSQL host (for Lakebase mode). */
+    private String postgresHost = "";
+
+    /** PostgreSQL port (for Lakebase mode). */
+    private int postgresPort = 5432;
+
+    /** PostgreSQL database name (for Lakebase mode). */
+    private String postgresDatabase = "";
+
+    /** PostgreSQL username (for Lakebase mode). */
+    private String postgresUser = "";
+
+    /** PostgreSQL password (for Lakebase mode). */
+    private String postgresPassword = "";
+
+    /** PostgreSQL fully-qualified target table (schema.table) for OT inserts. */
+    private String postgresTable = "raw_tags";
+
+    /** PostgreSQL connection pool size. */
+    private int postgresPoolSize = 5;
     
     // === Unity Catalog Settings ===
     
@@ -241,6 +283,86 @@ public class ConfigModel implements Serializable {
     
     public void setOauthClientSecret(String oauthClientSecret) {
         this.oauthClientSecret = oauthClientSecret;
+    }
+
+    public SinkMode getSinkMode() {
+        return sinkMode;
+    }
+
+    public void setSinkMode(SinkMode sinkMode) {
+        this.sinkMode = (sinkMode == null) ? SinkMode.zerobus : sinkMode;
+    }
+
+    public boolean isEnableZerobusSink() {
+        return enableZerobusSink;
+    }
+
+    public void setEnableZerobusSink(boolean enableZerobusSink) {
+        this.enableZerobusSink = enableZerobusSink;
+    }
+
+    public boolean isEnablePostgresSink() {
+        return enablePostgresSink;
+    }
+
+    public void setEnablePostgresSink(boolean enablePostgresSink) {
+        this.enablePostgresSink = enablePostgresSink;
+    }
+
+    public String getPostgresHost() {
+        return postgresHost;
+    }
+
+    public void setPostgresHost(String postgresHost) {
+        this.postgresHost = postgresHost;
+    }
+
+    public int getPostgresPort() {
+        return postgresPort;
+    }
+
+    public void setPostgresPort(int postgresPort) {
+        this.postgresPort = postgresPort;
+    }
+
+    public String getPostgresDatabase() {
+        return postgresDatabase;
+    }
+
+    public void setPostgresDatabase(String postgresDatabase) {
+        this.postgresDatabase = postgresDatabase;
+    }
+
+    public String getPostgresUser() {
+        return postgresUser;
+    }
+
+    public void setPostgresUser(String postgresUser) {
+        this.postgresUser = postgresUser;
+    }
+
+    public String getPostgresPassword() {
+        return postgresPassword;
+    }
+
+    public void setPostgresPassword(String postgresPassword) {
+        this.postgresPassword = postgresPassword;
+    }
+
+    public String getPostgresTable() {
+        return postgresTable;
+    }
+
+    public void setPostgresTable(String postgresTable) {
+        this.postgresTable = postgresTable;
+    }
+
+    public int getPostgresPoolSize() {
+        return postgresPoolSize;
+    }
+
+    public void setPostgresPoolSize(int postgresPoolSize) {
+        this.postgresPoolSize = postgresPoolSize;
     }
     
     public String getTargetTable() {
@@ -629,26 +751,51 @@ public class ConfigModel implements Serializable {
         // When the module is disabled, allow saving partial configs so users can incrementally configure.
         // When enabled, enforce required fields.
         if (enabled) {
-            if (workspaceUrl == null || workspaceUrl.isEmpty()) {
-                errors.add("Workspace URL is required");
-            }
+            SinkMode effectiveSinkMode = (sinkMode == null) ? SinkMode.zerobus : sinkMode;
+            if (effectiveSinkMode == SinkMode.lakebase || enablePostgresSink) {
+                if (postgresHost == null || postgresHost.isEmpty()) {
+                    errors.add("PostgreSQL host is required in Lakebase mode");
+                }
+                if (postgresPort <= 0) {
+                    errors.add("PostgreSQL port must be > 0 in Lakebase mode");
+                }
+                if (postgresDatabase == null || postgresDatabase.isEmpty()) {
+                    errors.add("PostgreSQL database is required in Lakebase mode");
+                }
+                if (postgresUser == null || postgresUser.isEmpty()) {
+                    errors.add("PostgreSQL user is required in Lakebase mode");
+                }
+                if (postgresPassword == null || postgresPassword.isEmpty()) {
+                    errors.add("PostgreSQL password is required in Lakebase mode");
+                }
+                if (postgresTable == null || postgresTable.isEmpty()) {
+                    errors.add("PostgreSQL table is required in Lakebase mode");
+                }
+                if (postgresPoolSize <= 0) {
+                    errors.add("PostgreSQL pool size must be > 0");
+                }
+            } else {
+                if (workspaceUrl == null || workspaceUrl.isEmpty()) {
+                    errors.add("Workspace URL is required");
+                }
 
-            if (zerobusEndpoint == null || zerobusEndpoint.isEmpty()) {
-                errors.add("Zerobus endpoint is required");
-            }
+                if (zerobusEndpoint == null || zerobusEndpoint.isEmpty()) {
+                    errors.add("Zerobus endpoint is required");
+                }
 
-            if (oauthClientId == null || oauthClientId.isEmpty()) {
-                errors.add("OAuth client ID is required");
-            }
+                if (oauthClientId == null || oauthClientId.isEmpty()) {
+                    errors.add("OAuth client ID is required");
+                }
 
-            if (oauthClientSecret == null || oauthClientSecret.isEmpty()) {
-                errors.add("OAuth client secret is required");
-            }
+                if (oauthClientSecret == null || oauthClientSecret.isEmpty()) {
+                    errors.add("OAuth client secret is required");
+                }
 
-            if (targetTable == null || targetTable.isEmpty()) {
-                errors.add("Target table is required");
-            } else if (catalogName.isEmpty() || schemaName.isEmpty() || tableName.isEmpty()) {
-                errors.add("Target table must be in format: catalog.schema.table");
+                if (targetTable == null || targetTable.isEmpty()) {
+                    errors.add("Target table is required");
+                } else if (catalogName.isEmpty() || schemaName.isEmpty() || tableName.isEmpty()) {
+                    errors.add("Target table must be in format: catalog.schema.table");
+                }
             }
 
             // Only validate tag selection when direct subscriptions are enabled.
@@ -849,6 +996,16 @@ public class ConfigModel implements Serializable {
             || !Objects.equals(this.zerobusEndpoint, newConfig.zerobusEndpoint)
             || !Objects.equals(this.oauthClientId, newConfig.oauthClientId)
             || !Objects.equals(this.oauthClientSecret, newConfig.oauthClientSecret)
+            || this.sinkMode != newConfig.sinkMode
+            || this.enableZerobusSink != newConfig.enableZerobusSink
+            || this.enablePostgresSink != newConfig.enablePostgresSink
+            || !Objects.equals(this.postgresHost, newConfig.postgresHost)
+            || this.postgresPort != newConfig.postgresPort
+            || !Objects.equals(this.postgresDatabase, newConfig.postgresDatabase)
+            || !Objects.equals(this.postgresUser, newConfig.postgresUser)
+            || !Objects.equals(this.postgresPassword, newConfig.postgresPassword)
+            || !Objects.equals(this.postgresTable, newConfig.postgresTable)
+            || this.postgresPoolSize != newConfig.postgresPoolSize
             || !Objects.equals(this.targetTable, newConfig.targetTable)
             || this.enableDirectSubscriptions != newConfig.enableDirectSubscriptions
             || !Objects.equals(this.tagSelectionMode, newConfig.tagSelectionMode)
@@ -892,6 +1049,16 @@ public class ConfigModel implements Serializable {
         this.zerobusEndpoint = other.zerobusEndpoint;
         this.oauthClientId = other.oauthClientId;
         this.oauthClientSecret = other.oauthClientSecret;
+        this.sinkMode = other.sinkMode;
+        this.enableZerobusSink = other.enableZerobusSink;
+        this.enablePostgresSink = other.enablePostgresSink;
+        this.postgresHost = other.postgresHost;
+        this.postgresPort = other.postgresPort;
+        this.postgresDatabase = other.postgresDatabase;
+        this.postgresUser = other.postgresUser;
+        this.postgresPassword = other.postgresPassword;
+        this.postgresTable = other.postgresTable;
+        this.postgresPoolSize = other.postgresPoolSize;
         this.targetTable = other.targetTable;
         this.parseTableName();
         this.enableDirectSubscriptions = other.enableDirectSubscriptions;
@@ -932,6 +1099,7 @@ public class ConfigModel implements Serializable {
     public String toString() {
         return "ConfigModel{" +
                 "workspaceUrl='" + workspaceUrl + '\'' +
+                ", sinkMode=" + sinkMode +
                 ", targetTable='" + targetTable + '\'' +
                 ", tagSelectionMode='" + tagSelectionMode + '\'' +
                 ", batchSize=" + batchSize +

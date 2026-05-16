@@ -35,6 +35,16 @@ public class ZerobusSettings83 extends PersistentRecord {
     public static final StringField ZerobusEndpoint = new StringField(META, "ZerobusEndpoint", SFieldFlags.SMANDATORY);
     public static final StringField OauthClientId = new StringField(META, "OauthClientId", SFieldFlags.SMANDATORY);
     public static final EncodedStringField OauthClientSecret = new EncodedStringField(META, "OauthClientSecret");
+    public static final StringField SinkMode = new StringField(META, "SinkMode");
+    public static final BooleanField EnableZerobusSink = new BooleanField(META, "EnableZerobusSink");
+    public static final BooleanField EnablePostgresSink = new BooleanField(META, "EnablePostgresSink");
+    public static final StringField PostgresHost = new StringField(META, "PostgresHost");
+    public static final IntField PostgresPort = new IntField(META, "PostgresPort");
+    public static final StringField PostgresDatabase = new StringField(META, "PostgresDatabase");
+    public static final StringField PostgresUser = new StringField(META, "PostgresUser");
+    public static final EncodedStringField PostgresPassword = new EncodedStringField(META, "PostgresPassword");
+    public static final StringField PostgresTable = new StringField(META, "PostgresTable");
+    public static final IntField PostgresPoolSize = new IntField(META, "PostgresPoolSize");
 
     // Unity Catalog / Mapping
     public static final StringField TargetTable = new StringField(META, "TargetTable", SFieldFlags.SMANDATORY);
@@ -85,6 +95,16 @@ public class ZerobusSettings83 extends PersistentRecord {
         ZerobusEndpoint.setDefault("");
         OauthClientId.setDefault("");
         OauthClientSecret.setDefault("");
+        SinkMode.setDefault("zerobus");
+        EnableZerobusSink.setDefault(true);
+        EnablePostgresSink.setDefault(false);
+        PostgresHost.setDefault("");
+        PostgresPort.setDefault(5432);
+        PostgresDatabase.setDefault("");
+        PostgresUser.setDefault("");
+        PostgresPassword.setDefault("");
+        PostgresTable.setDefault("raw_tags");
+        PostgresPoolSize.setDefault(5);
         TargetTable.setDefault("");
         SourceSystemId.setDefault("ignition-gateway");
         EnableDirectSubscriptions.setDefault(true);
@@ -128,6 +148,21 @@ public class ZerobusSettings83 extends PersistentRecord {
         config.setZerobusEndpoint(getString(ZerobusEndpoint));
         config.setOauthClientId(getString(OauthClientId));
         config.setOauthClientSecret(getString(OauthClientSecret));
+        String sinkMode = getString(SinkMode);
+        try {
+            config.setSinkMode(ConfigModel.SinkMode.valueOf((sinkMode == null || sinkMode.isBlank()) ? "zerobus" : sinkMode));
+        } catch (Exception ignored) {
+            config.setSinkMode(ConfigModel.SinkMode.zerobus);
+        }
+        config.setEnableZerobusSink(getBoolean(EnableZerobusSink));
+        config.setEnablePostgresSink(getBoolean(EnablePostgresSink));
+        config.setPostgresHost(getString(PostgresHost));
+        config.setPostgresPort(getInt(PostgresPort));
+        config.setPostgresDatabase(getString(PostgresDatabase));
+        config.setPostgresUser(getString(PostgresUser));
+        config.setPostgresPassword(getString(PostgresPassword));
+        config.setPostgresTable(getString(PostgresTable));
+        config.setPostgresPoolSize(getInt(PostgresPoolSize));
         config.setTargetTable(getString(TargetTable));
         config.setSourceSystemId(getString(SourceSystemId));
         config.setEnableDirectSubscriptions(getBoolean(EnableDirectSubscriptions));
@@ -183,6 +218,16 @@ public class ZerobusSettings83 extends PersistentRecord {
         setString(ZerobusEndpoint, config.getZerobusEndpoint());
         setString(OauthClientId, config.getOauthClientId());
         setString(OauthClientSecret, config.getOauthClientSecret());
+        setString(SinkMode, config.getSinkMode() == null ? "zerobus" : config.getSinkMode().name());
+        setBoolean(EnableZerobusSink, config.isEnableZerobusSink());
+        setBoolean(EnablePostgresSink, config.isEnablePostgresSink());
+        setString(PostgresHost, config.getPostgresHost());
+        setInt(PostgresPort, config.getPostgresPort());
+        setString(PostgresDatabase, config.getPostgresDatabase());
+        setString(PostgresUser, config.getPostgresUser());
+        setString(PostgresPassword, config.getPostgresPassword());
+        setString(PostgresTable, config.getPostgresTable());
+        setInt(PostgresPoolSize, config.getPostgresPoolSize());
         setString(TargetTable, config.getTargetTable());
         setString(SourceSystemId, config.getSourceSystemId());
         setBoolean(EnableDirectSubscriptions, config.isEnableDirectSubscriptions());

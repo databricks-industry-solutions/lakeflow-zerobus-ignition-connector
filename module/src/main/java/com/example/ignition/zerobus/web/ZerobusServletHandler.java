@@ -107,6 +107,10 @@ public final class ZerobusServletHandler {
                     String secret = cfg.getOauthClientSecret();
                     obj.addProperty("oauthClientSecret", (secret == null || secret.isEmpty()) ? "" : "****");
                 }
+                if (obj.has("postgresPassword")) {
+                    String secret = cfg.getPostgresPassword();
+                    obj.addProperty("postgresPassword", (secret == null || secret.isEmpty()) ? "" : "****");
+                }
                 return Response.json(200, gson.toJson(obj));
             }
 
@@ -141,6 +145,14 @@ public final class ZerobusServletHandler {
                 String existingSecret = existing == null ? null : existing.getOauthClientSecret();
                 if (existingSecret != null && !existingSecret.isBlank()) {
                     newCfg.setOauthClientSecret(existingSecret);
+                }
+            }
+            String incomingPostgresPassword = newCfg.getPostgresPassword();
+            if (incomingPostgresPassword == null || incomingPostgresPassword.isBlank() || "****".equals(incomingPostgresPassword)) {
+                ConfigModel existing = runtime.getConfigModel();
+                String existingPassword = existing == null ? null : existing.getPostgresPassword();
+                if (existingPassword != null && !existingPassword.isBlank()) {
+                    newCfg.setPostgresPassword(existingPassword);
                 }
             }
 
