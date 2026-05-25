@@ -47,7 +47,8 @@ This module can ingest OT events directly as a standalone Ignition connector.
 
 ## Architecture
 
-- Diagram source: `docs/diagrams/ingestion-options-dual-sink.mmd`
+![Ignition OT ingestion options: Zerobus and Lakebase](docs/diagrams/ingestion-options-dual-sink.png)
+Source: `docs/diagrams/ingestion-options-dual-sink.mmd`
 
 ## Install
 
