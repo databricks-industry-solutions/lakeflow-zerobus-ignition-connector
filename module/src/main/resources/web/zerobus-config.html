@@ -703,7 +703,25 @@
                     </div>
                 </div>
 
-                <!-- Databricks Connection -->
+                <!-- Sink Mode Selection -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2>Sink Configuration</h2>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="sinkMode" class="required">Sink Mode</label>
+                            <select class="form-control" id="sinkMode" name="sinkMode" onchange="updateSinkModeUI()" required>
+                                <option value="zerobus">Zerobus → Delta (Unity Catalog)</option>
+                                <option value="lakebase">Lakebase (PostgreSQL)</option>
+                            </select>
+                            <small class="form-help">Choose the destination sink for tag data</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Databricks Connection (Zerobus) -->
+                <div id="zerobusSinkSection">
                 <div class="section">
                     <div class="section-header">
                         <h2>Databricks Connection</h2>
@@ -756,6 +774,87 @@
                         </div>
                     </div>
                 </div>
+                </div><!-- End zerobusSinkSection -->
+
+                <!-- PostgreSQL / Lakebase Configuration -->
+                <div id="lakebaseSinkSection" style="display: none;">
+                <div class="section">
+                    <div class="section-header">
+                        <h2>PostgreSQL Connection</h2>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="postgresHost" class="required">PostgreSQL Host</label>
+                            <input type="text" class="form-control" id="postgresHost" name="postgresHost"
+                                   placeholder="localhost" required>
+                            <small class="form-help">PostgreSQL server hostname or IP address</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="postgresPort">Port</label>
+                            <input type="number" class="form-control" id="postgresPort" name="postgresPort" value="5432" min="1" max="65535">
+                            <small class="form-help">PostgreSQL server port</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="postgresDatabase">Database</label>
+                            <input type="text" class="form-control" id="postgresDatabase" name="postgresDatabase"
+                                   placeholder="databricks_postgres" value="databricks_postgres">
+                            <small class="form-help">PostgreSQL database name</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="postgresUser" class="required">User</label>
+                            <input type="text" class="form-control" id="postgresUser" name="postgresUser" required>
+                            <small class="form-help">PostgreSQL user for authentication</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="postgresPassword" class="required">Password</label>
+                            <input type="password" class="form-control" id="postgresPassword" name="postgresPassword" required
+                                   autocomplete="new-password">
+                            <small class="form-help">PostgreSQL password (encrypted)</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="postgresTable">Table Name</label>
+                            <input type="text" class="form-control" id="postgresTable" name="postgresTable"
+                                   placeholder="raw_tags" value="raw_tags">
+                            <small class="form-help">Target PostgreSQL table name</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="postgresPoolSize">Connection Pool Size</label>
+                            <input type="number" class="form-control" id="postgresPoolSize" name="postgresPoolSize" value="5" min="1">
+                            <small class="form-help">Number of database connections to maintain</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LakeTS ChronoTable Options -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2>LakeTS ChronoTable Options</h2>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="postgresTimestampMode">Timestamp Mode</label>
+                            <select class="form-control" id="postgresTimestampMode" name="postgresTimestampMode">
+                                <option value="EPOCH_MICROS">Epoch microseconds (BIGINT columns)</option>
+                                <option value="TIMESTAMPTZ">timestamptz (LakeTS ChronoTable)</option>
+                            </select>
+                            <small class="form-help">Use TIMESTAMPTZ when writing directly into a LakeTS ChronoTable (its partition key must be a real timestamp).</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="postgresConflictColumns">ON CONFLICT Columns</label>
+                            <input type="text" class="form-control" id="postgresConflictColumns" name="postgresConflictColumns"
+                                   placeholder="event_id" value="event_id">
+                            <small class="form-help">ON CONFLICT target columns. Use "event_time, event_id" for a partitioned LakeTS ChronoTable.</small>
+                        </div>
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="postgresNullUnusedValueColumns" name="postgresNullUnusedValueColumns">
+                                <label for="postgresNullUnusedValueColumns">NULL Unused Value Columns</label>
+                            </div>
+                            <small class="form-help">Write NULL (not 0.0/false/"") into value columns that don't match the tag's data type — avoids a misleading numeric_value=0.0 on boolean/string tags.</small>
+                        </div>
+                    </div>
+                </div>
+                </div><!-- End lakebaseSinkSection -->
 
                 <!-- Tag Selection -->
                 <div class="collapsible-section">
@@ -1155,6 +1254,12 @@
         });
 
         function setupEventListeners() {
+            // Sink mode selector
+            const sinkModeSelector = document.getElementById('sinkMode');
+            if (sinkModeSelector) {
+                sinkModeSelector.addEventListener('change', updateSinkModeUI);
+            }
+
             // Direct subscriptions toggle
             const directToggle = document.getElementById('enableDirectSubscriptions');
             if (directToggle) {
@@ -1219,6 +1324,20 @@
             for (const id of ids) {
                 const el = document.getElementById(id);
                 if (el) el.disabled = !enabled;
+            }
+        }
+
+        function updateSinkModeUI() {
+            const mode = document.getElementById('sinkMode').value;
+            const zerobusSinkSection = document.getElementById('zerobusSinkSection');
+            const lakebaseSinkSection = document.getElementById('lakebaseSinkSection');
+
+            if (mode === 'lakebase') {
+                zerobusSinkSection.style.display = 'none';
+                lakebaseSinkSection.style.display = 'block';
+            } else {
+                zerobusSinkSection.style.display = 'block';
+                lakebaseSinkSection.style.display = 'none';
             }
         }
 
@@ -1694,6 +1813,9 @@
             document.getElementById('enabled').checked = config.enabled || false;
             document.getElementById('debugLogging').checked = config.debugLogging || false;
 
+            // Sink mode
+            document.getElementById('sinkMode').value = config.sinkMode || 'zerobus';
+
             // Databricks connection
             document.getElementById('workspaceUrl').value = config.workspaceUrl || '';
             document.getElementById('zerobusEndpoint').value = config.zerobusEndpoint || '';
@@ -1703,6 +1825,18 @@
             // Unity Catalog
             document.getElementById('targetTable').value = config.targetTable || '';
             document.getElementById('sourceSystemId').value = config.sourceSystemId || 'ignition-gateway';
+
+            // PostgreSQL / Lakebase
+            document.getElementById('postgresHost').value = config.postgresHost || '';
+            document.getElementById('postgresPort').value = (config.postgresPort !== undefined && config.postgresPort !== null) ? config.postgresPort : 5432;
+            document.getElementById('postgresDatabase').value = config.postgresDatabase || 'databricks_postgres';
+            document.getElementById('postgresUser').value = config.postgresUser || '';
+            document.getElementById('postgresPassword').value = config.postgresPassword || '';
+            document.getElementById('postgresTable').value = config.postgresTable || 'raw_tags';
+            document.getElementById('postgresPoolSize').value = (config.postgresPoolSize !== undefined && config.postgresPoolSize !== null) ? config.postgresPoolSize : 5;
+            document.getElementById('postgresTimestampMode').value = config.postgresTimestampMode || 'EPOCH_MICROS';
+            document.getElementById('postgresConflictColumns').value = config.postgresConflictColumns || 'event_id';
+            document.getElementById('postgresNullUnusedValueColumns').checked = config.postgresNullUnusedValueColumns || false;
 
             // Tag selection
             document.getElementById('enableDirectSubscriptions').checked = config.enableDirectSubscriptions !== false;
@@ -1745,6 +1879,9 @@
             document.getElementById('numericSdtMaxIntervalMs').value = (config.numericSdtMaxIntervalMs !== undefined && config.numericSdtMaxIntervalMs !== null) ? config.numericSdtMaxIntervalMs : 0;
             document.getElementById('numericSdtMinIntervalMs').value = (config.numericSdtMinIntervalMs !== undefined && config.numericSdtMinIntervalMs !== null) ? config.numericSdtMinIntervalMs : 0;
             updateCompressionUI();
+
+            // Update sink mode UI to show/hide relevant sections
+            updateSinkModeUI();
         }
 
         function updateCompressionUI() {
@@ -1760,15 +1897,30 @@
 
         function getFormData() {
             const mode = (document.getElementById('numericCompressionMode')?.value || '').trim();
+            const sinkMode = document.getElementById('sinkMode').value;
+
             return {
                 enabled: document.getElementById('enabled').checked,
                 debugLogging: document.getElementById('debugLogging').checked,
+                sinkMode: sinkMode,
+                enableZerobusSink: sinkMode === 'zerobus',
+                enablePostgresSink: sinkMode === 'lakebase',
                 workspaceUrl: document.getElementById('workspaceUrl').value,
                 zerobusEndpoint: document.getElementById('zerobusEndpoint').value,
                 oauthClientId: document.getElementById('oauthClientId').value,
                 oauthClientSecret: document.getElementById('oauthClientSecret').value,
                 targetTable: document.getElementById('targetTable').value,
                 sourceSystemId: document.getElementById('sourceSystemId').value,
+                postgresHost: document.getElementById('postgresHost').value,
+                postgresPort: parseInt(document.getElementById('postgresPort').value),
+                postgresDatabase: document.getElementById('postgresDatabase').value,
+                postgresUser: document.getElementById('postgresUser').value,
+                postgresPassword: document.getElementById('postgresPassword').value,
+                postgresTable: document.getElementById('postgresTable').value,
+                postgresPoolSize: parseInt(document.getElementById('postgresPoolSize').value),
+                postgresTimestampMode: document.getElementById('postgresTimestampMode').value,
+                postgresConflictColumns: document.getElementById('postgresConflictColumns').value,
+                postgresNullUnusedValueColumns: document.getElementById('postgresNullUnusedValueColumns').checked,
                 enableDirectSubscriptions: document.getElementById('enableDirectSubscriptions') ? document.getElementById('enableDirectSubscriptions').checked : true,
                 tagSelectionMode: document.getElementById('tagSelectionMode').value,
                 tagFolderPath: document.getElementById('tagFolderPath').value,
