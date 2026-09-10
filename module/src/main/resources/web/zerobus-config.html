@@ -1327,12 +1327,32 @@
             }
         }
 
+        // Fields marked `required` in each sink section. A hidden `required`
+        // field blocks HTML5 form submission but can't be focused to show an
+        // error, so Save silently does nothing. Only enforce `required` on the
+        // fields belonging to the ACTIVE sink mode.
+        const ZEROBUS_REQUIRED_FIELDS = ['workspaceUrl', 'zerobusEndpoint', 'oauthClientId', 'oauthClientSecret', 'targetTable'];
+        const LAKEBASE_REQUIRED_FIELDS = ['postgresHost', 'postgresUser', 'postgresPassword'];
+
+        function setFieldsRequired(ids, isRequired) {
+            ids.forEach(function (id) {
+                const el = document.getElementById(id);
+                if (el) el.required = isRequired;
+            });
+        }
+
         function updateSinkModeUI() {
             const mode = document.getElementById('sinkMode').value;
             const zerobusSinkSection = document.getElementById('zerobusSinkSection');
             const lakebaseSinkSection = document.getElementById('lakebaseSinkSection');
+            const isLakebase = (mode === 'lakebase');
 
-            if (mode === 'lakebase') {
+            // Toggle `required` to the active mode BEFORE hiding, so the browser
+            // never validates a hidden field and blocks the save.
+            setFieldsRequired(ZEROBUS_REQUIRED_FIELDS, !isLakebase);
+            setFieldsRequired(LAKEBASE_REQUIRED_FIELDS, isLakebase);
+
+            if (isLakebase) {
                 zerobusSinkSection.style.display = 'none';
                 lakebaseSinkSection.style.display = 'block';
             } else {
