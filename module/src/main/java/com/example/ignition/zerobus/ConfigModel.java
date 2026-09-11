@@ -847,6 +847,28 @@ public class ConfigModel implements Serializable {
                     errors.add("PostgreSQL conflict columns must be a comma-separated list of column names "
                             + "(e.g. \"event_id\" or \"event_time, event_id\")");
                 }
+                // TIMESTAMPTZ mode targets a partitioned LakeTS ChronoTable, whose unique /
+                // ON CONFLICT key must include the partition column (event_time). A single
+                // event_id conflict target has no matching constraint on a partitioned table,
+                // so every INSERT fails at runtime ("no unique or exclusion constraint matching
+                // the ON CONFLICT specification"). Catch the misconfiguration here, at save time.
+                if (postgresTimestampMode == PostgresTimestampMode.TIMESTAMPTZ) {
+                    boolean hasEventTime = false;
+                    if (postgresConflictColumns != null) {
+                        for (String col : postgresConflictColumns.split(",")) {
+                            if (col.trim().equalsIgnoreCase("event_time")) {
+                                hasEventTime = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!hasEventTime) {
+                        errors.add("With postgresTimestampMode=TIMESTAMPTZ (LakeTS ChronoTable), "
+                                + "postgresConflictColumns must include the partition column \"event_time\" "
+                                + "(e.g. \"event_time, event_id\") — a partitioned table has no standalone "
+                                + "unique constraint for ON CONFLICT (event_id) to match.");
+                    }
+                }
             } else {
                 if (workspaceUrl == null || workspaceUrl.isEmpty()) {
                     errors.add("Workspace URL is required");

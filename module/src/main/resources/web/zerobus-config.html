@@ -833,7 +833,7 @@
                     <div class="form-grid">
                         <div class="form-group">
                             <label for="postgresTimestampMode">Timestamp Mode</label>
-                            <select class="form-control" id="postgresTimestampMode" name="postgresTimestampMode">
+                            <select class="form-control" id="postgresTimestampMode" name="postgresTimestampMode" onchange="onTimestampModeChange()">
                                 <option value="EPOCH_MICROS">Epoch microseconds (BIGINT columns)</option>
                                 <option value="TIMESTAMPTZ">timestamptz (LakeTS ChronoTable)</option>
                             </select>
@@ -1358,6 +1358,25 @@
             } else {
                 zerobusSinkSection.style.display = 'block';
                 lakebaseSinkSection.style.display = 'none';
+            }
+        }
+
+        // Picking TIMESTAMPTZ means the target is a LakeTS ChronoTable: a partitioned
+        // table's ON CONFLICT key must include the partition column (event_time), and
+        // boolean/string tags should be NULL-coerced. Nudge those two companion
+        // settings to their LakeTS values — but only when they are still at stock
+        // defaults, so an explicit user choice is never overridden.
+        function onTimestampModeChange() {
+            const mode = document.getElementById('postgresTimestampMode').value;
+            if (mode !== 'TIMESTAMPTZ') return;
+            const conflict = document.getElementById('postgresConflictColumns');
+            const nullUnused = document.getElementById('postgresNullUnusedValueColumns');
+            let nudged = false;
+            const cur = (conflict.value || '').trim();
+            if (cur === '' || cur === 'event_id') { conflict.value = 'event_time, event_id'; nudged = true; }
+            if (!nullUnused.checked) { nullUnused.checked = true; nudged = true; }
+            if (nudged) {
+                showAlert('LakeTS ChronoTable defaults applied: ON CONFLICT = "event_time, event_id" and NULL unused value columns enabled. Change them if your target table differs.', 'success');
             }
         }
 
