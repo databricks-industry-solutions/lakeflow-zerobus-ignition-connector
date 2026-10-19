@@ -73,6 +73,59 @@ Install from Gateway UI:
 
 - Configure -> Modules -> Install/Upgrade
 
+## Sign the module (required outside developer mode)
+
+Published GitHub release `.modl` files are **unsigned**. Gateways that are not in developer mode (`-Dignition.allowunsignedmodules=true`) quarantine unsigned third-party modules. Sign the artifact before installing in production.
+
+Signing is the **same for Ignition 8.1 and 8.3**: Inductive Automation's `module-signer.jar` signs any `.modl`. Use the matching unsigned release asset as `-module-in`. You do not need to rebuild from source.
+
+The name shown on the Gateway **Accept Certificate** prompt comes from the **code-signing certificate subject** (Common Name / organization), not from GitHub or from who ran the signer. Sign with a company or customer OT certificate. Self-signed certificates are fine for POCs; for production use a corporate or commercial code-signing certificate.
+
+Official IA references:
+
+- [Module Signing (SDK)](https://www.sdk-docs.inductiveautomation.com/blog/2016/05/06/)
+- [`module-signer`](https://github.com/inductiveautomation/module-signer)
+
+You need `module-signer.jar` and a Java keystore (`.jks` or `.pfx`) that holds the private key and certificate. For a CA-issued cert, also pass the certificate chain as `.p7b`.
+
+**Ignition 8.3** (`v2.0.0-ignition-8.3` → `zerobus-connector-1.1.0-ignition-8.3.modl`):
+
+```bash
+java -jar module-signer.jar \
+  -keystore=/path/to/keystore.jks \
+  -keystore-pwd='...' \
+  -alias='your-alias' \
+  -alias-pwd='...' \
+  -chain=/path/to/chain.p7b \
+  -module-in=zerobus-connector-1.1.0-ignition-8.3.modl \
+  -module-out=zerobus-connector-1.1.0-ignition-8.3-signed.modl
+```
+
+**Ignition 8.1** (`v2.0.0-ignition-8.1` → `zerobus-connector-1.0.10.modl`) — same flags, different file:
+
+```bash
+java -jar module-signer.jar \
+  -keystore=/path/to/keystore.jks \
+  -keystore-pwd='...' \
+  -alias='your-alias' \
+  -alias-pwd='...' \
+  -chain=/path/to/chain.p7b \
+  -module-in=zerobus-connector-1.0.10.modl \
+  -module-out=zerobus-connector-1.0.10-signed.modl
+```
+
+Omit `-chain=...` if you are using a self-signed certificate with no CA chain. Install the `*-signed.modl` on the Gateway and accept the certificate once. Later upgrades signed with the same cert will not prompt again.
+
+To sign while building from source (optional Gradle step; no secrets are hardcoded):
+
+```bash
+cd module
+./gradlew signModule83   # 8.3
+./gradlew signModule81   # 8.1
+```
+
+Provide `MODULE_SIGNER_JAR`, `SIGNING_KEYSTORE`, `SIGNING_STOREPASS`, `SIGNING_ALIAS`, `SIGNING_KEYPASS`, and optionally `SIGNING_CHAIN` (or the equivalent `-P` Gradle properties). The signer writes a sibling file with a `-signed.modl` suffix.
+
 ## Build your own module (Gradle)
 
 Build from source in `module/` using Gradle:
