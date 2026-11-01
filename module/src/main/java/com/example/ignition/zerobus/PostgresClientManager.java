@@ -39,15 +39,44 @@ public class PostgresClientManager {
     private static final long IDLE_TIMEOUT_MS = 24L * 60 * 60 * 1000;
     private static final String POSTGRES_DRIVER_CLASS = "org.postgresql.Driver";
 
-    private static final String INSERT_SQL =
-            "INSERT INTO %s ("
-                    + "event_id, event_time, tag_path, tag_provider, "
+    // Column list is fixed; the VALUES placeholders for the two epoch-timestamp
+    // columns and the ON CONFLICT target vary by config, so the statement is built
+    // per-config in buildInsertSql() rather than being a single constant.
+    private static final String INSERT_COLUMNS =
+            "event_id, event_time, tag_path, tag_provider, "
                     + "numeric_value, string_value, boolean_value, "
                     + "quality, quality_code, source_system, "
                     + "ingestion_timestamp, data_type, alarm_state, alarm_priority, "
-                    + "sdt_compressed, compression_ratio, sdt_enabled, batch_bytes_sent"
-                    + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                    + "ON CONFLICT (event_id) DO NOTHING";
+                    + "sdt_compressed, compression_ratio, sdt_enabled, batch_bytes_sent";
+
+    /**
+     * Build the INSERT statement for the current config. Two things vary:
+     * <ul>
+     *   <li>event_time / ingestion_timestamp placeholders: a bare "?" in
+     *       EPOCH_MICROS mode, or "to_timestamp(?/1000000.0)" in TIMESTAMPTZ mode
+     *       (the connector always <em>binds</em> epoch-microseconds; TIMESTAMPTZ
+     *       mode converts them in-SQL so the column can be a real timestamptz).</li>
+     *   <li>ON CONFLICT target columns, from {@link ConfigModel#getPostgresConflictColumns()}.</li>
+     * </ul>
+     * The parameter <em>order</em> and count (18 binds) are identical in both modes,
+     * so the bind loop in {@link #sendOtEvents(List)} is unaffected.
+     */
+    static String buildInsertSql(ConfigModel config) {
+        boolean tstz = config.getPostgresTimestampMode() == ConfigModel.PostgresTimestampMode.TIMESTAMPTZ;
+        String tsExpr = tstz ? "to_timestamp(?/1000000.0)" : "?";
+        // Positions 2 (event_time) and 11 (ingestion_timestamp) are the timestamp binds.
+        String values = "?, " + tsExpr + ", ?, ?, "        // event_id, event_time, tag_path, tag_provider
+                + "?, ?, ?, "                              // numeric_value, string_value, boolean_value
+                + "?, ?, ?, "                              // quality, quality_code, source_system
+                + tsExpr + ", ?, ?, ?, "                   // ingestion_timestamp, data_type, alarm_state, alarm_priority
+                + "?, ?, ?, ?";                            // sdt_compressed, compression_ratio, sdt_enabled, batch_bytes_sent
+        String conflict = config.getPostgresConflictColumns();
+        if (conflict == null || conflict.isBlank()) {
+            conflict = "event_id";
+        }
+        return "INSERT INTO %s (" + INSERT_COLUMNS + ") VALUES (" + values + ") "
+                + "ON CONFLICT (" + conflict + ") DO NOTHING";
+    }
 
     public PostgresClientManager(ConfigModel config) {
         this.config = config;
@@ -131,22 +160,36 @@ public class PostgresClientManager {
             return true;
         }
 
-        String insertSql = String.format(INSERT_SQL, config.getPostgresTable());
+        String insertSql = String.format(buildInsertSql(config), config.getPostgresTable());
+        // When enabled, blank out the typed value slots that don't match the event's
+        // declared data_type. The connector always sets all three proto value fields
+        // (for Delta/Zerobus presence semantics), so e.g. a BOOLEAN tag still carries
+        // numeric_value=0.0; null-ing it keeps a stored 0.0 meaning a real reading.
+        boolean nullUnused = config.isPostgresNullUnusedValueColumns();
         try (Connection conn = dataSource.getConnection(); PreparedStatement stmt = conn.prepareStatement(insertSql)) {
             conn.setAutoCommit(false);
             for (OTEvent event : events) {
+                String dataType = event.getDataType();
+                boolean isNumericTag = "DOUBLE".equals(dataType);
+                boolean isStringTag = "STRING".equals(dataType);
+                boolean isBooleanTag = "BOOLEAN".equals(dataType);
                 int idx = 1;
                 stmt.setString(idx++, event.getEventId());
                 stmt.setLong(idx++, event.getEventTime());
                 stmt.setString(idx++, event.getTagPath());
                 stmt.setString(idx++, event.getTagProvider());
-                if (event.hasNumericValue()) {
+                if (event.hasNumericValue() && (!nullUnused || isNumericTag)) {
                     stmt.setDouble(idx++, event.getNumericValue());
                 } else {
                     stmt.setNull(idx++, java.sql.Types.DOUBLE);
                 }
-                stmt.setString(idx++, event.getStringValue().isEmpty() ? null : event.getStringValue());
-                if (event.hasBooleanValue()) {
+                String stringValue = event.getStringValue();
+                if (stringValue.isEmpty() || (nullUnused && !isStringTag)) {
+                    stmt.setString(idx++, null);
+                } else {
+                    stmt.setString(idx++, stringValue);
+                }
+                if (event.hasBooleanValue() && (!nullUnused || isBooleanTag)) {
                     stmt.setBoolean(idx++, event.getBooleanValue());
                 } else {
                     stmt.setNull(idx++, java.sql.Types.BOOLEAN);

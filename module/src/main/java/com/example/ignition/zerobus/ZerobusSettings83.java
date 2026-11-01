@@ -45,6 +45,11 @@ public class ZerobusSettings83 extends PersistentRecord {
     public static final EncodedStringField PostgresPassword = new EncodedStringField(META, "PostgresPassword");
     public static final StringField PostgresTable = new StringField(META, "PostgresTable");
     public static final IntField PostgresPoolSize = new IntField(META, "PostgresPoolSize");
+    // LakeTS ChronoTable sink options (must be persisted, else they revert to
+    // stock defaults on restart and the ChronoTable INSERT fails on event_time type).
+    public static final StringField PostgresTimestampMode = new StringField(META, "PostgresTimestampMode");
+    public static final StringField PostgresConflictColumns = new StringField(META, "PostgresConflictColumns");
+    public static final BooleanField PostgresNullUnusedValueColumns = new BooleanField(META, "PostgresNullUnusedValueColumns");
 
     // Unity Catalog / Mapping
     public static final StringField TargetTable = new StringField(META, "TargetTable", SFieldFlags.SMANDATORY);
@@ -105,6 +110,9 @@ public class ZerobusSettings83 extends PersistentRecord {
         PostgresPassword.setDefault("");
         PostgresTable.setDefault("raw_tags");
         PostgresPoolSize.setDefault(5);
+        PostgresTimestampMode.setDefault("EPOCH_MICROS");
+        PostgresConflictColumns.setDefault("event_id");
+        PostgresNullUnusedValueColumns.setDefault(false);
         TargetTable.setDefault("");
         SourceSystemId.setDefault("ignition-gateway");
         EnableDirectSubscriptions.setDefault(true);
@@ -163,6 +171,15 @@ public class ZerobusSettings83 extends PersistentRecord {
         config.setPostgresPassword(getString(PostgresPassword));
         config.setPostgresTable(getString(PostgresTable));
         config.setPostgresPoolSize(getInt(PostgresPoolSize));
+        String tsMode = getString(PostgresTimestampMode);
+        try {
+            config.setPostgresTimestampMode(ConfigModel.PostgresTimestampMode.valueOf(
+                (tsMode == null || tsMode.isBlank()) ? "EPOCH_MICROS" : tsMode.trim()));
+        } catch (Exception ignored) {
+            config.setPostgresTimestampMode(ConfigModel.PostgresTimestampMode.EPOCH_MICROS);
+        }
+        config.setPostgresConflictColumns(getString(PostgresConflictColumns));
+        config.setPostgresNullUnusedValueColumns(getBoolean(PostgresNullUnusedValueColumns));
         config.setTargetTable(getString(TargetTable));
         config.setSourceSystemId(getString(SourceSystemId));
         config.setEnableDirectSubscriptions(getBoolean(EnableDirectSubscriptions));
@@ -228,6 +245,9 @@ public class ZerobusSettings83 extends PersistentRecord {
         setString(PostgresPassword, config.getPostgresPassword());
         setString(PostgresTable, config.getPostgresTable());
         setInt(PostgresPoolSize, config.getPostgresPoolSize());
+        setString(PostgresTimestampMode, config.getPostgresTimestampMode() == null ? "EPOCH_MICROS" : config.getPostgresTimestampMode().name());
+        setString(PostgresConflictColumns, config.getPostgresConflictColumns());
+        setBoolean(PostgresNullUnusedValueColumns, config.isPostgresNullUnusedValueColumns());
         setString(TargetTable, config.getTargetTable());
         setString(SourceSystemId, config.getSourceSystemId());
         setBoolean(EnableDirectSubscriptions, config.isEnableDirectSubscriptions());

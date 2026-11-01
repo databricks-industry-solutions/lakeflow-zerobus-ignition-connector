@@ -77,7 +77,44 @@ public class ConfigModel implements Serializable {
 
     /** PostgreSQL connection pool size. */
     private int postgresPoolSize = 5;
-    
+
+    /**
+     * How the two epoch timestamp columns (event_time, ingestion_timestamp) are
+     * written to Postgres.
+     * - EPOCH_MICROS (default): bind the raw BIGINT epoch-microsecond value. This
+     *   matches the historical raw_tags landing-table shape.
+     * - TIMESTAMPTZ: wrap the bound value in to_timestamp(?/1000000.0) so the
+     *   target columns can be native timestamptz. Required when writing directly
+     *   into a LakeTS ChronoTable, whose partition key must be a real timestamp.
+     */
+    public enum PostgresTimestampMode {
+        EPOCH_MICROS,
+        TIMESTAMPTZ
+    }
+
+    /** Timestamp write mode for the Postgres sink. Defaults to legacy epoch-micros. */
+    private PostgresTimestampMode postgresTimestampMode = PostgresTimestampMode.EPOCH_MICROS;
+
+    /**
+     * Comma-separated column list for the INSERT's "ON CONFLICT (...) DO NOTHING"
+     * target. Default "event_id" matches a plain landing table with a single-column
+     * PK. A partitioned table (e.g. a LakeTS ChronoTable) requires the partition key
+     * in every unique constraint, so LakeTS setups use "event_time, event_id".
+     * Treated as trusted admin-supplied SQL identifiers (same trust level as
+     * {@link #postgresTable}); not per-event data.
+     */
+    private String postgresConflictColumns = "event_id";
+
+    /**
+     * When true, the Postgres sink writes SQL NULL (instead of 0.0 / "" / false)
+     * into the typed value columns that do not match the event's declared
+     * data_type. The connector always populates all three proto value fields for
+     * Delta/Zerobus presence semantics, which surfaces a misleading numeric_value=0.0
+     * for BOOLEAN/STRING tags; enabling this blanks those unused slots so a stored
+     * 0.0 always means a real reading. Defaults false to preserve legacy behavior.
+     */
+    private boolean postgresNullUnusedValueColumns = false;
+
     // === Unity Catalog Settings ===
     
     /** Target Unity Catalog table (format: catalog.schema.table) */
@@ -364,7 +401,34 @@ public class ConfigModel implements Serializable {
     public void setPostgresPoolSize(int postgresPoolSize) {
         this.postgresPoolSize = postgresPoolSize;
     }
-    
+
+    public PostgresTimestampMode getPostgresTimestampMode() {
+        return postgresTimestampMode;
+    }
+
+    public void setPostgresTimestampMode(PostgresTimestampMode postgresTimestampMode) {
+        this.postgresTimestampMode =
+                (postgresTimestampMode == null) ? PostgresTimestampMode.EPOCH_MICROS : postgresTimestampMode;
+    }
+
+    public String getPostgresConflictColumns() {
+        return postgresConflictColumns;
+    }
+
+    public void setPostgresConflictColumns(String postgresConflictColumns) {
+        this.postgresConflictColumns =
+                (postgresConflictColumns == null || postgresConflictColumns.isBlank())
+                        ? "event_id" : postgresConflictColumns.trim();
+    }
+
+    public boolean isPostgresNullUnusedValueColumns() {
+        return postgresNullUnusedValueColumns;
+    }
+
+    public void setPostgresNullUnusedValueColumns(boolean postgresNullUnusedValueColumns) {
+        this.postgresNullUnusedValueColumns = postgresNullUnusedValueColumns;
+    }
+
     public String getTargetTable() {
         return targetTable;
     }
@@ -774,6 +838,37 @@ public class ConfigModel implements Serializable {
                 if (postgresPoolSize <= 0) {
                     errors.add("PostgreSQL pool size must be > 0");
                 }
+                // postgresConflictColumns is interpolated into the INSERT SQL, so it must be a
+                // simple comma-separated list of SQL identifiers (letters, digits, underscore),
+                // not arbitrary text. This is a defense-in-depth check even though the value is
+                // admin-supplied config, not per-event data.
+                if (postgresConflictColumns != null && !postgresConflictColumns.isBlank()
+                        && !postgresConflictColumns.matches("^\\s*[A-Za-z_][A-Za-z0-9_]*\\s*(,\\s*[A-Za-z_][A-Za-z0-9_]*\\s*)*$")) {
+                    errors.add("PostgreSQL conflict columns must be a comma-separated list of column names "
+                            + "(e.g. \"event_id\" or \"event_time, event_id\")");
+                }
+                // TIMESTAMPTZ mode targets a partitioned LakeTS ChronoTable, whose unique /
+                // ON CONFLICT key must include the partition column (event_time). A single
+                // event_id conflict target has no matching constraint on a partitioned table,
+                // so every INSERT fails at runtime ("no unique or exclusion constraint matching
+                // the ON CONFLICT specification"). Catch the misconfiguration here, at save time.
+                if (postgresTimestampMode == PostgresTimestampMode.TIMESTAMPTZ) {
+                    boolean hasEventTime = false;
+                    if (postgresConflictColumns != null) {
+                        for (String col : postgresConflictColumns.split(",")) {
+                            if (col.trim().equalsIgnoreCase("event_time")) {
+                                hasEventTime = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!hasEventTime) {
+                        errors.add("With postgresTimestampMode=TIMESTAMPTZ (LakeTS ChronoTable), "
+                                + "postgresConflictColumns must include the partition column \"event_time\" "
+                                + "(e.g. \"event_time, event_id\") — a partitioned table has no standalone "
+                                + "unique constraint for ON CONFLICT (event_id) to match.");
+                    }
+                }
             } else {
                 if (workspaceUrl == null || workspaceUrl.isEmpty()) {
                     errors.add("Workspace URL is required");
@@ -1006,6 +1101,9 @@ public class ConfigModel implements Serializable {
             || !Objects.equals(this.postgresPassword, newConfig.postgresPassword)
             || !Objects.equals(this.postgresTable, newConfig.postgresTable)
             || this.postgresPoolSize != newConfig.postgresPoolSize
+            || this.postgresTimestampMode != newConfig.postgresTimestampMode
+            || !Objects.equals(this.postgresConflictColumns, newConfig.postgresConflictColumns)
+            || this.postgresNullUnusedValueColumns != newConfig.postgresNullUnusedValueColumns
             || !Objects.equals(this.targetTable, newConfig.targetTable)
             || this.enableDirectSubscriptions != newConfig.enableDirectSubscriptions
             || !Objects.equals(this.tagSelectionMode, newConfig.tagSelectionMode)
@@ -1059,6 +1157,9 @@ public class ConfigModel implements Serializable {
         this.postgresPassword = other.postgresPassword;
         this.postgresTable = other.postgresTable;
         this.postgresPoolSize = other.postgresPoolSize;
+        this.postgresTimestampMode = other.postgresTimestampMode;
+        this.postgresConflictColumns = other.postgresConflictColumns;
+        this.postgresNullUnusedValueColumns = other.postgresNullUnusedValueColumns;
         this.targetTable = other.targetTable;
         this.parseTableName();
         this.enableDirectSubscriptions = other.enableDirectSubscriptions;
