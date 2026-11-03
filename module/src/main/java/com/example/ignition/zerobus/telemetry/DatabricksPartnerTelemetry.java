@@ -23,12 +23,41 @@ public final class DatabricksPartnerTelemetry {
     /** SemVer string required by the Java SDK ({@code UserAgent#withProduct}). */
     public static final String PRODUCT_VERSION = "1.0.0";
 
+    /**
+     * Fallback module version used in Zerobus gRPC {@code applicationName} when the jar
+     * {@code Implementation-Version} is unavailable (unit tests / unpackaged classes).
+     */
+    public static final String INGEST_APPLICATION_FALLBACK_VERSION = "1.0.10";
+
+    /**
+     * Stable product token for Zerobus ingest SDK {@code applicationName}.
+     * Lands in lumberjack {@code prod_zerobus_stream_log.tags} as
+     * {@code zerobus-sdk-java/<sdk> lakeflow-ignition-zerobus-connector/<module>}.
+     */
+    public static final String INGEST_APPLICATION_PREFIX = "lakeflow-ignition-zerobus-connector";
+
     private static final String USER_AGENT_CLASS = "com.databricks.sdk.core.UserAgent";
 
     private static volatile boolean registered;
     private static volatile boolean finishedRegistrationAttempt;
 
     private DatabricksPartnerTelemetry() {}
+
+    /**
+     * Value passed to {@code new ZerobusSdk(endpoint, workspaceUrl, applicationName)}.
+     * Hardcoded product name plus module version so Regional Logfood can find this connector.
+     */
+    public static String ingestApplicationName() {
+        String ver = null;
+        Package pkg = DatabricksPartnerTelemetry.class.getPackage();
+        if (pkg != null) {
+            ver = pkg.getImplementationVersion();
+        }
+        if (ver == null || ver.trim().isEmpty()) {
+            ver = INGEST_APPLICATION_FALLBACK_VERSION;
+        }
+        return INGEST_APPLICATION_PREFIX + "/" + ver;
+    }
 
     /**
      * Applies {@code UserAgent.withProduct} then {@code UserAgent.withPartner} once per JVM when the

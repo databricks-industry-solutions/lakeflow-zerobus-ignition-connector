@@ -1,12 +1,9 @@
 package com.example.ignition.zerobus;
 
-import com.databricks.zerobus.ZerobusSdk;
-import com.databricks.zerobus.ZerobusStream;
-import com.databricks.zerobus.TableProperties;
-import com.databricks.zerobus.StreamConfigurationOptions;
-import com.databricks.zerobus.IngestRecordResponse;
+import com.databricks.zerobus.AckCallback;
 import com.databricks.zerobus.ZerobusException;
-import com.databricks.zerobus.NonRetriableException;
+import com.databricks.zerobus.ZerobusProtoStream;
+import com.databricks.zerobus.ZerobusSdk;
 import com.example.ignition.zerobus.proto.OTEvent;
 import com.example.ignition.zerobus.pipeline.OtEventMapper;
 import com.example.ignition.zerobus.telemetry.DatabricksPartnerTelemetry;
@@ -16,7 +13,6 @@ import org.slf4j.LoggerFactory;
 import java.util.Locale;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -63,11 +59,9 @@ public class ZerobusClientManager {
     private final AtomicLong nextRetryAtMs = new AtomicLong(0L);
     private final AtomicLong lastAuthFailureMs = new AtomicLong(0L);
     
-    // Zerobus SDK objects
+    // Zerobus SDK objects (1.8 JNI client; applicationName is required for lumberjack tags)
     private ZerobusSdk zerobusSdk;
-    private ZerobusStream<OTEvent> zerobusStream;
-    private TableProperties<OTEvent> tableProperties;
-    private StreamConfigurationOptions streamOptions;
+    private ZerobusProtoStream zerobusStream;
 
     // Reconnect throttling to avoid hot-looping when the remote service is down.
     private final AtomicLong lastReconnectAttemptMs = new AtomicLong(0);
@@ -143,8 +137,8 @@ public class ZerobusClientManager {
             return ErrorClass.TRANSIENT;
         }
 
-        // NonRetriableException from the SDK generally means "operator action required" (bad table, schema, etc).
-        if (root instanceof NonRetriableException) {
+        String rootName = root.getClass().getSimpleName();
+        if ("NonRetriableException".equals(rootName) || rootName.contains("NonRetriable")) {
             return ErrorClass.NON_RETRIABLE;
         }
 
@@ -232,61 +226,24 @@ public class ZerobusClientManager {
                 throw new IllegalArgumentException("Invalid configuration: " + String.join(", ", errors));
             }
             
-            // Initialize Zerobus SDK
-            logger.info("Creating ZerobusSdk instance...");
-            this.zerobusSdk = new ZerobusSdk(
-                config.getZerobusEndpoint(),
-                config.getWorkspaceUrl()
-            );
-            
-            // Configure table properties
-            this.tableProperties = new TableProperties<>(
-                config.getTargetTable(),
-                OTEvent.getDefaultInstance()
-            );
-            
-            // Configure stream options
-            this.streamOptions = StreamConfigurationOptions.builder()
-                .setMaxInflightRecords(config.getMaxQueueSize())
-                .setRecovery(true)
-                .setRecoveryTimeoutMs((int) config.getConnectionTimeoutMs())
-                .setRecoveryBackoffMs((int) config.getRetryBackoffMs())
-                .setRecoveryRetries(config.getMaxRetries())
-                .setFlushTimeoutMs((int) config.getRequestTimeoutMs())
-                .setServerLackOfAckTimeoutMs((int) config.getRequestTimeoutMs())
-                .setAckCallback(this::handleAcknowledgment)
-                .build();
-            
-            // Create stream
-            logger.info("Creating Zerobus stream...");
-            CompletableFuture<ZerobusStream<OTEvent>> streamFuture = zerobusSdk.createStream(
-                tableProperties,
-                config.getOauthClientId(),
-                config.getOauthClientSecret(),
-                streamOptions
-            );
-            
-            // Wait for stream creation (with timeout)
-            this.zerobusStream = streamFuture.get(
-                config.getConnectionTimeoutMs(),
-                TimeUnit.MILLISECONDS
-            );
+            String applicationName = DatabricksPartnerTelemetry.ingestApplicationName();
+            logger.info("Creating ZerobusSdk instance (applicationName={})...", applicationName);
+            this.zerobusSdk = newSdk();
+
+            logger.info("Creating Zerobus protobuf stream...");
+            this.zerobusStream = openProtoStream(zerobusSdk, true);
             
             initialized.set(true);
 
-            // Only mark connected if stream is actually OPENED. The SDK may return a stream
-            // in RECOVERING state after recreateStream/createStream, and ingestRecord() can
-            // block the calling thread indefinitely on a RECOVERING stream.
-            String state = String.valueOf(zerobusStream.getState());
-            if ("OPENED".equals(state)) {
+            if (zerobusStream != null && !zerobusStream.isClosed()) {
                 connected.set(true);
                 logger.info("Zerobus client initialized successfully");
             } else {
                 connected.set(false);
-                logger.warn("Zerobus stream created but in {} state (expected OPENED); will retry via backoff", state);
+                logger.warn("Zerobus stream created but is closed; will retry via backoff");
             }
-            logger.info("  Stream ID: {}", zerobusStream.getStreamId());
-            logger.info("  Stream State: {}", state);
+            logger.info("  Table: {}", config.getTargetTable());
+            logger.info("  Stream closed: {}", zerobusStream == null || zerobusStream.isClosed());
             
         } catch (Exception e) {
             logger.error("Failed to initialize Zerobus client", e);
@@ -309,16 +266,18 @@ public class ZerobusClientManager {
         logger.info("Shutting down Zerobus client...");
 
         // Serialize with reconnect/sends and detach references first.
-        final ZerobusStream<OTEvent> streamToClose;
+        final ZerobusProtoStream streamToClose;
+        final ZerobusSdk sdkToClose;
         synchronized (reconnectLock) {
             streamToClose = this.zerobusStream;
+            sdkToClose = this.zerobusSdk;
             this.zerobusStream = null;
             this.zerobusSdk = null;
             connected.set(false);
             initialized.set(false);
         }
 
-        if (streamToClose == null) {
+        if (streamToClose == null && sdkToClose == null) {
             logger.info("Zerobus client shut down successfully");
             return;
         }
@@ -332,11 +291,20 @@ public class ZerobusClientManager {
         try {
             // Best-effort close in a bounded-time background thread.
             Thread t = new Thread(() -> {
-                try {
-                    // Do NOT flush here. Store-and-forward guarantees we can resend after restart.
-                    streamToClose.close();
-                } catch (Throwable closeErr) {
-                    logger.warn("Error while closing Zerobus stream (ignored during shutdown)", closeErr);
+                if (streamToClose != null) {
+                    try {
+                        // Do NOT flush here. Store-and-forward guarantees we can resend after restart.
+                        streamToClose.close();
+                    } catch (Throwable closeErr) {
+                        logger.warn("Error while closing Zerobus stream (ignored during shutdown)", closeErr);
+                    }
+                }
+                if (sdkToClose != null) {
+                    try {
+                        sdkToClose.close();
+                    } catch (Throwable sdkErr) {
+                        logger.warn("Error while closing Zerobus SDK (ignored during shutdown)", sdkErr);
+                    }
                 }
             }, "Zerobus-Stream-Close");
             t.setDaemon(true);
@@ -390,23 +358,14 @@ public class ZerobusClientManager {
         }
         logger.debug("Sending batch of {} OT events to Zerobus", events.size());
 
-        // Guard: check stream state before calling ingestRecord(). The SDK's ingestRecord()
-        // can block the calling thread indefinitely when the stream is in RECOVERING state,
-        // which stalls the flusher and causes the buffer to fill and drop events silently.
-        String streamState = zerobusStream != null ? String.valueOf(zerobusStream.getState()) : "NULL";
-        if (!"OPENED".equals(streamState)) {
-            logger.warn("Stream is {} (not OPENED); marking disconnected for recovery", streamState);
+        if (zerobusStream == null || zerobusStream.isClosed()) {
+            logger.warn("Stream is closed; marking disconnected for recovery");
             connected.set(false);
             return false;
         }
 
         try {
-            List<CompletableFuture<Void>> futures = new ArrayList<>();
-            for (OTEvent event : events) {
-                futures.add(zerobusStream.ingestRecord(event));
-            }
-            CompletableFuture<Void> allFutures = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
-            allFutures.get(config.getRequestTimeoutMs(), TimeUnit.MILLISECONDS);
+            zerobusStream.ingestRecordsOffset(events);
             zerobusStream.flush();
 
             totalEventsSent.addAndGet(events.size());
@@ -414,16 +373,6 @@ public class ZerobusClientManager {
             lastSuccessfulSendTime = System.currentTimeMillis();
             recordSuccess();
             return true;
-        } catch (NonRetriableException e) {
-            recordFailure(e);
-            if (lastErrorClass == ErrorClass.AUTH) {
-                logger.error("Auth/token error sending events to Zerobus (will back off)", e);
-            } else {
-                logger.error("Non-retriable error sending events to Zerobus (operator action likely required)", e);
-            }
-            totalFailures.incrementAndGet();
-            connected.set(false);
-            return false;
         } catch (ZerobusException e) {
             recordFailure(e);
             logger.warn("Retriable error sending events to Zerobus (will retry with backoff)", e);
@@ -511,43 +460,21 @@ public class ZerobusClientManager {
         DatabricksPartnerTelemetry.ensureRegistered();
 
         try {
-            // Create a temporary SDK instance for testing
-            ZerobusSdk testSdk = new ZerobusSdk(
-                config.getZerobusEndpoint(),
-                config.getWorkspaceUrl()
-            );
-            
-            TableProperties<OTEvent> testTableProps = new TableProperties<>(
-                config.getTargetTable(),
-                OTEvent.getDefaultInstance()
-            );
-            
-            StreamConfigurationOptions testOptions = StreamConfigurationOptions.builder()
-                .setMaxInflightRecords(100)
-                .setRecovery(false)
-                .setFlushTimeoutMs(10000)
-                .build();
-            
-            // Try to create a stream
-            CompletableFuture<ZerobusStream<OTEvent>> streamFuture = testSdk.createStream(
-                testTableProps,
-                config.getOauthClientId(),
-                config.getOauthClientSecret(),
-                testOptions
-            );
-            
-            ZerobusStream<OTEvent> testStream = streamFuture.get(10, TimeUnit.SECONDS);
-            
-            // Close the test stream
+            ZerobusSdk testSdk = newSdk();
+            ZerobusProtoStream testStream = testSdk.streamBuilder()
+                    .table(config.getTargetTable())
+                    .oauth(config.getOauthClientId(), config.getOauthClientSecret())
+                    .maxInflightRecords(100)
+                    .recovery(false)
+                    .flushTimeoutMs(10_000)
+                    .compiledProto(OTEvent.getDescriptor().toProto())
+                    .build()
+                    .get(10, TimeUnit.SECONDS);
             testStream.close();
+            testSdk.close();
             
             logger.info("Connection test successful");
             return true;
-            
-        } catch (NonRetriableException e) {
-            logger.error("Connection test failed with non-retriable error", e);
-            lastError = e.getMessage();
-            return false;
             
         } catch (Exception e) {
             logger.error("Connection test failed", e);
@@ -568,26 +495,23 @@ public class ZerobusClientManager {
         logger.info("Attempting stream recovery...");
         
         try {
-            // Use SDK's recreateStream to recover
-            CompletableFuture<ZerobusStream<OTEvent>> recoveryFuture = 
-                zerobusSdk.recreateStream(zerobusStream);
-            
-            // Wait for recovery
-            this.zerobusStream = recoveryFuture.get(
-                config.getConnectionTimeoutMs(),
-                TimeUnit.MILLISECONDS
-            );
-            
-            String state = String.valueOf(zerobusStream.getState());
-            if ("OPENED".equals(state)) {
+            if (zerobusStream != null && !zerobusStream.isClosed()) {
+                try {
+                    zerobusStream.close();
+                } catch (Exception closeErr) {
+                    logger.warn("Error closing stream before recreate (continuing)", closeErr);
+                }
+            }
+            this.zerobusStream = zerobusSdk.recreateStream(zerobusStream)
+                    .get(config.getConnectionTimeoutMs(), TimeUnit.MILLISECONDS);
+
+            if (zerobusStream != null && !zerobusStream.isClosed()) {
                 connected.set(true);
-                logger.info("Stream recovery successful (state: {})", state);
+                logger.info("Stream recovery successful");
             } else {
                 connected.set(false);
-                logger.warn("Stream recovery returned {} state (expected OPENED); will retry via backoff", state);
+                logger.warn("Stream recovery returned a closed stream; will retry via backoff");
             }
-            logger.info("  Stream ID: {}", zerobusStream.getStreamId());
-            logger.info("  Stream State: {}", state);
             
         } catch (Exception e) {
             logger.error("Stream recovery failed", e);
@@ -601,14 +525,20 @@ public class ZerobusClientManager {
      * 
      * @param response The acknowledgment response
      */
-    private void handleAcknowledgment(IngestRecordResponse response) {
-        long offset = response.getDurabilityAckUpToOffset();
-        this.lastAckedOffset = offset;
-        
-        if (config.isDebugLogging()) {
-            logger.debug("Received acknowledgment up to offset: {}", offset);
+    private final AckCallback ackCallback = new AckCallback() {
+        @Override
+        public void onAck(long offsetId) {
+            lastAckedOffset = offsetId;
+            if (config.isDebugLogging()) {
+                logger.debug("Received acknowledgment up to offset: {}", offsetId);
+            }
         }
-    }
+
+        @Override
+        public void onError(long offsetId, String errorMessage) {
+            logger.warn("Zerobus ack error at offset {}: {}", offsetId, errorMessage);
+        }
+    };
     
     /**
      * Convert a TagEvent to OTEvent protobuf message.
@@ -630,9 +560,10 @@ public class ZerobusClientManager {
         sb.append("Connected: ").append(connected.get()).append("\n");
         
         if (zerobusStream != null) {
-            sb.append("Stream ID: ").append(zerobusStream.getStreamId()).append("\n");
-            sb.append("Stream State: ").append(zerobusStream.getState()).append("\n");
+            sb.append("Stream table: ").append(zerobusStream.getTableName()).append("\n");
+            sb.append("Stream closed: ").append(zerobusStream.isClosed()).append("\n");
         }
+        sb.append("Ingest applicationName: ").append(DatabricksPartnerTelemetry.ingestApplicationName()).append("\n");
         
         sb.append("Total Events Sent: ").append(totalEventsSent.get()).append("\n");
         sb.append("Total Batches Sent: ").append(totalBatchesSent.get()).append("\n");
@@ -724,6 +655,38 @@ public class ZerobusClientManager {
     }
 
     public String getStreamId() {
-        return zerobusStream != null ? zerobusStream.getStreamId() : null;
+        return zerobusStream != null ? zerobusStream.getTableName() : null;
+    }
+
+    private ZerobusSdk newSdk() {
+        return new ZerobusSdk(
+                config.getZerobusEndpoint(),
+                config.getWorkspaceUrl(),
+                DatabricksPartnerTelemetry.ingestApplicationName()
+        );
+    }
+
+    private ZerobusProtoStream openProtoStream(ZerobusSdk sdk, boolean recovery) throws Exception {
+        return sdk.streamBuilder()
+                .table(config.getTargetTable())
+                .oauth(config.getOauthClientId(), config.getOauthClientSecret())
+                .maxInflightRecords(Math.max(1, config.getMaxQueueSize()))
+                .recovery(recovery)
+                .recoveryTimeoutMs(positiveMs(config.getConnectionTimeoutMs(), 15_000))
+                .recoveryBackoffMs(Math.max(0, (int) Math.min(Integer.MAX_VALUE, config.getRetryBackoffMs())))
+                .recoveryRetries(Math.max(0, config.getMaxRetries()))
+                .flushTimeoutMs(positiveMs(config.getRequestTimeoutMs(), 300_000))
+                .serverLackOfAckTimeoutMs(positiveMs(config.getRequestTimeoutMs(), 60_000))
+                .ackCallback(ackCallback)
+                .compiledProto(OTEvent.getDescriptor().toProto())
+                .build()
+                .get(config.getConnectionTimeoutMs(), TimeUnit.MILLISECONDS);
+    }
+
+    private static int positiveMs(long value, int fallback) {
+        if (value <= 0) {
+            return fallback;
+        }
+        return (int) Math.min(Integer.MAX_VALUE, value);
     }
 }
