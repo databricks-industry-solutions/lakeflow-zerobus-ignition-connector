@@ -107,7 +107,7 @@ dependencies {
     // Protobuf - required for Zerobus SDK
     implementation "com.google.protobuf:protobuf-java:${protobufVersion}"
     
-    // Databricks Zerobus Ingest SDK (JNI). applicationName is required for lumberjack tags.
+    // Databricks Zerobus Ingest SDK (JNI). Sets ingest applicationName for telemetry.
     implementation "com.databricks:zerobus-ingest-sdk:${zerobusIngestSdkVersion}"
     implementation 'com.zaxxer:HikariCP:5.1.0'
     implementation 'org.postgresql:postgresql:42.7.4'

@@ -59,7 +59,7 @@ public class ZerobusClientManager {
     private final AtomicLong nextRetryAtMs = new AtomicLong(0L);
     private final AtomicLong lastAuthFailureMs = new AtomicLong(0L);
     
-    // Zerobus SDK objects (1.8 JNI client; applicationName is required for lumberjack tags)
+    // Zerobus SDK objects (JNI client; applicationName is set for ingest telemetry)
     private ZerobusSdk zerobusSdk;
     private ZerobusProtoStream zerobusStream;
 
