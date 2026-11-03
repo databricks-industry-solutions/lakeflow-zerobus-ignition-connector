@@ -29,11 +29,7 @@ public final class DatabricksPartnerTelemetry {
      */
     public static final String INGEST_APPLICATION_FALLBACK_VERSION = "1.0.10";
 
-    /**
-     * Stable product token for Zerobus ingest SDK {@code applicationName}.
-     * Lands in lumberjack {@code prod_zerobus_stream_log.tags} as
-     * {@code zerobus-sdk-java/<sdk> lakeflow-ignition-zerobus-connector/<module>}.
-     */
+    /** Stable product token for Zerobus ingest SDK {@code applicationName} telemetry. */
     public static final String INGEST_APPLICATION_PREFIX = "lakeflow-ignition-zerobus-connector";
 
     private static final String USER_AGENT_CLASS = "com.databricks.sdk.core.UserAgent";
@@ -43,10 +39,7 @@ public final class DatabricksPartnerTelemetry {
 
     private DatabricksPartnerTelemetry() {}
 
-    /**
-     * Value passed to {@code new ZerobusSdk(endpoint, workspaceUrl, applicationName)}.
-     * Hardcoded product name plus module version so Regional Logfood can find this connector.
-     */
+    /** Value passed to {@code new ZerobusSdk(endpoint, workspaceUrl, applicationName)}. */
     public static String ingestApplicationName() {
         String ver = null;
         Package pkg = DatabricksPartnerTelemetry.class.getPackage();
